@@ -61,6 +61,14 @@ pub struct LoginRequest {
     pub org_id: Option<String>,
 }
 
+/// A selectable branch (device-setup picker).
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct BranchView {
+    pub id: String,
+    pub name: String,
+    pub is_active: bool,
+}
+
 /// The cached session the host renders chrome from. Money/tax are pre-resolved.
 #[derive(uniffi::Record, Clone, Debug, Serialize, Deserialize)]
 pub struct SessionSnapshot {

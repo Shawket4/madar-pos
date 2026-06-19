@@ -46,7 +46,16 @@ import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixLockup
 import app.sufrix.ui.SufrixMark
 import app.sufrix.ui.SufrixTextField
+import app.sufrix.ui.pressScale
 import app.sufrix.ui.sufrixColors
+import app.sufrix.core.BranchView
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.KeyboardType
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -129,7 +138,8 @@ private fun TellerForm(model: AppModel, showLogo: Boolean) {
             Text("Sign in to open your till", color = c.textSecondary, fontSize = 14.sp)
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            StatusChip("Branch ${model.branchId.take(8)}", ChipTone.INFO)
+            val branchLabel = if (model.branchName.isNotBlank()) model.branchName else "Branch ${model.branchId.take(8)}"
+            StatusChip(branchLabel, ChipTone.INFO)
             SufrixButton("Reconfigure device", { model.beginReconfigure() }, variant = BtnVariant.GHOST, fullWidth = false, height = 32.dp)
         }
         SufrixTextField(name, { name = it }, "Name", enabled = !model.isBusy)
@@ -146,25 +156,50 @@ private fun DeviceSetupForm(model: AppModel, showLogo: Boolean) {
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var branch by remember { mutableStateOf("") }
+    val picking = model.setupPhase == SetupPhase.PICK_BRANCH
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.lg)) {
         if (showLogo) SufrixMark(size = 56.dp)
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            Text("Configure this till", color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 22.sp)
+            Text(if (picking) "Choose a branch" else "Configure this till", color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 22.sp)
             Text(
-                "A manager signs in to bind this device to a branch. Tellers sign in after.",
+                if (picking) "Bind this till to one of your branches."
+                else "A manager signs in to bind this device to a branch. Tellers sign in after.",
                 color = c.textSecondary, fontSize = 13.sp, textAlign = TextAlign.Center,
             )
         }
-        SufrixTextField(email, { email = it }, "Manager email", enabled = !model.isBusy, keyboard = KeyboardType.Email)
-        SufrixTextField(password, { password = it }, "Password", secure = true, enabled = !model.isBusy)
-        SufrixTextField(branch, { branch = it }, "Branch ID", enabled = !model.isBusy)
+        if (picking) {
+            model.branches.forEach { b -> BranchRow(b) { model.bindBranch(b) } }
+        } else {
+            SufrixTextField(email, { email = it }, "Manager email", enabled = !model.isBusy, keyboard = KeyboardType.Email)
+            SufrixTextField(password, { password = it }, "Password", secure = true, enabled = !model.isBusy)
+        }
         model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
-        SufrixButton("Configure device", { scope.launch { model.configureDevice(email.trim(), password, branch) } }, loading = model.isBusy)
-        if (model.isBranchConfigured) {
+        if (!picking) {
+            SufrixButton("Continue", { scope.launch { model.authenticateManager(email.trim(), password) } }, loading = model.isBusy)
+        }
+        if (picking || model.isBranchConfigured) {
             SufrixButton("Cancel", { model.cancelReconfigure() }, variant = BtnVariant.GHOST)
         }
+    }
+}
+
+@Composable
+private fun BranchRow(branch: BranchView, onClick: () -> Unit) {
+    val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().pressScale(interaction).clip(RoundedCornerShape(Radii.sm))
+            .background(c.surface).border(1.dp, c.border, RoundedCornerShape(Radii.sm))
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            }
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(branch.name, color = c.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text("›", color = c.textMuted, fontSize = 18.sp)
     }
 }
 

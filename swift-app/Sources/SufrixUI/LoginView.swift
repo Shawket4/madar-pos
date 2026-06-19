@@ -90,8 +90,7 @@ private struct TellerForm: View {
     }
 
     private var branchLabel: String {
-        let id = app.branchId.trimmingCharacters(in: .whitespaces)
-        return "Branch \(id.prefix(8))"
+        app.branchName.isEmpty ? "Branch \(app.branchId.prefix(8))" : app.branchName
     }
 
     private func digit(_ d: String) {
@@ -133,42 +132,73 @@ private struct DeviceSetupForm: View {
 
     @State private var email = ""
     @State private var password = ""
-    @State private var branch = ""
+
+    private var picking: Bool { app.setupPhase == .pickBranch }
 
     var body: some View {
         VStack(spacing: Space.lg) {
             if showLogo { SufrixMark(size: 56) }
 
             VStack(spacing: Space.xs) {
-                Text("Configure this till").font(.ui(22, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                Text("A manager signs in to bind this device to a branch. Tellers sign in after.")
+                Text(picking ? "Choose a branch" : "Configure this till")
+                    .font(.ui(22, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                Text(picking
+                     ? "Bind this till to one of your branches."
+                     : "A manager signs in to bind this device to a branch. Tellers sign in after.")
                     .font(.ui(13.5)).foregroundStyle(theme.colors.textSecondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
             .padding(.bottom, Space.sm)
 
-            SufrixTextField(placeholder: "Manager email", text: $email, icon: "envelope",
-                            disabled: app.isBusy, keyboard: .email)
-            SufrixTextField(placeholder: "Password", text: $password, icon: "lock",
-                            secure: true, disabled: app.isBusy)
-            SufrixTextField(placeholder: "Branch ID", text: $branch, icon: "building.2", disabled: app.isBusy)
+            if picking {
+                ForEach(app.branches, id: \.id) { branch in branchRow(branch) }
+            } else {
+                SufrixTextField(placeholder: "Manager email", text: $email, icon: "envelope",
+                                disabled: app.isBusy, keyboard: .email)
+                SufrixTextField(placeholder: "Password", text: $password, icon: "lock",
+                                secure: true, disabled: app.isBusy)
+            }
 
             if let error = app.errorMessage {
                 NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
             }
 
-            SufrixButton(label: "Configure device", loading: app.isBusy) {
-                Task {
-                    await app.configureDevice(
-                        email: email.trimmingCharacters(in: .whitespaces),
-                        password: password,
-                        branch: branch)
+            if !picking {
+                SufrixButton(label: "Continue", loading: app.isBusy) {
+                    Task {
+                        await app.authenticateManager(
+                            email: email.trimmingCharacters(in: .whitespaces),
+                            password: password)
+                    }
                 }
             }
-            if app.isBranchConfigured {
+            if picking || app.isBranchConfigured {
                 SufrixButton(label: "Cancel", variant: .ghost) { app.cancelReconfigure() }
             }
         }
+    }
+
+    private func branchRow(_ branch: BranchView) -> some View {
+        Button {
+            Haptics.selection()
+            app.bindBranch(branch)
+        } label: {
+            HStack(spacing: Space.md) {
+                Image(systemName: "building.2").foregroundStyle(theme.colors.textMuted)
+                Text(branch.name).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(theme.colors.textMuted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .background(theme.colors.surface)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                    .strokeBorder(theme.colors.border, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        }
+        .buttonStyle(.pressable)
     }
 }
 

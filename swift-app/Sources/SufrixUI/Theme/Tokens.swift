@@ -65,14 +65,24 @@ enum Motion {
 
 // MARK: - Typography (bundled Cairo; tabular figures for money)
 extension Font {
-    /// General UI text.
+    /// General UI text. Picks the explicit Cairo face for the weight (custom
+    /// fonts don't reliably honor `.weight()`); falls back to system if Cairo
+    /// isn't registered.
     static func ui(_ size: CGFloat, _ weight: Font.Weight = .medium) -> Font {
-        .custom("Cairo", size: size).weight(weight)
+        .custom(cairoFace(weight), size: size)
     }
-    /// Monetary amounts — bold + tabular so totals line up (pair with `.monospacedDigit()`).
+    /// Monetary amounts — bold + tabular so totals line up.
     static func money(_ size: CGFloat = 16, _ weight: Font.Weight = .bold) -> Font {
-        .custom("Cairo", size: size).weight(weight).monospacedDigit()
+        .custom(cairoFace(weight), size: size).monospacedDigit()
     }
+}
+
+private func cairoFace(_ w: Font.Weight) -> String {
+    if w == .black || w == .heavy { return "Cairo-ExtraBold" }
+    if w == .bold { return "Cairo-Bold" }
+    if w == .semibold { return "Cairo-SemiBold" }
+    if w == .medium { return "Cairo-Medium" }
+    return "Cairo-Regular"
 }
 
 // MARK: - Theme handle + environment injection

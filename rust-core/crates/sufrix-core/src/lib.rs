@@ -324,6 +324,24 @@ impl SufrixCore {
         }
     }
 
+    /// List the org's active branches — for the device-setup picker. Requires a
+    /// live (manager) session; online-only.
+    pub async fn list_branches(&self) -> Result<Vec<session::BranchView>, CoreError> {
+        use sufrix_api::apis::branches_api;
+        let (org_id, _) = self.org_branch()?;
+        let branches = branches_api::list_branches(
+            &self.api.config(),
+            branches_api::ListBranchesParams { org_id },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(branches
+            .into_iter()
+            .filter(|b| b.is_active)
+            .map(|b| session::BranchView { id: b.id.to_string(), name: b.name, is_active: b.is_active })
+            .collect())
+    }
+
     /// Pull the branch-effective catalog (items + categories + addons + bundles +
     /// payment methods + discounts) and mirror the canonical JSON into the local
     /// store. Online-only; the offline reads (`list_*`) then serve this mirror.

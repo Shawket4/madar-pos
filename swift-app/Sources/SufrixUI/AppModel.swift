@@ -1,9 +1,13 @@
 // The host's single source of UI state. Owns the one `SufrixCore` handle and
 // the secure vault, mirrors the core's session into `@Published` state, and
 // forwards sign-in/out. NO business logic — the online↔offline decision, token
-// custody, and validation all live in the core (`sign_in`).
+// custody, and validation all live in the core.
+import CoreText
 import Foundation
 import SwiftUI
+
+/// Device-setup is two steps: a manager authenticates, then picks the branch.
+enum SetupPhase { case credentials, pickBranch }
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -15,70 +19,96 @@ final class AppModel: ObservableObject {
     @Published private(set) var isBusy = false
     @Published var errorMessage: String?
 
-    /// The device's configured branch — PIN login derives the org from it
-    /// (post-D13 any active org teller may sign in here). Set once at device
-    /// provisioning; persisted locally.
-    @Published var branchId: String {
-        didSet { UserDefaults.standard.set(branchId, forKey: Self.branchKey) }
-    }
+    /// The device's configured branch (set once at provisioning). PIN login
+    /// derives the org from it; post-D13 any active org teller may sign in here.
+    @Published private(set) var branchId: String
+    @Published private(set) var branchName: String
+
+    /// Forces the device-setup (manager) view even on a configured device.
+    @Published private(set) var reconfiguring = false
+    @Published private(set) var setupPhase: SetupPhase = .credentials
+    /// Branches fetched after the manager authenticates (the picker source).
+    @Published private(set) var branches: [BranchView] = []
 
     init() {
+        Self.registerFonts()
         var cfg = defaultConfig()
         cfg.dbPath = Self.databasePath()
         cfg.locale = Locale.current.identifier
         // A failed store open is unrecoverable — fail loudly rather than limp on.
         core = try! SufrixCore(config: cfg)
         branchId = UserDefaults.standard.string(forKey: Self.branchKey) ?? ""
+        branchName = UserDefaults.standard.string(forKey: Self.branchNameKey) ?? ""
 
         core.setTokenStore(store: vault)
-        // Cold-start: re-hydrate the last session from the Keychain blob.
         if let blob = vault.loadBlob() {
             session = core.restoreSession(blob: blob)
         }
     }
 
-    /// Forces the device-setup (manager) view even on a configured device.
-    @Published private(set) var reconfiguring = false
-
     var isSignedIn: Bool { session != nil }
-    /// The till is bound to a branch → show the teller PIN login. Until then,
-    /// only a manager can sign in (to configure the device). Mirrors Flutter.
+    /// Till bound to a branch → teller PIN login; until then, manager device-setup.
     var isBranchConfigured: Bool { !branchId.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    // ── intents ─────────────────────────────────────────────────────────────
+    // ── teller ────────────────────────────────────────────────────────────────
 
     /// Teller sign-in (name + PIN). The core decides online vs offline.
     func signInTeller(name: String, pin: String) async {
-        await run {
-            try await self.core.signIn(req: LoginRequest(
-                mode: .pin, name: name, pin: pin, branchId: self.branchId,
-                email: nil, password: nil, orgId: nil))
-        }
-    }
-
-    /// Device setup: a manager authenticates (online) to authorize binding this
-    /// till to `branch`. On success we persist the branch and drop the manager
-    /// session — the POS is teller-only — leaving the cached org bundle warm so
-    /// tellers can unlock offline. Mirrors Flutter's device-setup gate.
-    func configureDevice(email: String, password: String, branch: String) async {
-        isBusy = true
-        errorMessage = nil
+        isBusy = true; errorMessage = nil
         defer { isBusy = false }
         do {
-            _ = try await core.login(req: LoginRequest(
-                mode: .email, name: nil, pin: nil, branchId: nil,
-                email: email, password: password, orgId: nil))
-            branchId = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-            try? core.logout(wipeOutbox: false)
-            session = nil
-            reconfiguring = false
+            session = try await core.signIn(req: LoginRequest(
+                mode: .pin, name: name, pin: pin, branchId: branchId,
+                email: nil, password: nil, orgId: nil))
         } catch {
             errorMessage = Self.humanMessage(error)
         }
     }
 
-    func beginReconfigure() { reconfiguring = true; errorMessage = nil }
-    func cancelReconfigure() { reconfiguring = false; errorMessage = nil }
+    // ── device setup (manager) ──────────────────────────────────────────────────
+
+    /// Step 1: a manager authenticates (online), then we load the org's branches
+    /// for the picker. The manager session is kept only to fetch branches; it's
+    /// dropped when the branch is bound (the POS is teller-only).
+    func authenticateManager(email: String, password: String) async {
+        isBusy = true; errorMessage = nil
+        defer { isBusy = false }
+        do {
+            _ = try await core.login(req: LoginRequest(
+                mode: .email, name: nil, pin: nil, branchId: nil,
+                email: email, password: password, orgId: nil))
+            branches = try await core.listBranches()
+            setupPhase = .pickBranch
+        } catch {
+            errorMessage = Self.humanMessage(error)
+            try? core.logout(wipeOutbox: false)
+            session = nil
+        }
+    }
+
+    /// Step 2: bind the till to `branch`, drop the manager session, and leave the
+    /// cached org bundle warm so tellers can unlock offline.
+    func bindBranch(_ branch: BranchView) {
+        branchId = branch.id
+        branchName = branch.name
+        UserDefaults.standard.set(branchId, forKey: Self.branchKey)
+        UserDefaults.standard.set(branchName, forKey: Self.branchNameKey)
+        try? core.logout(wipeOutbox: false)
+        session = nil
+        reconfiguring = false
+        setupPhase = .credentials
+        branches = []
+        errorMessage = nil
+    }
+
+    func beginReconfigure() {
+        reconfiguring = true; setupPhase = .credentials; branches = []; errorMessage = nil
+    }
+    func cancelReconfigure() {
+        reconfiguring = false; setupPhase = .credentials; branches = []; errorMessage = nil
+        try? core.logout(wipeOutbox: false)
+        session = nil
+    }
 
     func signOut() {
         try? core.logout(wipeOutbox: false)
@@ -86,18 +116,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
     }
 
-    // ── plumbing ────────────────────────────────────────────────────────────
-
-    private func run(_ op: @escaping () async throws -> SessionSnapshot) async {
-        isBusy = true
-        errorMessage = nil
-        defer { isBusy = false }
-        do {
-            session = try await op()
-        } catch {
-            errorMessage = Self.humanMessage(error)
-        }
-    }
+    // ── plumbing ────────────────────────────────────────────────────────────────
 
     /// Map the coarse `CoreError` to something a teller can read.
     static func humanMessage(_ error: Error) -> String {
@@ -105,22 +124,17 @@ final class AppModel: ObservableObject {
         switch e {
         case .Offline:
             return "You're offline and this teller hasn't been set up for offline sign-in yet."
-        case let .Unauthenticated(message):
-            return message
-        case let .Validation(_, message):
-            return message
-        case let .Server(_, _, message):
-            return message
-        case let .Transient(message):
-            return "Network problem: \(message)"
-        case let .Forbidden(resource, action):
-            return "Not allowed: \(resource)/\(action)"
-        case let .Internal(message):
-            return "Something went wrong: \(message)"
+        case let .Unauthenticated(message): return message
+        case let .Validation(_, message): return message
+        case let .Server(_, _, message): return message
+        case let .Transient(message): return "Network problem: \(message)"
+        case let .Forbidden(resource, action): return "Not allowed: \(resource)/\(action)"
+        case let .Internal(message): return "Something went wrong: \(message)"
         }
     }
 
     private static let branchKey = "sufrix.branch_id"
+    private static let branchNameKey = "sufrix.branch_name"
 
     /// App-private SQLite path under Application Support.
     private static func databasePath() -> String {
@@ -129,5 +143,17 @@ final class AppModel: ObservableObject {
                                appropriateFor: nil, create: true))
             ?? fm.temporaryDirectory
         return dir.appendingPathComponent("sufrix.sqlite").path
+    }
+
+    /// Register the bundled Cairo faces so `Font.custom("Cairo-…")` resolves
+    /// (the run-on-mac bundle ships them in Resources; the iOS app can also use
+    /// Info.plist UIAppFonts). Best-effort — falls back to the system font.
+    private static func registerFonts() {
+        let faces = ["Cairo-Regular", "Cairo-Medium", "Cairo-SemiBold", "Cairo-Bold", "Cairo-ExtraBold"]
+        for face in faces {
+            if let url = Bundle.main.url(forResource: face, withExtension: "ttf") {
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        }
     }
 }

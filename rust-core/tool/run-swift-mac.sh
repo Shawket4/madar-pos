@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Builds + launches the SwiftUI host as a native macOS .app — no Xcode, no
+# simulator. Compiles SufrixUI against the generated binding + libsufrix_core,
+# bundles the Cairo fonts and brand assets, and `open`s the app so you can click
+# through the real login on your Mac.
+#
+#   ./tool/run-swift-mac.sh
+set -euo pipefail
+
+CORE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$CORE_DIR"
+
+# 1/4 — cdylib + bindings.
+echo "── Building core + bindings…"
+[[ -f bindings/swift/SufrixCoreFFI.swift ]] || ./tool/build-bindings.sh >/dev/null
+cargo build -q -p sufrix-core
+
+SW="$CORE_DIR/bindings/swift"
+DEBUG="$CORE_DIR/target/debug"
+RES_SRC="$CORE_DIR/../swift-app/Resources"
+
+# 2/4 — assemble the .app skeleton.
+APP="$CORE_DIR/target/SufrixPOS.app"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+
+cat > "$APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Sufrix POS</string>
+  <key>CFBundleDisplayName</key><string>Sufrix POS</string>
+  <key>CFBundleExecutable</key><string>SufrixPOS</string>
+  <key>CFBundleIdentifier</key><string>app.sufrix.pos.mac</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+</dict>
+</plist>
+PLIST
+
+# Bundled Cairo faces + brand assets (the app registers the fonts at launch).
+cp "$RES_SRC"/Fonts/Cairo-*.ttf "$APP/Contents/Resources/" 2>/dev/null || true
+cp "$RES_SRC"/Icon.png "$RES_SRC"/Logo.png "$APP/Contents/Resources/" 2>/dev/null || true
+cp "$DEBUG/libsufrix_core.dylib" "$APP/Contents/Frameworks/"
+
+# 3/4 — compile the SwiftUI app (the @main lives in SufrixApp.swift).
+INC="$(mktemp -d)"
+cp "$SW/SufrixCoreFFIFFI.h" "$INC/"
+cp "$SW/SufrixCoreFFIFFI.modulemap" "$INC/module.modulemap"
+UI_SOURCES=$(find "$CORE_DIR/../swift-app/Sources/SufrixUI" -name '*.swift')
+
+echo "── Compiling SwiftUI app…"
+swiftc -O \
+  -I "$INC" \
+  -L "$DEBUG" -lsufrix_core \
+  -Xlinker -rpath -Xlinker "@executable_path/../Frameworks" \
+  "$SW/SufrixCoreFFI.swift" \
+  $UI_SOURCES \
+  -o "$APP/Contents/MacOS/SufrixPOS"
+
+# 4/4 — launch.
+echo "── Launching $APP"
+open "$APP"
+echo "✓ Sufrix POS is running. (Quit with ⌘Q.)"

@@ -27,6 +27,7 @@ fun main() = application {
 internal class FileVault(dir: File) : HostVault {
     private val blobFile = File(dir, "session.blob")
     private val branchFile = File(dir, "branch.txt")
+    private val branchNameFile = File(dir, "branch_name.txt")
 
     override fun saveBlob(blob: ByteArray) { blobFile.writeBytes(blob) }
     override fun clearBlob() { blobFile.delete() }
@@ -35,4 +36,7 @@ internal class FileVault(dir: File) : HostVault {
     override var branchId: String
         get() = if (branchFile.exists()) branchFile.readText() else ""
         set(value) { branchFile.writeText(value) }
+    override var branchName: String
+        get() = if (branchNameFile.exists()) branchNameFile.readText() else ""
+        set(value) { branchNameFile.writeText(value) }
 }
