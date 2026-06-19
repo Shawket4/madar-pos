@@ -1,31 +1,39 @@
 package app.sufrix
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Divider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.sufrix.ui.BtnVariant
+import app.sufrix.ui.ChipTone
+import app.sufrix.ui.Space
+import app.sufrix.ui.StatusChip
+import app.sufrix.ui.SufrixButton
+import app.sufrix.ui.SufrixMark
+import app.sufrix.ui.SufrixTheme
+import app.sufrix.ui.sufrixColors
 
 // Shared Compose host (Android + desktop). Thin: it renders what the core hands
 // it and routes Login ↔ signed-in home at deliberate boundaries only — never on
 // connectivity (PLAN §R11). All logic stays in rust-core.
 @Composable
 fun App(model: AppModel) {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
+    SufrixTheme {
+        Box(Modifier.fillMaxSize().background(sufrixColors().bg)) {
             if (model.isSignedIn) HomeScreen(model) else LoginScreen(model)
         }
     }
@@ -38,36 +46,37 @@ fun App(core: app.sufrix.core.SufrixCore, vault: HostVault) {
     App(model)
 }
 
-// Signed-in placeholder home. Proves the full auth round-trip from Compose:
-// reads the cached session the core handed back and offers sign-out. Phase 6
-// replaces this with the real Shift → Order → Cart → Payment screens (PLAN §6).
+// Signed-in placeholder home. Proves the full auth round-trip from Compose;
+// Phase 6 replaces it with the real Shift → Order → Cart → Payment screens.
 @Composable
 private fun HomeScreen(model: AppModel) {
+    val c = sufrixColors()
     Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
+        modifier = Modifier.fillMaxSize().padding(32.dp).widthIn(max = 360.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Signed in", style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(12.dp))
+        SufrixMark(size = 56.dp)
+        Spacer(Modifier.height(Space.lg))
+        Text("Signed in", color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 24.sp)
+        Spacer(Modifier.height(Space.md))
         model.session?.let { s ->
+            StatusChip(if (s.online) "Online" else "Offline", if (s.online) ChipTone.SUCCESS else ChipTone.WARNING)
+            Spacer(Modifier.height(Space.md))
             StatRow("teller", s.displayName)
             StatRow("role", s.role)
-            StatRow("session", if (s.online) "online" else "offline")
             StatRow("currency", s.currencyCode)
         }
-        Divider(Modifier.padding(vertical = 12.dp))
-        StatRow("core version", model.core.version())
-        StatRow("environment", model.core.environment())
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { model.signOut() }) { Text("Sign out") }
+        Spacer(Modifier.height(Space.lg))
+        SufrixButton("Sign out", { model.signOut() }, variant = BtnVariant.DANGER, fullWidth = false)
     }
 }
 
 @Composable
-internal fun StatRow(label: String, value: String) {
+private fun StatRow(label: String, value: String) {
+    val c = sufrixColors()
     Row(Modifier.padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
-        Text(value, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
+        Text(label, color = c.textSecondary, fontSize = 13.sp)
+        Text(value, color = c.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
     }
 }

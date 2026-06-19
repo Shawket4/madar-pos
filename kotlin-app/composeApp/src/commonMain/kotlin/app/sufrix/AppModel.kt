@@ -35,6 +35,9 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         private set
     var error by mutableStateOf<String?>(null)
     var branchId by mutableStateOf(vault.branchId)
+        private set
+    var reconfiguring by mutableStateOf(false)
+        private set
 
     init {
         core.setTokenStore(vault)
@@ -43,15 +46,44 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     }
 
     val isSignedIn: Boolean get() = session != null
+    /** Till bound to a branch → teller PIN login; until then, manager device-setup. */
+    val isBranchConfigured: Boolean get() = branchId.isNotBlank()
 
+    fun setBranchDraft(value: String) { branchId = value }
+
+    /** Teller sign-in (name + PIN). The core decides online vs offline. */
     suspend fun signInTeller(name: String, pin: String) = run {
         vault.branchId = branchId
         core.signIn(LoginRequest(LoginMode.PIN, name, pin, branchId, null, null, null))
     }
 
-    suspend fun signInManager(email: String, password: String) = run {
-        core.signIn(LoginRequest(LoginMode.EMAIL, null, null, null, email, password, null))
+    /**
+     * Device setup: a manager authenticates (online) to authorize binding this
+     * till to [branch]; we then persist the branch and drop the manager session
+     * (the POS is teller-only), leaving the cached org bundle warm for offline
+     * teller unlock. Mirrors Flutter's device-setup gate.
+     */
+    suspend fun configureDevice(email: String, password: String, branch: String) {
+        isBusy = true
+        error = null
+        try {
+            core.login(LoginRequest(LoginMode.EMAIL, null, null, null, email, password, null))
+            branchId = branch.trim()
+            vault.branchId = branchId
+            runCatching { core.logout(false) }
+            session = null
+            reconfiguring = false
+        } catch (e: CoreException) {
+            error = humanMessage(e)
+        } catch (e: Exception) {
+            error = e.message ?: "Unexpected error"
+        } finally {
+            isBusy = false
+        }
     }
+
+    fun beginReconfigure() { reconfiguring = true; error = null }
+    fun cancelReconfigure() { reconfiguring = false; error = null }
 
     fun signOut() {
         runCatching { core.logout(false) }
