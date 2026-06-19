@@ -26,10 +26,12 @@ struct RootView: View {
     @ObservedObject var app: AppModel
 
     var body: some View {
-        if app.isSignedIn {
-            ContentView(app: app)
-        } else {
-            LoginView(app: app)
+        ThemedRoot {
+            if app.isSignedIn {
+                ContentView(app: app)
+            } else {
+                LoginView(app: app)
+            }
         }
     }
 }

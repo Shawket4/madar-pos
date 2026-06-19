@@ -16,8 +16,9 @@ cp "$SW/SufrixCoreFFIFFI.h" "$INC/"
 cp "$SW/SufrixCoreFFIFFI.modulemap" "$INC/module.modulemap"
 
 echo "── Type-checking SufrixUI against the binding…"
+UI_SOURCES=$(find ../swift-app/Sources/SufrixUI -name '*.swift')
 swiftc -typecheck -parse-as-library -I "$INC" \
   "$SW/SufrixCoreFFI.swift" \
-  ../swift-app/Sources/SufrixUI/*.swift
+  $UI_SOURCES
 
 echo "✓ SwiftUI host type-checks against the current FFI surface"

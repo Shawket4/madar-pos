@@ -6,37 +6,42 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.tint)
-            Text("Signed in").font(.largeTitle.bold())
+        ZStack {
+            theme.colors.bg.ignoresSafeArea()
+            VStack(spacing: Space.lg) {
+                SufrixMark(size: 56)
+                Text("Signed in").font(.ui(24, .heavy)).foregroundStyle(theme.colors.textPrimary)
 
-            if let s = app.session {
-                row("teller", s.displayName)
-                row("role", s.role)
-                row("session", s.online ? "online" : "offline")
-                row("currency", s.currencyCode)
+                if let s = app.session {
+                    StatusChip(
+                        label: s.online ? "Online" : "Offline",
+                        icon: s.online ? "wifi" : "wifi.slash",
+                        tone: s.online ? .success : .warning
+                    )
+                    VStack(spacing: Space.sm) {
+                        row("teller", s.displayName)
+                        row("role", s.role)
+                        row("currency", s.currencyCode)
+                    }
+                    .padding(.top, Space.sm)
+                }
+
+                SufrixButton(label: "Sign out", variant: .danger, fullWidth: false) { app.signOut() }
+                    .padding(.top, Space.sm)
             }
-            Divider().padding(.vertical, 8)
-            row("core version", app.core.version())
-            row("environment", app.core.environment())
-
-            Button("Sign out", role: .destructive) { app.signOut() }
-                .buttonStyle(.bordered)
-                .padding(.top, 8)
+            .padding(Space.xxl)
+            .frame(maxWidth: 360)
         }
-        .padding(32)
     }
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).foregroundStyle(.secondary)
+            Text(label).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
             Spacer()
-            Text(value).monospaced()
+            Text(value).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
         }
-        .font(.footnote)
     }
 }

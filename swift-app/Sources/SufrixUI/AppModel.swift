@@ -37,10 +37,17 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Forces the device-setup (manager) view even on a configured device.
+    @Published private(set) var reconfiguring = false
+
     var isSignedIn: Bool { session != nil }
+    /// The till is bound to a branch → show the teller PIN login. Until then,
+    /// only a manager can sign in (to configure the device). Mirrors Flutter.
+    var isBranchConfigured: Bool { !branchId.trimmingCharacters(in: .whitespaces).isEmpty }
 
     // ── intents ─────────────────────────────────────────────────────────────
 
+    /// Teller sign-in (name + PIN). The core decides online vs offline.
     func signInTeller(name: String, pin: String) async {
         await run {
             try await self.core.signIn(req: LoginRequest(
@@ -49,13 +56,29 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func signInManager(email: String, password: String) async {
-        await run {
-            try await self.core.signIn(req: LoginRequest(
+    /// Device setup: a manager authenticates (online) to authorize binding this
+    /// till to `branch`. On success we persist the branch and drop the manager
+    /// session — the POS is teller-only — leaving the cached org bundle warm so
+    /// tellers can unlock offline. Mirrors Flutter's device-setup gate.
+    func configureDevice(email: String, password: String, branch: String) async {
+        isBusy = true
+        errorMessage = nil
+        defer { isBusy = false }
+        do {
+            _ = try await core.login(req: LoginRequest(
                 mode: .email, name: nil, pin: nil, branchId: nil,
                 email: email, password: password, orgId: nil))
+            branchId = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+            try? core.logout(wipeOutbox: false)
+            session = nil
+            reconfiguring = false
+        } catch {
+            errorMessage = Self.humanMessage(error)
         }
     }
+
+    func beginReconfigure() { reconfiguring = true; errorMessage = nil }
+    func cancelReconfigure() { reconfiguring = false; errorMessage = nil }
 
     func signOut() {
         try? core.logout(wipeOutbox: false)
