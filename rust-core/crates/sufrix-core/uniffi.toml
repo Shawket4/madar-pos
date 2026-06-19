@@ -1,0 +1,8 @@
+# UniFFI binding generation config (used by the uniffi-bindgen bin).
+[bindings.swift]
+module_name = "SufrixCoreFFI"
+# Generates a single .swift + a modulemap; the xcframework wraps the staticlib.
+
+[bindings.kotlin]
+package_name = "app.sufrix.core"
+# JNA-based; the same bindings load on Android and on desktop (Compose JVM).

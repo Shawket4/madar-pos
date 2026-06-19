@@ -1,0 +1,34 @@
+[package]
+name = "sufrix-core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Three crate types from one build:
+#   lib       — for Rust consumers (tests, the uniffi-bindgen bin).
+#   staticlib — for the iOS .xcframework.
+#   cdylib    — for the Android/desktop JNA-loaded native lib (.so/.dylib/.dll).
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "sufrix_core"
+
+[dependencies]
+# Proc-macro UniFFI (no .udl). "cli" gates uniffi_bindgen_main for the bin below.
+uniffi = { version = "0.28", features = ["cli"] }
+
+# Local store — embedded SQLite, the source of truth the UI reads from, online
+# or offline. `bundled` vendors SQLite so there's no system dependency.
+rusqlite = { version = "0.31", features = ["bundled"] }
+# DTO/payload (de)serialization + ids + timestamps + the FFI error model.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+
+# The standalone uniffi-bindgen used to emit Swift/Kotlin bindings in library
+# mode (`uniffi-bindgen generate --library <dylib> --language swift`).
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"

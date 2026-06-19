@@ -1,0 +1,2506 @@
+[
+  {
+    "domain": "identity & multi-tenant (auth, users, permissions, orgs, branches)",
+    "posCriticality": "critical",
+    "operations": [
+      {
+        "method": "POST",
+        "path": "/auth/login",
+        "opId": "login",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Dual-mode PIN/email login; needs network"
+      },
+      {
+        "method": "GET",
+        "path": "/auth/me",
+        "opId": "me",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Current user, tax_rate, currency"
+      },
+      {
+        "method": "GET",
+        "path": "/auth/permissions",
+        "opId": "get_my_permissions",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "My effective permission list"
+      },
+      {
+        "method": "POST",
+        "path": "/auth/resolve-branch",
+        "opId": "resolve_branch",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "GPS geofence branch lookup; online"
+      },
+      {
+        "method": "GET",
+        "path": "/branches",
+        "opId": "list_branches",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List branches for org"
+      },
+      {
+        "method": "POST",
+        "path": "/branches",
+        "opId": "create_branch",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin creates branch"
+      },
+      {
+        "method": "GET",
+        "path": "/branches/{id}",
+        "opId": "get_branch",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Get one branch incl printer config"
+      },
+      {
+        "method": "PUT",
+        "path": "/branches/{id}",
+        "opId": "update_branch",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin edits branch settings"
+      },
+      {
+        "method": "DELETE",
+        "path": "/branches/{id}",
+        "opId": "delete_branch",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin deletes branch"
+      },
+      {
+        "method": "GET",
+        "path": "/orgs",
+        "opId": "list_orgs",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Super-admin lists all orgs"
+      },
+      {
+        "method": "POST",
+        "path": "/orgs",
+        "opId": "create_org",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Super-admin creates org (multipart)"
+      },
+      {
+        "method": "GET",
+        "path": "/orgs/{id}",
+        "opId": "get_org",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Org settings, tax_rate, currency"
+      },
+      {
+        "method": "DELETE",
+        "path": "/orgs/{id}",
+        "opId": "delete_org",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Super-admin deletes org"
+      },
+      {
+        "method": "PATCH",
+        "path": "/orgs/{id}",
+        "opId": "update_org",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin edits org settings"
+      },
+      {
+        "method": "PUT",
+        "path": "/orgs/{id}/logo",
+        "opId": "upload_org_logo",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Upload org logo image"
+      },
+      {
+        "method": "GET",
+        "path": "/orgs/{id}/onboarding",
+        "opId": "get_onboarding",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Dashboard setup wizard status"
+      },
+      {
+        "method": "POST",
+        "path": "/orgs/{id}/onboarding/complete",
+        "opId": "complete_onboarding",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Mark onboarding complete"
+      },
+      {
+        "method": "GET",
+        "path": "/permissions/matrix/{user_id}",
+        "opId": "get_permission_matrix",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin permission matrix view"
+      },
+      {
+        "method": "GET",
+        "path": "/permissions/roles",
+        "opId": "get_role_permissions",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Role default permissions"
+      },
+      {
+        "method": "PUT",
+        "path": "/permissions/roles",
+        "opId": "upsert_role_permission",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin edits role permission"
+      },
+      {
+        "method": "GET",
+        "path": "/permissions/user/{user_id}",
+        "opId": "get_user_permissions",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "User permission overrides"
+      },
+      {
+        "method": "PUT",
+        "path": "/permissions/user/{user_id}",
+        "opId": "upsert_user_permission",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin sets user permission override"
+      },
+      {
+        "method": "DELETE",
+        "path": "/permissions/user/{user_id}/{resource}/{action}",
+        "opId": "delete_user_permission",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin clears user permission override"
+      },
+      {
+        "method": "GET",
+        "path": "/public/orgs",
+        "opId": "list_public_orgs",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Public org directory; unauthenticated"
+      },
+      {
+        "method": "GET",
+        "path": "/timezones",
+        "opId": "list_timezones",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "IANA timezone list; static seed"
+      },
+      {
+        "method": "GET",
+        "path": "/users",
+        "opId": "list_users",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin lists org users"
+      },
+      {
+        "method": "POST",
+        "path": "/users",
+        "opId": "create_user",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin creates user/teller"
+      },
+      {
+        "method": "GET",
+        "path": "/users/{id}",
+        "opId": "get_user",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin gets one user"
+      },
+      {
+        "method": "DELETE",
+        "path": "/users/{id}",
+        "opId": "delete_user",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin deletes user"
+      },
+      {
+        "method": "PATCH",
+        "path": "/users/{id}",
+        "opId": "update_user",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin edits user/pin/role"
+      },
+      {
+        "method": "GET",
+        "path": "/users/{id}/branches",
+        "opId": "list_user_branches",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Branches assigned to user"
+      },
+      {
+        "method": "POST",
+        "path": "/users/{id}/branches",
+        "opId": "assign_branch",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin assigns user to branch"
+      },
+      {
+        "method": "DELETE",
+        "path": "/users/{id}/branches/{branch_id}",
+        "opId": "unassign_branch",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin unassigns user from branch"
+      }
+    ],
+    "keySchemas": [
+      {
+        "name": "LoginRequest",
+        "quirks": "All fields nullable (dual PIN/email mode); pin pattern ^[0-9]{4,6}$. Generator emits everything Option<T>; client must enforce mode invariants manually."
+      },
+      {
+        "name": "LoginResponse / MeResponse",
+        "quirks": "tax_rate is a JSON number (double), NOT a BigDecimal string here despite being BigDecimal in DB. currency_code/tax_rate required. Cache MeResponse for offline session restore."
+      },
+      {
+        "name": "UserPublic",
+        "quirks": "org_id, branch_id, email, phone all nullable. role is UserRole enum with no unknown-default \u2014 a new server role breaks deserialization; wrap with serde other/default."
+      },
+      {
+        "name": "UserRole",
+        "quirks": "String enum (super_admin/org_admin/branch_manager/teller), no unknown variant. PrinterBrand (star/epson) and Action enums share this no-default risk."
+      },
+      {
+        "name": "Branch",
+        "quirks": "latitude/longitude/printer_* all nullable; printer_brand uses oneOf[null, PrinterBrand] wrapper (generator may produce awkward Option). timezone always present (resolved server-side)."
+      },
+      {
+        "name": "UpdateBranchRequest / UpdateUserRequest / UpdateOrgRequest",
+        "quirks": "PATCH-style: every field optional+nullable. OpenAPI cannot express absent-vs-null; null on printer_* means CLEAR. Naive generated client sends nulls and wipes columns \u2014 must serialize skip-if-none."
+      },
+      {
+        "name": "Org",
+        "quirks": "tax_rate documented as BigDecimal internally but transmitted as JSON number; logo_url/receipt_footer nullable. CreateOrgMultipart is multipart/form-data with binary logo \u2014 generated client often mishandles multipart."
+      },
+      {
+        "name": "Permission / RolePermission / UserPermissionItem / PermissionMatrix",
+        "quirks": "resource and action are free-form strings (no enum) \u2014 cache as opaque strings. PermissionMatrix.role_default/user_override nullable booleans (tri-state); effective is the resolved value to gate UI."
+      }
+    ],
+    "notes": "Domain is identity/multi-tenant: almost entirely back-office. Only the auth handshake plus identity reads are on the teller path. STRATEGY: (1) auth/login and resolve-branch are online-only \u2014 a teller cannot start a brand-new session offline (login validates PIN server-side, geofence needs GPS+network); cache the JWT/session locally so an already-logged-in teller survives days offline without re-hitting login. (2) me, permissions, the user's own branch, get_org, and timezones are read-cache: mirror them at login into SQLite so the POS can render identity, tax_rate, currency, printer config, and permission gating fully offline; refresh on reconnect via delta sync. (3) Everything user/permission/org admin and branch CRUD is online-only \u2014 not the selling hot-path. NO outbox-mutation operations exist in this domain: there is no write a teller performs during normal selling here (orders/payments/shift live in other tags). needsIdempotency=true set on non-idempotent admin POSTs (create_org/user/branch, assign_branch, complete_onboarding) so retries after a flaky reconnect don't duplicate \u2014 even though they run online-only. SCHEMA-QUIRK SUMMARY for the Rust generator: the classic BigDecimal-as-JSON-string quirk does NOT appear in this domain \u2014 tax_rate is a real JSON number (double); the string-decimal trap lives in inventory/pricing schemas, not here. The quirks that WILL bite: (a) PATCH update requests where absent-vs-null is collapsed \u2014 generated clients must skip_serializing_if None or they will null out printer_ip/role/logo; (b) oneOf[{null}, $ref] enum wrappers (printer_brand, role on UpdateUserRequest) that produce clumsy nested Option; (c) enums with no unknown/default variant (UserRole, PrinterBrand) that panic on a future server value \u2014 add serde(other); (d) pervasive nullable scalars (org_id/branch_id/email/phone/lat/long) all Option<T>; (e) permission resource/action are untyped strings, intentionally open-ended. Also note CreateOrgMultipart and upload_org_logo are multipart/form-data with binary fields, which the openapi-generator frequently emits incorrectly \u2014 verify those by hand."
+  },
+  {
+    "domain": "menu/catalog & pricing (menu, categories, addon-items, bundles, discounts, payment_methods, branch overrides)",
+    "posCriticality": "critical",
+    "operations": [
+      {
+        "method": "GET",
+        "path": "/menu-items",
+        "opId": "list_menu_items",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List menu items for selling"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-items/{id}",
+        "opId": "get_menu_item",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Get one menu item full"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-items",
+        "opId": "create_menu_item",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create menu item"
+      },
+      {
+        "method": "PATCH",
+        "path": "/menu-items/{id}",
+        "opId": "update_menu_item",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit menu item"
+      },
+      {
+        "method": "DELETE",
+        "path": "/menu-items/{id}",
+        "opId": "delete_menu_item",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete menu item"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-items/{id}/sizes",
+        "opId": "upsert_size",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: upsert item size"
+      },
+      {
+        "method": "DELETE",
+        "path": "/menu-items/{id}/sizes/{sid}",
+        "opId": "delete_size",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete item size"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-items/{id}/addon-slots",
+        "opId": "list_addon_slots",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List addon slots for item"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-items/{id}/addon-slots",
+        "opId": "create_addon_slot",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create addon slot"
+      },
+      {
+        "method": "PATCH",
+        "path": "/menu-items/{id}/addon-slots/{slot_id}",
+        "opId": "update_addon_slot",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit addon slot"
+      },
+      {
+        "method": "DELETE",
+        "path": "/menu-items/{id}/addon-slots/{slot_id}",
+        "opId": "delete_addon_slot",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete addon slot"
+      },
+      {
+        "method": "PUT",
+        "path": "/menu-items/{id}/allowed-addons",
+        "opId": "put_allowed_addons",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: set allowed addons"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-items/{id}/optionals",
+        "opId": "list_optional_fields",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List item optional fields"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-items/{id}/optionals",
+        "opId": "create_optional_field",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create optional field"
+      },
+      {
+        "method": "PATCH",
+        "path": "/menu-items/{id}/optionals/{field_id}",
+        "opId": "update_optional_field",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit optional field"
+      },
+      {
+        "method": "DELETE",
+        "path": "/menu-items/{id}/optionals/{field_id}",
+        "opId": "delete_optional_field",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete optional field"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-items/{id}/overrides",
+        "opId": "list_addon_overrides",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List per-item addon overrides"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-items/{id}/overrides",
+        "opId": "upsert_addon_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: upsert addon override"
+      },
+      {
+        "method": "DELETE",
+        "path": "/menu-items/{id}/overrides/{override_id}",
+        "opId": "delete_addon_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete addon override"
+      },
+      {
+        "method": "GET",
+        "path": "/categories",
+        "opId": "list_categories",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List categories for selling grid"
+      },
+      {
+        "method": "POST",
+        "path": "/categories",
+        "opId": "create_category",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create category"
+      },
+      {
+        "method": "PATCH",
+        "path": "/categories/{id}",
+        "opId": "update_category",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit category"
+      },
+      {
+        "method": "DELETE",
+        "path": "/categories/{id}",
+        "opId": "delete_category",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete category"
+      },
+      {
+        "method": "GET",
+        "path": "/addon-items",
+        "opId": "list_addon_items",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List addon items"
+      },
+      {
+        "method": "GET",
+        "path": "/addon-items/catalog",
+        "opId": "list_addon_catalog",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Addon catalog for pickers"
+      },
+      {
+        "method": "POST",
+        "path": "/addon-items",
+        "opId": "create_addon_item",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create addon item"
+      },
+      {
+        "method": "PATCH",
+        "path": "/addon-items/{id}",
+        "opId": "update_addon_item",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit addon item"
+      },
+      {
+        "method": "DELETE",
+        "path": "/addon-items/{id}",
+        "opId": "delete_addon_item",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete addon item"
+      },
+      {
+        "method": "GET",
+        "path": "/branch-menu-overrides",
+        "opId": "list_branch_menu_overrides",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Branch menu availability/price overrides"
+      },
+      {
+        "method": "PUT",
+        "path": "/branch-menu-overrides",
+        "opId": "upsert_branch_menu_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: upsert branch menu override"
+      },
+      {
+        "method": "DELETE",
+        "path": "/branch-menu-overrides",
+        "opId": "delete_branch_menu_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete branch menu override"
+      },
+      {
+        "method": "GET",
+        "path": "/branch-addon-overrides",
+        "opId": "list_branch_addon_overrides",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Branch addon availability/price overrides"
+      },
+      {
+        "method": "PUT",
+        "path": "/branch-addon-overrides",
+        "opId": "upsert_branch_addon_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: upsert branch addon override"
+      },
+      {
+        "method": "DELETE",
+        "path": "/branch-addon-overrides",
+        "opId": "delete_branch_addon_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete branch addon override"
+      },
+      {
+        "method": "GET",
+        "path": "/bundles",
+        "opId": "list_bundles",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List bundles (admin paginated)"
+      },
+      {
+        "method": "GET",
+        "path": "/bundles/available",
+        "opId": "available_bundles",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Currently sellable bundles"
+      },
+      {
+        "method": "GET",
+        "path": "/bundles/{id}",
+        "opId": "get_bundle",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Get one bundle with components"
+      },
+      {
+        "method": "POST",
+        "path": "/bundles",
+        "opId": "create_bundle",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create bundle"
+      },
+      {
+        "method": "PATCH",
+        "path": "/bundles/{id}",
+        "opId": "update_bundle",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit bundle"
+      },
+      {
+        "method": "DELETE",
+        "path": "/bundles/{id}",
+        "opId": "delete_bundle",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete bundle"
+      },
+      {
+        "method": "POST",
+        "path": "/bundles/{id}/activate",
+        "opId": "activate_bundle",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: activate bundle"
+      },
+      {
+        "method": "POST",
+        "path": "/bundles/{id}/archive",
+        "opId": "archive_bundle",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: archive bundle"
+      },
+      {
+        "method": "GET",
+        "path": "/bundles/{id}/performance",
+        "opId": "bundle_performance",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Report: bundle performance"
+      },
+      {
+        "method": "GET",
+        "path": "/discounts",
+        "opId": "list_discounts",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List discounts for selling"
+      },
+      {
+        "method": "POST",
+        "path": "/discounts",
+        "opId": "create_discount",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create discount"
+      },
+      {
+        "method": "PATCH",
+        "path": "/discounts/{id}",
+        "opId": "update_discount",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit discount"
+      },
+      {
+        "method": "DELETE",
+        "path": "/discounts/{id}",
+        "opId": "delete_discount",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: delete discount"
+      },
+      {
+        "method": "GET",
+        "path": "/payment-methods",
+        "opId": "list_payment_methods",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List payment methods for tender"
+      },
+      {
+        "method": "POST",
+        "path": "/payment-methods",
+        "opId": "create_payment_method",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Admin: create payment method"
+      },
+      {
+        "method": "PUT",
+        "path": "/payment-methods/{id}",
+        "opId": "update_payment_method",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: edit payment method"
+      },
+      {
+        "method": "POST",
+        "path": "/payment-methods/{id}/activate",
+        "opId": "activate_payment_method",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: activate payment method"
+      },
+      {
+        "method": "POST",
+        "path": "/payment-methods/{id}/deactivate",
+        "opId": "deactivate_payment_method",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Admin: deactivate payment method"
+      },
+      {
+        "method": "GET",
+        "path": "/costing/catalog",
+        "opId": "list_menu_catalog",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Costing report: large/rare"
+      }
+    ],
+    "keySchemas": [
+      {
+        "name": "MenuItem / MenuItemFull",
+        "quirks": "base_price is integer int32 minor-units (NOT BigDecimal string). MenuItemFull is allOf[MenuItem + inline] \u2014 generators flatten poorly. name/description_translations are untyped object \u2192 opaque map/Value. Many ['string','null'] fields (category_id, image_url, deleted_at)."
+      },
+      {
+        "name": "ItemSize / UpsertSizeRequest / BranchSizeOverride",
+        "quirks": "price_override is integer int32 minor-units. Size identity is by label string in branch/override contexts \u2014 no uuid, easy to mis-key locally."
+      },
+      {
+        "name": "Discount / CreateDiscountRequest",
+        "quirks": "dtype is plain string with NO enum constraint (percent/fixed open-ended) \u2014 model as String, do not assume variants. value is integer int32 (cents OR basis-points depending on dtype \u2014 ambiguous, verify). name_translations untyped object."
+      },
+      {
+        "name": "AddonItem / AddonCost / AddonIngredient",
+        "quirks": "default_price/price integer (int32 on item, int64 on cost rows \u2014 mixed widths). addon_type plain string, no enum. cost is ['integer','null'] int64. quantity_used is number/double (recipe), not a string \u2014 but watch f64 precision. primary_ingredient_id nullable uuid."
+      },
+      {
+        "name": "Bundle / BundleWithComponents / BundleStatus",
+        "quirks": "status enum [draft,active,archived] has NO default \u2014 unknown variant will fail deserialization; add serde unknown-default. price integer int32. available_from/until_time are ['string','null'] with no time format (won't map to chrono NaiveTime). available_*_date use fmt=date. description_translations schema is {} (any-JSON). BundleWithComponents is allOf composition."
+      },
+      {
+        "name": "BranchMenuOverride / BranchAddonOverride",
+        "quirks": "PUT/DELETE keyed by branch_id+item/addon_id in BODY (no path id) \u2014 non-RESTful, careful with client method shape. price_override ['integer','null'] int32. is_available boolean drives availability \u2014 must merge over base menu in local mirror."
+      },
+      {
+        "name": "OrgPaymentMethod",
+        "quirks": "label_translations untyped/None schema (any-JSON). is_cash + is_active booleans gate tender UI. color/icon required strings. Safe to mirror read-only for offline tender."
+      },
+      {
+        "name": "Category",
+        "quirks": "name_translations untyped object; image_url & deleted_at nullable; soft-delete via deleted_at means cache must filter, not just upsert."
+      }
+    ],
+    "notes": "Spec is OpenAPI 3.1.0 (utoipa). IMPORTANT correction to the brief's assumption: in THIS domain money is NOT serialized as BigDecimal JSON strings \u2014 all prices/costs are integer minor-units (int32 on catalog rows, int64 on costing rows). The string-decimal quirk (quantity_used/current_stock/reorder_threshold) lives in the inventory/stock domain, NOT here; the only float here is recipe quantity_used as number/double. Generator pitfalls that WILL bite the Rust client: (1) enums BundleStatus and implicit dtype/addon_type \u2014 BundleStatus is a closed enum with no default (add #[serde(other)] fallback); dtype/addon_type are open plain strings (do not generate enums). (2) Heavy ['T','null'] nullability under 3.1 \u2014 ensure Option<T> generation, not skipped fields. (3) allOf composition (MenuItemFull, MenuItemWithCosts, BundleWithComponents) flattens unevenly. (4) *_translations are untyped object / empty schema \u2192 map to serde_json::Value or HashMap<String,String>. (5) available_from/until_time are bare strings (no format) \u2014 keep as String, don't expect NaiveTime. Offline strategy: this is the read hot-path \u2014 every GET (menu, categories, addons, bundles/available, discounts, payment-methods, branch overrides) must mirror to SQLite and refresh via delta sync. NO outbox-mutation in this domain: all writes are back-office catalog/pricing edits that are acceptably online-only (the selling outbox lives in orders/payments/shifts). Branch overrides must be layered over base catalog when building the local sellable menu. Reports (bundle_performance, costing/catalog) are online-only."
+  },
+  {
+    "domain": "orders & delivery (order capture / hot path)",
+    "posCriticality": "critical",
+    "operations": [
+      {
+        "method": "POST",
+        "path": "/orders",
+        "opId": "create_order",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Place sale; THE selling hot path"
+      },
+      {
+        "method": "GET",
+        "path": "/orders",
+        "opId": "list_orders",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List orders for shift screen"
+      },
+      {
+        "method": "GET",
+        "path": "/orders/{order_id}",
+        "opId": "get_order",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Order detail with items"
+      },
+      {
+        "method": "POST",
+        "path": "/orders/{order_id}/void",
+        "opId": "void_order",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Void order during selling"
+      },
+      {
+        "method": "POST",
+        "path": "/orders/preview-recipe",
+        "opId": "preview_recipe",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Ingredient preview; rare, not hot path"
+      },
+      {
+        "method": "GET",
+        "path": "/orders/export",
+        "opId": "export_orders",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Bulk export; back-office report"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery-orders",
+        "opId": "list_delivery_orders",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Live delivery ticket queue"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery-orders/{id}",
+        "opId": "get_delivery_order",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Delivery ticket detail"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery-orders/stream",
+        "opId": "stream_delivery_orders",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "SSE live feed; requires connectivity"
+      },
+      {
+        "method": "POST",
+        "path": "/delivery-orders/{id}/status",
+        "opId": "set_status",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Advance ticket step; fires WhatsApp"
+      },
+      {
+        "method": "POST",
+        "path": "/delivery-orders/{id}/prep-time",
+        "opId": "set_prep_time",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Set prep time on ticket"
+      },
+      {
+        "method": "POST",
+        "path": "/delivery-orders/{id}/finalize",
+        "opId": "finalize_delivery_order",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Convert ticket to paid order"
+      },
+      {
+        "method": "POST",
+        "path": "/delivery-orders/{id}/cancel",
+        "opId": "cancel_delivery_order",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Cancel delivery ticket"
+      },
+      {
+        "method": "POST",
+        "path": "/delivery/accepting",
+        "opId": "set_accepting",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Toggle branch accepting; realtime config"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery/settings",
+        "opId": "get_branch_settings",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Branch delivery settings"
+      },
+      {
+        "method": "PUT",
+        "path": "/delivery/settings",
+        "opId": "put_branch_settings",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Edit delivery settings; back-office"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery/zones",
+        "opId": "list_zones",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Delivery zones for fee lookup"
+      },
+      {
+        "method": "POST",
+        "path": "/delivery/zones",
+        "opId": "create_zone",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Create zone; back-office config"
+      },
+      {
+        "method": "PATCH",
+        "path": "/delivery/zones/{id}",
+        "opId": "update_zone",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Edit zone; back-office config"
+      },
+      {
+        "method": "DELETE",
+        "path": "/delivery/zones/{id}",
+        "opId": "delete_zone",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Delete zone; back-office config"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery/channel-overrides",
+        "opId": "list_channel_overrides",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Channel price overrides; admin read"
+      },
+      {
+        "method": "PUT",
+        "path": "/delivery/channel-overrides",
+        "opId": "upsert_channel_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Upsert channel override; admin"
+      },
+      {
+        "method": "DELETE",
+        "path": "/delivery/channel-overrides",
+        "opId": "delete_channel_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Delete channel override; admin"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery/channel-addon-overrides",
+        "opId": "list_channel_addon_overrides",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Channel addon overrides; admin read"
+      },
+      {
+        "method": "PUT",
+        "path": "/delivery/channel-addon-overrides",
+        "opId": "upsert_channel_addon_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Upsert addon override; admin"
+      },
+      {
+        "method": "DELETE",
+        "path": "/delivery/channel-addon-overrides",
+        "opId": "delete_channel_addon_override",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Delete addon override; admin"
+      },
+      {
+        "method": "POST",
+        "path": "/public/delivery-orders",
+        "opId": "create_delivery_order",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Customer-facing order; not teller"
+      },
+      {
+        "method": "GET",
+        "path": "/public/branches",
+        "opId": "public_branches",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Public branch list; customer app"
+      },
+      {
+        "method": "GET",
+        "path": "/public/branches/{id}/menu",
+        "opId": "public_menu",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Public menu; customer app"
+      },
+      {
+        "method": "GET",
+        "path": "/public/branches/{id}/delivery-quote",
+        "opId": "delivery_quote",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Fee/distance quote; customer app"
+      },
+      {
+        "method": "GET",
+        "path": "/public/delivery-orders/{id}/track",
+        "opId": "track_delivery_order",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Public order tracking; customer app"
+      },
+      {
+        "method": "GET",
+        "path": "/public/delivery-orders/history",
+        "opId": "guest_order_history",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Guest history; customer app"
+      },
+      {
+        "method": "GET",
+        "path": "/public/delivery-orders/past-locations",
+        "opId": "guest_past_locations",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Guest saved addresses; customer app"
+      },
+      {
+        "method": "POST",
+        "path": "/public/otp/request",
+        "opId": "otp_request",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Send OTP; customer app, requires net"
+      },
+      {
+        "method": "POST",
+        "path": "/public/otp/verify",
+        "opId": "otp_verify",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Verify OTP; issues device token"
+      },
+      {
+        "method": "GET",
+        "path": "/branches/{id}/qr",
+        "opId": "branch_qr",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Branch QR image; rare generation"
+      },
+      {
+        "method": "GET",
+        "path": "/branches/{id}/tables",
+        "opId": "list_tables",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Tables for dine-in QR"
+      },
+      {
+        "method": "POST",
+        "path": "/branches/{id}/tables",
+        "opId": "create_table",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Create table; admin config"
+      },
+      {
+        "method": "DELETE",
+        "path": "/branches/{id}/tables/{tid}",
+        "opId": "delete_table",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Delete table; admin config"
+      },
+      {
+        "method": "GET",
+        "path": "/branches/{id}/tables/{tid}/qr",
+        "opId": "table_qr",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Table QR image; rare generation"
+      },
+      {
+        "method": "GET",
+        "path": "/delivery-orders/{id}/qr",
+        "opId": "delivery_order_qr",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Delivery order QR image"
+      },
+      {
+        "method": "GET",
+        "path": "/orgs/{id}/qr",
+        "opId": "org_qr",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Org QR image; rare"
+      },
+      {
+        "method": "GET",
+        "path": "/qr/links",
+        "opId": "list_marketing_links",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Marketing links; admin read"
+      },
+      {
+        "method": "POST",
+        "path": "/qr/links",
+        "opId": "create_marketing_link",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Create marketing link; admin"
+      }
+    ],
+    "keySchemas": [
+      {
+        "name": "CreateOrderRequest",
+        "quirks": "Outbox payload. Money is int32 minor-units (subtotal/tax_amount/total/discount_amount/amount_tendered/change_given), NOT BigDecimal strings. Many nullable int32 fields. Accepts client-supplied created_at (date-time, nullable) \u2014 set it for offline replay. branch_id+shift_id+items required; no Idempotency-Key header server-side, client must add one."
+      },
+      {
+        "name": "OrderFull",
+        "quirks": "allOf(Order) + items + nullable delivery (oneOf null|OrderDeliveryInfo via utoipa oneOf-with-null pattern, trips many generators) + warnings[] (oversell flags). Reconcile server id/order_number against client temp-id after replay."
+      },
+      {
+        "name": "Order",
+        "quirks": "All money int32 minor-units. order_type/payment_method/status are free-form strings (no enum) \u2014 treat as unknown-default string, do not generate enums. Heavy nullable: void_*, tip_*, discount_id, delivery_* coords (double, nullable)."
+      },
+      {
+        "name": "OrderItemInput",
+        "quirks": "Selling line item. quantity int32, unit_price nullable int32 minor-units. Polymorphic-ish: bundle_id OR menu_item_id (both nullable). addons/optional_field_ids/bundle_components are untyped arrays (items schema omitted) \u2014 generator emits Vec<Value>/Vec<serde_json::Value>."
+      },
+      {
+        "name": "DeliveryOrderInput",
+        "quirks": "Customer-app (public) create, online-only. customer_lat/lng are double nullable. channel/payment_method_hint free-form strings (no enum). device_token required (from otp_verify). items are CartLineInput, not OrderItemInput."
+      },
+      {
+        "name": "StatusInput",
+        "quirks": "status is a free-form string documented as confirmed|preparing|ready|out_for_delivery but NOT an OpenAPI enum \u2014 must handle as unknown-default string. Side-effecting (stamps steps, may fire one WhatsApp) so replay must be idempotent."
+      },
+      {
+        "name": "VoidOrderRequest",
+        "quirks": "reason free-form string; note required only when reason=='other' (cross-field rule not in schema). restore_inventory nullable bool. voided_at nullable date-time \u2014 set client-side for offline."
+      },
+      {
+        "name": "DeliveryZone / QuoteResponse",
+        "quirks": "fee and max_road_distance_meters/distance_meters are int32 minor-units/meters (NOT BigDecimal strings). name_translations is an untyped object (generates HashMap<String,Value>). QuoteResponse.status free-form string ok|out_of_range|unavailable, no enum."
+      }
+    ],
+    "notes": "Money in this domain is int32 minor-units (piasters), NOT the BigDecimal-as-string quirk \u2014 that lives in inventory/recipe schemas (e.g. quantity_used/current_stock). The only float here: customer_lat/lng (double, nullable) and PreviewIngredient.quantity (double). Watch-outs for the Rust generator: (1) utoipa nullable pattern is type:[T,\"null\"] and OrderFull.delivery uses oneOf:[{type:null},{$ref}] \u2014 both need custom Option handling, many generators mis-emit. (2) status/order_type/payment_method/channel/reason are free-form strings documented with a value set but no enum \u2014 generate as String with unknown-default, never as Rust enums. (3) untyped arrays (addons, optional_field_ids, bundle_components) and untyped objects (name_translations) become serde_json::Value. Outbox set (replay in order, temp-id reconciliation): create_order, void_order, set_status, set_prep_time, finalize_delivery_order, cancel_delivery_order. No server-side Idempotency-Key header exists on any create endpoint \u2014 client owns the key. set_status/finalize have realtime side effects (WhatsApp, customer tracking) so offline replay can fire stale notifications; consider suppress-on-late-replay. All /public/* and /otp/* are the customer delivery web app, not the teller, hence online-only. Spec source: /Users/shawket/Desktop/SufrixRust/openapi.json"
+  },
+  {
+    "domain": "shifts, reports & costing (shift session & reporting)",
+    "posCriticality": "critical",
+    "operations": [
+      {
+        "method": "POST",
+        "path": "/shifts/branches/{branch_id}/open",
+        "opId": "open_shift",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Open shift; client sends id + opened_at"
+      },
+      {
+        "method": "POST",
+        "path": "/shifts/{shift_id}/close",
+        "opId": "close_shift",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Close shift with declared cash"
+      },
+      {
+        "method": "POST",
+        "path": "/shifts/{shift_id}/cash-movements",
+        "opId": "add_cash_movement",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "outbox-mutation",
+        "summary": "Record cash in/out movement"
+      },
+      {
+        "method": "POST",
+        "path": "/shifts/{shift_id}/force-close",
+        "opId": "force_close_shift",
+        "mutating": true,
+        "needsIdempotency": true,
+        "offlineMode": "online-only",
+        "summary": "Manager force-close; needs authority check"
+      },
+      {
+        "method": "DELETE",
+        "path": "/shifts/{shift_id}",
+        "opId": "delete_shift",
+        "mutating": true,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Back-office delete shift"
+      },
+      {
+        "method": "GET",
+        "path": "/shifts/branches/{branch_id}/current",
+        "opId": "get_current_shift",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Current open shift for branch"
+      },
+      {
+        "method": "GET",
+        "path": "/shifts/{shift_id}",
+        "opId": "get_shift",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Fetch one shift"
+      },
+      {
+        "method": "GET",
+        "path": "/shifts/branches/{branch_id}",
+        "opId": "list_shifts",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "List shifts for branch"
+      },
+      {
+        "method": "GET",
+        "path": "/shifts/{shift_id}/cash-movements",
+        "opId": "list_cash_movements",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Cash movements for a shift"
+      },
+      {
+        "method": "GET",
+        "path": "/shifts/{shift_id}/report",
+        "opId": "get_shift_report",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Z-report for end-of-shift printing"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/shifts/{shift_id}/summary",
+        "opId": "shift_summary",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "read-cache",
+        "summary": "Shift totals summary"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/shifts/{shift_id}/deductions",
+        "opId": "shift_deductions",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Shift deductions; rare back-office read"
+      },
+      {
+        "method": "GET",
+        "path": "/costing/menu-items",
+        "opId": "list_sku_costs",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "SKU recipe costs; admin costing view"
+      },
+      {
+        "method": "GET",
+        "path": "/costing/addon-items",
+        "opId": "list_addon_costs",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Addon costs; admin costing view"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/sales",
+        "opId": "branch_sales",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Branch sales report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/sales/timeseries",
+        "opId": "branch_sales_timeseries",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Sales timeseries report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/sales/peak-hours",
+        "opId": "branch_sales_peak_hours",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Peak-hours sales report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/items-combined",
+        "opId": "branch_combined_item_sales",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Combined item sales report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/addons",
+        "opId": "branch_addon_sales",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Addon sales report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/bundles",
+        "opId": "branch_bundle_sales",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Bundle sales report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/delivery-sales",
+        "opId": "branch_delivery_sales",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Delivery sales report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/menu-engineering",
+        "opId": "branch_menu_engineering",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Menu-engineering analysis"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/tellers",
+        "opId": "branch_teller_stats",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Teller performance stats"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/consumption",
+        "opId": "branch_consumption",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Ingredient consumption report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/inventory-valuation",
+        "opId": "branch_inventory_valuation",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Inventory valuation report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/low-stock",
+        "opId": "branch_low_stock",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Low-stock report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/stock",
+        "opId": "branch_stock",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Branch stock report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/shrinkage",
+        "opId": "branch_shrinkage",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Shrinkage report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/branches/{branch_id}/waste-report",
+        "opId": "branch_waste_report",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Waste report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/orgs/{org_id}/comparison",
+        "opId": "org_branch_comparison",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Org branch comparison"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/orgs/{org_id}/consumption",
+        "opId": "org_consumption",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Org consumption report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/orgs/{org_id}/inventory-valuation",
+        "opId": "org_inventory_valuation",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Org inventory valuation"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/orgs/{org_id}/low-stock",
+        "opId": "org_low_stock",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Org low-stock report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/orgs/{org_id}/shrinkage",
+        "opId": "org_shrinkage",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Org shrinkage report"
+      },
+      {
+        "method": "GET",
+        "path": "/reports/orgs/{org_id}/waste-report",
+        "opId": "org_waste_report",
+        "mutating": false,
+        "needsIdempotency": false,
+        "offlineMode": "online-only",
+        "summary": "Org waste report"
+      }
+    ],
+    "keySchemas": [
+      {
+        "name": "OpenShiftRequest",
+        "quirks": "Client-supplied nullable id(uuid) + opened_at for offline reconcile; opening_cash int32; opening_cash_edited documented as IGNORED by server (derived); needs idempotency key."
+      },
+      {
+        "name": "CloseShiftRequest",
+        "quirks": "closing_cash_declared int32 (money in piastres); nullable closed_at lets POS stamp real offline time; cash_note nullable."
+      },
+      {
+        "name": "CashMovementRequest",
+        "quirks": "amount int32; nullable created_at \u2014 POS sends real time for offline movements, server stamps now() when omitted; future values rejected."
+      },
+      {
+        "name": "Shift",
+        "quirks": "Money fields int32 (opening/closing/discrepancy) \u2014 MISMATCH with int64 used in ShiftSummary; status is bare string with NO enum (unknown-default not modeled); ~12 nullable [T,null] fields; branch_name only set in list view."
+      },
+      {
+        "name": "CashMovement",
+        "quirks": "Money amount int32 vs CashMovementSummaryRow also int32 but ShiftReport aggregates int64; all uuid/date-time fields required."
+      },
+      {
+        "name": "ShiftSummary",
+        "quirks": "All money int64 (vs Shift int32); revenue_by_method is an EMPTY schema {} -> generates untyped serde_json::Value / `any`; several nullable closing fields."
+      },
+      {
+        "name": "ShiftReportResponse",
+        "quirks": "Z-report; all aggregates int64 piastres; embeds Shift (int32 mix); expected_cash authoritative \u2014 display directly, do not re-derive."
+      },
+      {
+        "name": "SkuCost",
+        "quirks": "price int64 piastres (NOT BigDecimal-string); cost nullable int64 with cost_missing bool sentinel; food_cost_pct/margin_pct nullable double; size_label 'one_size' magic value."
+      },
+      {
+        "name": "LowStockRow",
+        "quirks": "current_stock/reorder_threshold/deficit are number/double (NOT JSON strings here); supplier_id/supplier_name nullable; unit is free string."
+      },
+      {
+        "name": "ValuationRow",
+        "quirks": "current_stock number/double; cost_per_unit & value nullable int64 piastres (null when cost unknown) \u2014 null is meaningful, not zero."
+      }
+    ],
+    "notes": "All operations are GET except 5 shift writes: open/close/cash-movement (outbox-mutation, the teller selling hot-path) and force-close/delete (online-only back-office, manager authority). Spec exposes EXACTLY the offline-first hooks expected: open/close/cash-movement requests accept a client-supplied uuid `id` and real-event timestamps (opened_at/closed_at/created_at), explicitly documented for movements made OFFLINE so they keep their true time and reconcile after sync \u2014 this IS the temp-id/idempotency contract. The classic BigDecimal-as-string quirk does NOT bite this domain: all money is integer piastres (int32 on Shift/CashMovement, int64 on summaries/reports/costing) and stock quantities are number/double \u2014 no decimals-as-strings here (those live in inventory/purchasing schemas). The real Rust-client traps: (1) int32-vs-int64 split on the same logical money fields between Shift and ShiftSummary/reports; (2) `status` and `payment_method`/`addon_type` are bare strings with no enum and no unknown-default modeled; (3) ShiftSummary.revenue_by_method is an empty `{}` schema -> generator emits serde_json::Value; (4) pervasive nullable [T,\\\"null\\\"] optionals where null is semantically distinct from zero (e.g. cost null = unknown vs cost_missing bool); (5) opening_cash_edited is documented as server-ignored \u2014 don't trust it round-tripping. Mirror shifts + cash-movements + shift report/summary locally (read-cache) so the teller can print Z-reports offline; keep all analytical/org reports and costing online-only."
+  },
+  {
+    "domain": "inventory & back-office (inventory, purchasing, stocktakes, recipes, menu_advisor)",
+    "posCriticality": "backoffice",
+    "operations": [
+      {
+        "method": "GET",
+        "path": "/inventory/branches/{branch_id}/stock",
+        "opId": "list_branch_stock",
+        "mutating": false,
+        "offlineMode": "read-cache",
+        "needsIdempotency": false,
+        "summary": "Branch on-hand stock list"
+      },
+      {
+        "method": "GET",
+        "path": "/inventory/branches/{branch_id}/movements",
+        "opId": "list_movements",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Movement ledger; large, rarely needed offline"
+      },
+      {
+        "method": "POST",
+        "path": "/inventory/branches/{branch_id}/stock",
+        "opId": "add_to_branch_stock",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Admin adds ingredient to branch stock"
+      },
+      {
+        "method": "PATCH",
+        "path": "/inventory/branches/{branch_id}/stock/{id}",
+        "opId": "update_branch_stock",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Edit stock thresholds/pars"
+      },
+      {
+        "method": "DELETE",
+        "path": "/inventory/branches/{branch_id}/stock/{id}",
+        "opId": "remove_from_branch_stock",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Remove ingredient from branch stock"
+      },
+      {
+        "method": "GET",
+        "path": "/inventory/branches/{branch_id}/transfers",
+        "opId": "list_transfers",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List inter-branch transfers"
+      },
+      {
+        "method": "POST",
+        "path": "/inventory/transfers",
+        "opId": "create_transfer",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Create inter-branch transfer"
+      },
+      {
+        "method": "PATCH",
+        "path": "/inventory/transfers/{id}",
+        "opId": "update_transfer",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Edit transfer"
+      },
+      {
+        "method": "DELETE",
+        "path": "/inventory/transfers/{id}",
+        "opId": "delete_transfer",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Delete transfer"
+      },
+      {
+        "method": "GET",
+        "path": "/inventory/branches/{branch_id}/waste",
+        "opId": "list_waste",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List waste events"
+      },
+      {
+        "method": "POST",
+        "path": "/inventory/branches/{branch_id}/waste",
+        "opId": "create_waste",
+        "mutating": true,
+        "offlineMode": "outbox-mutation",
+        "needsIdempotency": true,
+        "summary": "Teller logs waste during shift"
+      },
+      {
+        "method": "GET",
+        "path": "/inventory/orgs/{org_id}/catalog",
+        "opId": "list_catalog",
+        "mutating": false,
+        "offlineMode": "read-cache",
+        "needsIdempotency": false,
+        "summary": "Org ingredient catalog"
+      },
+      {
+        "method": "POST",
+        "path": "/inventory/orgs/{org_id}/catalog",
+        "opId": "create_catalog_item",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Create catalog ingredient"
+      },
+      {
+        "method": "PATCH",
+        "path": "/inventory/orgs/{org_id}/catalog/{id}",
+        "opId": "update_catalog_item",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Edit catalog ingredient"
+      },
+      {
+        "method": "DELETE",
+        "path": "/inventory/orgs/{org_id}/catalog/{id}",
+        "opId": "delete_catalog_item",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Delete catalog ingredient"
+      },
+      {
+        "method": "GET",
+        "path": "/inventory/orgs/{org_id}/settings",
+        "opId": "get_inventory_settings",
+        "mutating": false,
+        "offlineMode": "read-cache",
+        "needsIdempotency": false,
+        "summary": "Variance-threshold settings"
+      },
+      {
+        "method": "PUT",
+        "path": "/inventory/orgs/{org_id}/settings",
+        "opId": "update_inventory_settings",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Edit inventory settings"
+      },
+      {
+        "method": "GET",
+        "path": "/purchasing/branches/{branch_id}/orders",
+        "opId": "list_purchase_orders",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List branch purchase orders"
+      },
+      {
+        "method": "POST",
+        "path": "/purchasing/branches/{branch_id}/orders",
+        "opId": "create_purchase_order",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Create purchase order"
+      },
+      {
+        "method": "GET",
+        "path": "/purchasing/branches/{branch_id}/reorder-suggestions",
+        "opId": "reorder_suggestions",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Computed reorder suggestions"
+      },
+      {
+        "method": "POST",
+        "path": "/purchasing/branches/{branch_id}/returns",
+        "opId": "create_return",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Create supplier return"
+      },
+      {
+        "method": "GET",
+        "path": "/purchasing/orders/{id}",
+        "opId": "get_purchase_order",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get purchase order with lines"
+      },
+      {
+        "method": "POST",
+        "path": "/purchasing/orders/{id}/submit",
+        "opId": "submit_purchase_order",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Submit PO to supplier"
+      },
+      {
+        "method": "POST",
+        "path": "/purchasing/orders/{id}/receive",
+        "opId": "receive_purchase_order",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Receive goods against PO"
+      },
+      {
+        "method": "POST",
+        "path": "/purchasing/orders/{id}/cancel",
+        "opId": "cancel_purchase_order",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Cancel purchase order"
+      },
+      {
+        "method": "GET",
+        "path": "/purchasing/orders/{id}/receipts",
+        "opId": "list_po_receipts",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List goods receipts for PO"
+      },
+      {
+        "method": "GET",
+        "path": "/purchasing/orgs/{org_id}/orders",
+        "opId": "list_org_purchase_orders",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List org-wide purchase orders"
+      },
+      {
+        "method": "GET",
+        "path": "/purchasing/orgs/{org_id}/suppliers",
+        "opId": "list_suppliers",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List suppliers"
+      },
+      {
+        "method": "POST",
+        "path": "/purchasing/orgs/{org_id}/suppliers",
+        "opId": "create_supplier",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Create supplier"
+      },
+      {
+        "method": "PATCH",
+        "path": "/purchasing/suppliers/{id}",
+        "opId": "update_supplier",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Edit supplier"
+      },
+      {
+        "method": "DELETE",
+        "path": "/purchasing/suppliers/{id}",
+        "opId": "delete_supplier",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Delete supplier"
+      },
+      {
+        "method": "GET",
+        "path": "/stocktakes/branches/{branch_id}",
+        "opId": "list_stocktakes",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List branch stocktakes"
+      },
+      {
+        "method": "POST",
+        "path": "/stocktakes/branches/{branch_id}",
+        "opId": "create_stocktake",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Open new stock count"
+      },
+      {
+        "method": "GET",
+        "path": "/stocktakes/{id}",
+        "opId": "get_stocktake",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get stocktake with items"
+      },
+      {
+        "method": "PUT",
+        "path": "/stocktakes/{id}/items",
+        "opId": "upsert_items",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Upsert counted quantities"
+      },
+      {
+        "method": "POST",
+        "path": "/stocktakes/{id}/finalize",
+        "opId": "finalize_stocktake",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Finalize count, post variances"
+      },
+      {
+        "method": "POST",
+        "path": "/stocktakes/{id}/cancel",
+        "opId": "cancel_stocktake",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Cancel stocktake"
+      },
+      {
+        "method": "GET",
+        "path": "/stocktakes/{id}/variance-report",
+        "opId": "variance_report",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Variance report for count"
+      },
+      {
+        "method": "GET",
+        "path": "/recipes/drinks/{menu_item_id}",
+        "opId": "list_drink_recipes",
+        "mutating": false,
+        "offlineMode": "read-cache",
+        "needsIdempotency": false,
+        "summary": "Drink recipe ingredients"
+      },
+      {
+        "method": "POST",
+        "path": "/recipes/drinks/{menu_item_id}",
+        "opId": "upsert_drink_recipe",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Upsert drink recipe line"
+      },
+      {
+        "method": "DELETE",
+        "path": "/recipes/drinks/{menu_item_id}/{size}",
+        "opId": "delete_drink_recipe",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Delete drink recipe size"
+      },
+      {
+        "method": "GET",
+        "path": "/recipes/addons/{addon_item_id}",
+        "opId": "list_addon_ingredients",
+        "mutating": false,
+        "offlineMode": "read-cache",
+        "needsIdempotency": false,
+        "summary": "Addon recipe ingredients"
+      },
+      {
+        "method": "POST",
+        "path": "/recipes/addons/{addon_item_id}",
+        "opId": "upsert_addon_ingredient",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Upsert addon ingredient"
+      },
+      {
+        "method": "DELETE",
+        "path": "/recipes/addons/{addon_item_id}",
+        "opId": "delete_addon_ingredient",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Delete addon ingredient"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/branches/{branch_id}/runs",
+        "opId": "list_runs_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List advisor runs"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-advisor/branches/{branch_id}/runs",
+        "opId": "create_run_handler",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true,
+        "summary": "Trigger advisor analysis run"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/branches/{branch_id}/runs/active",
+        "opId": "get_active_run_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get active run"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/branches/{branch_id}/runs/latest",
+        "opId": "get_latest_run_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get latest run"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/runs/{id}",
+        "opId": "get_run_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get run detail"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/runs/{id}/price-suggestions",
+        "opId": "list_price_suggestions_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List price suggestions"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/runs/{id}/bundle-suggestions",
+        "opId": "list_bundle_suggestions_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List bundle suggestions"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/runs/{id}/removal-scenarios",
+        "opId": "list_removal_scenarios_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List removal scenarios"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/price-suggestions/{id}",
+        "opId": "get_price_suggestion_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get price suggestion"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/bundle-suggestions/{id}",
+        "opId": "get_bundle_suggestion_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get bundle suggestion"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-advisor/bundle-suggestions/{id}/promote",
+        "opId": "set_bundle_promoted_handler",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Promote bundle suggestion"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/removal-scenarios/{id}",
+        "opId": "get_removal_scenario_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get removal scenario"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/branches/{branch_id}/decisions",
+        "opId": "list_decisions_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "List advisor decisions"
+      },
+      {
+        "method": "POST",
+        "path": "/menu-advisor/decisions",
+        "opId": "record_decision_handler",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Record accept/reject decision"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/branches/{branch_id}/calibration",
+        "opId": "get_calibration_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Get advisor calibration"
+      },
+      {
+        "method": "GET",
+        "path": "/menu-advisor/branches/{branch_id}/items/{menu_item_id}/sizes/{size_label}/latest-kpi",
+        "opId": "get_latest_item_kpi_handler",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false,
+        "summary": "Latest item KPI"
+      }
+    ],
+    "keySchemas": [
+      {
+        "name": "BranchInventoryItem",
+        "quirks": "Read mirror for branch stock. current_stock/reorder_threshold are number/double (NOT BigDecimal strings here). Many nullable doubles: cost_per_unit, par_min, par_max, last_counted_at. cost_per_unit is piastres-per-unit but typed double; null means unknown, not free."
+      },
+      {
+        "name": "OrgIngredient",
+        "quirks": "Catalog read mirror. cost_per_unit nullable double (piastres, null=unknown). pack_size/density_g_per_ml/yield_pct all nullable doubles; null != 0. Generator must map null to Option, not default 0.0."
+      },
+      {
+        "name": "BranchInventoryMovement",
+        "quirks": "movement_type is a free string (sale|waste|transfer_in|purchase_in|stock_count...), NOT an enum schema \u2014 no compile-time variants; treat as open string. quantity is signed double. Most fields nullable."
+      },
+      {
+        "name": "PurchaseOrderLine",
+        "quirks": "Money split: unit_cost is integer/int64 piastres, while quantity_ordered/quantity_received/units_per_purchase_unit are number/double. Easy to swap int vs float in generated client."
+      },
+      {
+        "name": "PurchaseOrderFull / StocktakeFull",
+        "quirks": "allOf composition (base + extra props). Some Rust openapi-generators flatten allOf badly or emit a wrapper struct; verify field flattening. StocktakeFull adds required variance_threshold_pct double."
+      },
+      {
+        "name": "StocktakeItem",
+        "quirks": "counted_qty/variance nullable doubles; unit_cost nullable int64 piastres; variance_reason is free-string enum (theft|spoilage|...) typed as plain nullable string \u2014 no enum schema."
+      },
+      {
+        "name": "PriceSuggestion",
+        "quirks": "Money fields current_price/effective_price are int64 piastres; cm_per_unit and what-if margins are nullable doubles. References nested enum schemas Action/Classification/Confidence which ARE closed enums."
+      },
+      {
+        "name": "RunStatus / SuggestionKind / Decision",
+        "quirks": "Closed string enums with NO unknown/default variant (in_progress|completed|failed; price|bundle|removal; accepted|rejected|ignored). A generated Rust enum will hard-error if the backend adds a variant \u2014 add #[serde(other)] fallback. Note RecordDecisionBody.decision is deliberately a plain string (server validates -> 400) while list responses use the closed enum: asymmetric."
+      }
+    ],
+    "notes": "Whole domain is back-office: nothing here is on the selling hot path. Only one outbox-mutation: POST .../waste (create_waste) \u2014 tellers log spoilage/breakage mid-shift offline, so it needs a durable outbox + idempotency key + client temp-id. Everything else mutating is admin/manager (catalog, transfers, suppliers, POs, stocktakes, recipes, advisor) = online-only, acceptable to require connectivity. read-cache reads worth mirroring locally for the inventory home screen: list_branch_stock, list_catalog, get_inventory_settings, and recipe lists (list_drink_recipes/list_addon_ingredients) since recipes drive stock-depletion math the POS may apply locally on each sale. list_movements, all menu-advisor reads, variance reports and PO detail are too large/rare to mirror -> online-only. QUIRK SUMMARY confirmed against the spec: the feared BigDecimal-serialized-as-JSON-STRING pattern does NOT appear in this domain \u2014 quantity_used, current_stock, reorder_threshold, quantity_ordered are all number/double, and money is integer/int64 piastres (cents-equivalent), never strings. So the real generator risks are: (1) the int64-piastres vs double-quantity split on the same struct (PurchaseOrderLine, StocktakeItem); (2) pervasive nullable scalars where null means 'unknown' not 0/free (cost_per_unit etc.) \u2014 must be Option<T>; (3) closed enums (RunStatus/SuggestionKind/Decision plus nested Action/Classification/Confidence) lacking an unknown-default \u2014 add a serde catch-all so a newer backend doesn't break deserialization; (4) movement_type and variance_reason are free strings, not enums \u2014 don't assume a fixed variant set; (5) allOf composition on PurchaseOrderFull/StocktakeFull needs verifying after generation."
+  },
+  {
+    "domain": "integrations & misc (whatsapp, uploads, qr, timezones, public)",
+    "posCriticality": "backoffice",
+    "operations": [
+      {
+        "method": "GET",
+        "path": "/branches/{id}/qr",
+        "opId": "branch_qr",
+        "summary": "Generate branch QR code",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/branches/{id}/tables",
+        "opId": "list_tables",
+        "summary": "List dine-in tables for branch",
+        "mutating": false,
+        "offlineMode": "read-cache",
+        "needsIdempotency": false
+      },
+      {
+        "method": "POST",
+        "path": "/branches/{id}/tables",
+        "opId": "create_table",
+        "summary": "Create a dine-in table",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true
+      },
+      {
+        "method": "DELETE",
+        "path": "/branches/{id}/tables/{tid}",
+        "opId": "delete_table",
+        "summary": "Delete a dine-in table",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/branches/{id}/tables/{tid}/qr",
+        "opId": "table_qr",
+        "summary": "Generate per-table QR code",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/delivery-orders/{id}/qr",
+        "opId": "delivery_order_qr",
+        "summary": "Generate delivery order QR",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/orgs/{id}/qr",
+        "opId": "org_qr",
+        "summary": "Generate org QR code",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/qr/links",
+        "opId": "list_marketing_links",
+        "summary": "List marketing short links",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "POST",
+        "path": "/qr/links",
+        "opId": "create_marketing_link",
+        "summary": "Create marketing short link",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true
+      },
+      {
+        "method": "POST",
+        "path": "/uploads/menu-items/{menu_item_id}",
+        "opId": "upload_menu_item_image",
+        "summary": "Upload menu item image (multipart)",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true
+      },
+      {
+        "method": "POST",
+        "path": "/whatsapp/logout",
+        "opId": "whatsapp_logout",
+        "summary": "Unlink WhatsApp gateway number",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true
+      },
+      {
+        "method": "POST",
+        "path": "/whatsapp/pair",
+        "opId": "whatsapp_pair",
+        "summary": "Start WhatsApp pairing session",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true
+      },
+      {
+        "method": "POST",
+        "path": "/whatsapp/pause",
+        "opId": "whatsapp_pause",
+        "summary": "Pause or resume WhatsApp sends",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/whatsapp/status",
+        "opId": "whatsapp_status",
+        "summary": "Live WhatsApp gateway status",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/timezones",
+        "opId": "list_timezones",
+        "summary": "List IANA timezone strings",
+        "mutating": false,
+        "offlineMode": "read-cache",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/public/branches",
+        "opId": "public_branches",
+        "summary": "Guest-facing branch list",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/public/branches/{id}/delivery-quote",
+        "opId": "delivery_quote",
+        "summary": "Guest delivery fee quote",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/public/branches/{id}/menu",
+        "opId": "public_menu",
+        "summary": "Guest-facing channel menu",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "POST",
+        "path": "/public/delivery-orders",
+        "opId": "create_delivery_order",
+        "summary": "Guest places delivery order",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": true
+      },
+      {
+        "method": "GET",
+        "path": "/public/delivery-orders/history",
+        "opId": "guest_order_history",
+        "summary": "Guest order history",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/public/delivery-orders/past-locations",
+        "opId": "guest_past_locations",
+        "summary": "Guest saved delivery locations",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/public/delivery-orders/{id}/track",
+        "opId": "track_delivery_order",
+        "summary": "Track guest delivery order",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "GET",
+        "path": "/public/orgs",
+        "opId": "list_public_orgs",
+        "summary": "Public org directory list",
+        "mutating": false,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "POST",
+        "path": "/public/otp/request",
+        "opId": "otp_request",
+        "summary": "Request guest phone OTP",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      },
+      {
+        "method": "POST",
+        "path": "/public/otp/verify",
+        "opId": "otp_verify",
+        "summary": "Verify OTP, get device token",
+        "mutating": true,
+        "offlineMode": "online-only",
+        "needsIdempotency": false
+      }
+    ],
+    "keySchemas": [
+      {
+        "name": "QrResponse",
+        "quirks": "Freeform string 'kind' enum (no variants); qr_data_url is a huge base64 data: URI \u2014 do not mirror. Returned by all QR GETs and create_marketing_link."
+      },
+      {
+        "name": "WhatsappStatus",
+        "quirks": "7 required bools + nullable paused_at(date-time) and qr_image; qr_image is a base64 data: URL. Live gateway snapshot, never cache."
+      },
+      {
+        "name": "MarketingLink",
+        "quirks": "nullable 'label'; freeform string 'kind' enum; date-time created_at. UUID id."
+      },
+      {
+        "name": "BranchTable",
+        "quirks": "All UUIDs + date-time created_at/updated_at; clean and cacheable. Only solid read-cache schema in domain."
+      },
+      {
+        "name": "UploadImageMultipart",
+        "quirks": "multipart/form-data with format:binary 'image' (contentMediaType image/*) \u2014 generators handle file fields poorly; UploadResponse is just {image_url}."
+      },
+      {
+        "name": "DeliveryMenuItem / DeliveryMenuDiscount / DeliveryAddonOption",
+        "quirks": "Money is integer int32 piastres (NOT BigDecimal-string here); 'name_translations' is an untyped open object (type:object, no shape) -> generates as Value/Map; nullable category_id/default_milk_addon_id; freeform 'dtype' enum."
+      },
+      {
+        "name": "QuoteResponse",
+        "quirks": "All-nullable fee/distance_meters/zone_* with status as freeform string ('ok'|'out_of_range'|'unavailable') \u2014 model status as unknown-default enum."
+      },
+      {
+        "name": "DeliveryOrderInput",
+        "quirks": "Many nullable address fields; freeform 'channel' and 'payment_method_hint' string enums; double lat/lng nullable; requires device_token from OTP verify."
+      }
+    ],
+    "notes": "Scope note: tags 'timezones' and 'public' are not literal tag names in the spec \u2014 /timezones is tagged 'branches', /public/* are tagged 'delivery-public'/'orgs'. I included them by path-prefix since they match the domain theme. Criticality: backoffice \u2014 NOTHING in this domain is on the teller selling hot-path, so there are zero outbox-mutation operations. whatsapp/uploads/qr/tables CRUD are all admin (online-only); QR GETs return giant base64 PNGs and are rare (online-only). public/* is the GUEST delivery surface (OTP, public menu, guest order placement), not the teller's own POS writes, so per the conservative rule they stay online-only \u2014 the teller consumes those orders through other endpoints. Only read-cache candidates: GET /timezones (static IANA list) and GET /branches/{id}/tables (small, stable, needed for dine-in table labels offline). Idempotency: the backend models NO Idempotency-Key header on any POST in this domain \u2014 needsIdempotency is flagged on non-idempotent creates (create_table, create_marketing_link, upload image, whatsapp pair/logout, create_delivery_order) but the client must generate keys itself; there is no server contract for them yet. Key generator gotcha: money in this domain is integer piastres (int32), so the BigDecimal-as-JSON-string trap does NOT apply here \u2014 the real traps are (1) freeform string enums everywhere (kind, dtype, channel, payment_method_hint, quote status) needing #[serde(other)] unknown-defaults, (2) untyped 'name_translations' open objects, (3) pervasive nullable Option fields, and (4) base64 data: URLs in qr_data_url/qr_image that must not be persisted."
+  }
+]
