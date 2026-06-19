@@ -5,12 +5,13 @@
 // See ../README.md for the one-liner that compiles + runs this.
 import Foundation
 
-let core = SufrixCore.fromEnv()
+let core = try! SufrixCore.fromEnv()   // opens + migrates the local SQLite store
 print("✓ core version :", core.version())
 print("✓ ffi surface  :", ffiSurfaceVersion())
 print("✓ base url     :", core.baseUrl())
 print("✓ environment  :", core.environment())
 print("✓ greet        :", greet(name: "Teller"))
+print("✓ outbox count :", try! core.pendingOutboxCount())   // store reachable over FFI
 
 // Exercise the pricing engine across the FFI: 2 × 1000 piastres @ 14% tax,
 // tender 2500. Expect subtotal 2000, tax 280, total 2280, change 220.

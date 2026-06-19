@@ -57,22 +57,24 @@ pub fn greet(name: String) -> String {
 #[derive(uniffi::Object)]
 pub struct SufrixCore {
     config: SufrixConfig,
+    store: store::Store,
 }
 
 #[uniffi::export]
 impl SufrixCore {
-    /// Construct with explicit config (db path filled in by the host).
+    /// Construct with explicit config (the host fills `db_path` with an
+    /// app-private file). Opens + migrates the local store.
     #[uniffi::constructor]
-    pub fn new(config: SufrixConfig) -> Arc<Self> {
-        Arc::new(Self { config })
+    pub fn new(config: SufrixConfig) -> Result<Arc<Self>, error::CoreError> {
+        let store = store::Store::open(&config.db_path)?;
+        Ok(Arc::new(Self { config, store }))
     }
 
-    /// Construct from the baked-in `.env` defaults (no db path yet).
+    /// Construct from the baked-in `.env` defaults (in-memory store until the
+    /// host supplies a `db_path`).
     #[uniffi::constructor]
-    pub fn from_env() -> Arc<Self> {
-        Arc::new(Self {
-            config: SufrixConfig::from_env(),
-        })
+    pub fn from_env() -> Result<Arc<Self>, error::CoreError> {
+        Self::new(SufrixConfig::from_env())
     }
 
     /// API base URL the core will talk to (from `.env`).
@@ -94,6 +96,12 @@ impl SufrixCore {
     pub fn version(&self) -> String {
         core_version()
     }
+
+    /// Outbox items still waiting to sync (pending + in-flight) — the host shows
+    /// this in the sync-status chrome.
+    pub fn pending_outbox_count(&self) -> Result<u32, error::CoreError> {
+        self.store.pending_count()
+    }
 }
 
 #[cfg(test)]
@@ -109,9 +117,10 @@ mod tests {
 
     #[test]
     fn core_reads_env_config() {
-        let core = SufrixCore::from_env();
+        let core = SufrixCore::from_env().unwrap();
         assert!(core.base_url().starts_with("http"));
         assert!(!core.environment().is_empty());
+        assert_eq!(core.pending_outbox_count().unwrap(), 0);
     }
 
     #[test]
