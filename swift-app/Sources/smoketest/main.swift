@@ -47,3 +47,11 @@ do {
 } catch {
     print("✓ offline lock : unlock rejected w/o bundle (\(error))")
 }
+
+// Catalog reads serve the local mirror and must always succeed offline — empty
+// until the first refresh_catalog, never an error.
+let items = try core.listMenuItems()
+let addons = try core.listAddonCatalog()
+let methods = try core.listPaymentMethods()
+precondition(items.isEmpty && addons.isEmpty && methods.isEmpty, "cold mirror should be empty")
+print("✓ catalog       : offline reads ok (items=\(items.count) addons=\(addons.count) pay=\(methods.count))")

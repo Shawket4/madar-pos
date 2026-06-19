@@ -58,6 +58,27 @@ impl ApiClient {
         self.bearer.read().unwrap_or_else(|e| e.into_inner()).is_some()
     }
 
+    /// Authenticated raw GET returning the response body as text. Used where the
+    /// generated typed call has the wrong return type for the shape we need —
+    /// e.g. `GET /menu-items?full=true` returns the rich `MenuItemFull` array but
+    /// the generator types it `Vec<MenuItem>` (dropping sizes/slots). The mirror
+    /// stores canonical JSON anyway (§8), so a text body is exactly what we want.
+    pub async fn get_text(&self, path: &str, query: &[(&str, String)]) -> CoreResult<String> {
+        let url = format!("{}{}", self.base_url, path);
+        let mut rb = self.http.request(reqwest::Method::GET, &url).query(query);
+        if let Some(token) = self.bearer.read().unwrap_or_else(|e| e.into_inner()).clone() {
+            rb = rb.bearer_auth(token);
+        }
+        let resp = rb.send().await.map_err(|e| classify_reqwest(&e))?;
+        let status = resp.status();
+        let body = resp.text().await.map_err(|e| classify_reqwest(&e))?;
+        if status.is_success() {
+            Ok(body)
+        } else {
+            Err(status_to_error(status.as_u16(), &body))
+        }
+    }
+
     /// A `Configuration` for a normal call, carrying the current bearer token.
     pub fn config(&self) -> Configuration {
         Configuration {
@@ -78,19 +99,22 @@ impl ApiClient {
 /// `{ "error": "…" }` envelope for a human message.
 pub(crate) fn map_api_error<T>(e: ApiError<T>) -> CoreError {
     match e {
-        // Transport failures. A refused/unreachable connection means we're
-        // offline; timeouts/other are transient (sync retries).
-        ApiError::Reqwest(re) => {
-            if re.is_connect() {
-                CoreError::Offline { message: re.to_string() }
-            } else {
-                CoreError::Transient { message: re.to_string() }
-            }
-        }
+        // Transport failures — classified the same way for typed + raw calls.
+        ApiError::Reqwest(re) => classify_reqwest(&re),
         ApiError::Io(io) => CoreError::Transient { message: io.to_string() },
         // A 2xx body we couldn't decode = wire drift / our bug, never the user's.
         ApiError::Serde(se) => CoreError::Internal { message: format!("decode: {se}") },
         ApiError::ResponseError(rc) => status_to_error(rc.status.as_u16(), &rc.content),
+    }
+}
+
+/// A refused/unreachable connection means we're offline; timeouts/other are
+/// transient (sync retries).
+fn classify_reqwest(e: &reqwest::Error) -> CoreError {
+    if e.is_connect() {
+        CoreError::Offline { message: e.to_string() }
+    } else {
+        CoreError::Transient { message: e.to_string() }
     }
 }
 

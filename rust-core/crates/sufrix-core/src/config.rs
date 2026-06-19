@@ -14,6 +14,9 @@ pub struct SufrixConfig {
     /// Absolute path to the SQLite store (host app sandbox dir). Empty string
     /// means in-memory — used by tests and on first boot before a path exists.
     pub db_path: String,
+    /// BCP-47 locale (e.g. `ar-EG`, `en`) used to resolve `*_translations` to a
+    /// single display string in the read DTOs. The host passes the device locale.
+    pub locale: String,
 }
 
 impl SufrixConfig {
@@ -27,6 +30,7 @@ impl SufrixConfig {
                 .to_string(),
             environment: option_env!("SUFRIX_ENV").unwrap_or("prod").to_string(),
             db_path: String::new(),
+            locale: "en".to_string(),
         }
     }
 }

@@ -23,6 +23,8 @@ pub mod pricing;
 
 /// The coarse FFI error model the host reacts to (PLAN §7.6).
 pub mod error;
+/// Menu / catalog reads — branch-effective mirror + view DTOs (PLAN §R9).
+pub mod menu;
 /// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
 pub mod net;
 /// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
@@ -205,6 +207,43 @@ impl SufrixCore {
         }
         *self.session.write().unwrap_or_else(|e| e.into_inner()) = Some(state);
     }
+
+    /// `(org_id, branch_id)` from the live session — needed for branch-effective
+    /// catalog fetches. Errors if signed out / no org.
+    fn org_branch(&self) -> Result<(String, Option<String>), CoreError> {
+        let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+        let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
+            message: "not signed in".into(),
+        })?;
+        let org = s.snapshot.org_id.clone().ok_or_else(|| CoreError::Validation {
+            field: "org_id".into(),
+            message: "session has no org".into(),
+        })?;
+        Ok((org, s.snapshot.branch_id.clone()))
+    }
+}
+
+// ── catalog reads (sync; serve the local mirror, always succeed offline) ─────
+#[uniffi::export]
+impl SufrixCore {
+    pub fn list_menu_items(&self) -> Result<Vec<menu::MenuItemView>, CoreError> {
+        menu::menu_items(&self.store, &self.config.locale)
+    }
+    pub fn list_categories(&self) -> Result<Vec<menu::CategoryView>, CoreError> {
+        menu::categories(&self.store, &self.config.locale)
+    }
+    pub fn list_addon_catalog(&self) -> Result<Vec<menu::AddonItemView>, CoreError> {
+        menu::addons(&self.store, &self.config.locale)
+    }
+    pub fn available_bundles(&self) -> Result<Vec<menu::BundleView>, CoreError> {
+        menu::bundles(&self.store, &self.config.locale)
+    }
+    pub fn list_payment_methods(&self) -> Result<Vec<menu::PaymentMethodView>, CoreError> {
+        menu::payment_methods(&self.store, &self.config.locale)
+    }
+    pub fn list_discounts(&self) -> Result<Vec<menu::DiscountView>, CoreError> {
+        menu::discounts(&self.store, &self.config.locale)
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -259,6 +298,84 @@ impl SufrixCore {
         };
         self.persist_and_set(state);
         Ok(snapshot)
+    }
+
+    /// Pull the branch-effective catalog (items + categories + addons + bundles +
+    /// payment methods + discounts) and mirror the canonical JSON into the local
+    /// store. Online-only; the offline reads (`list_*`) then serve this mirror.
+    /// Atomic-ish: every stream is fetched before any is written, so a mid-pull
+    /// failure leaves the previous mirror intact.
+    pub async fn refresh_catalog(&self) -> Result<(), CoreError> {
+        use sufrix_api::apis::{bundles_api, discounts_api, menu_api, payment_methods_api};
+        use sufrix_api::models::BundleStatus;
+
+        let (org_id, branch_id) = self.org_branch()?;
+
+        // Menu items — full, branch-effective shape via raw GET (the typed
+        // `list_menu_items` is `Vec<MenuItem>` and would drop sizes/slots).
+        let mut q: Vec<(&str, String)> = vec![("org_id", org_id.clone()), ("full", "true".into())];
+        if let Some(b) = &branch_id {
+            q.push(("branch_id", b.clone()));
+        }
+        let menu_items_json = self.api.get_text("/menu-items", &q).await?;
+
+        let categories = menu_api::list_categories(
+            &self.api.config(),
+            menu_api::ListCategoriesParams { org_id: org_id.clone() },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+
+        let addons = menu_api::list_addon_catalog(
+            &self.api.config(),
+            menu_api::ListAddonCatalogParams {
+                org_id: org_id.clone(),
+                addon_type: None,
+                search: None,
+                page: Some(1),
+                per_page: Some(500),
+                branch_id: branch_id.clone(),
+                overridden: None,
+                sort: None,
+            },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+
+        let bundles = bundles_api::list_bundles(
+            &self.api.config(),
+            bundles_api::ListBundlesParams {
+                org_id: Some(org_id.clone()),
+                status: Some(BundleStatus::Active),
+                branch_id: branch_id.clone(),
+                search: None,
+                page: Some(1),
+                per_page: Some(500),
+                sort: None,
+            },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+
+        let payment_methods = payment_methods_api::list_payment_methods(&self.api.config())
+            .await
+            .map_err(net::map_api_error)?;
+
+        let discounts = discounts_api::list_discounts(
+            &self.api.config(),
+            discounts_api::ListDiscountsParams { org_id: org_id.clone() },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+
+        // All streams fetched OK → commit the mirror.
+        self.store.kv_put(menu::K_MENU_ITEMS, &menu_items_json)?;
+        self.store.kv_put(menu::K_CATEGORIES, &serde_json::to_string(&categories)?)?;
+        self.store.kv_put(menu::K_ADDONS, &serde_json::to_string(&addons.data)?)?;
+        self.store.kv_put(menu::K_BUNDLES, &serde_json::to_string(&bundles.data)?)?;
+        self.store.kv_put(menu::K_PAYMENT_METHODS, &serde_json::to_string(&payment_methods)?)?;
+        self.store.kv_put(menu::K_DISCOUNTS, &serde_json::to_string(&discounts)?)?;
+        Ok(())
     }
 }
 
