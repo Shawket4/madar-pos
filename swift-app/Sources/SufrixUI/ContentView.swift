@@ -1,27 +1,32 @@
-// Phase-1 placeholder screen. Proves the core is reachable from SwiftUI and
-// shows what the host reads from it. Phase 6 replaces this with the real
-// iPhone/iPad layouts (Login → Shift → Catalog/Order → Cart → Payment → Receipt;
-// see PLAN.md §6).
+// Signed-in placeholder home. Proves the full auth round-trip from SwiftUI:
+// it reads the cached session the core handed back and offers sign-out. Phase 6
+// replaces this with the real Shift → Catalog/Order → Cart → Payment → Receipt
+// layouts (PLAN §6).
 import SwiftUI
 
 struct ContentView: View {
-    let core: SufrixCore
+    @ObservedObject var app: AppModel
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "cup.and.saucer.fill")
-                .font(.system(size: 44))
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 40))
                 .foregroundStyle(.tint)
-            Text("Sufrix POS")
-                .font(.largeTitle.bold())
-            Text(greet(name: "Teller"))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Text("Signed in").font(.largeTitle.bold())
+
+            if let s = app.session {
+                row("teller", s.displayName)
+                row("role", s.role)
+                row("session", s.online ? "online" : "offline")
+                row("currency", s.currencyCode)
+            }
             Divider().padding(.vertical, 8)
-            row("core version", core.version())
-            row("ffi surface", String(ffiSurfaceVersion()))
-            row("environment", core.environment())
-            row("base URL", core.baseUrl())
+            row("core version", app.core.version())
+            row("environment", app.core.environment())
+
+            Button("Sign out", role: .destructive) { app.signOut() }
+                .buttonStyle(.bordered)
+                .padding(.top, 8)
         }
         .padding(32)
     }

@@ -300,6 +300,30 @@ impl SufrixCore {
         Ok(snapshot)
     }
 
+    /// One-call sign-in. The online→offline decision lives HERE, not in the host
+    /// UI (the One Rule): try an online `login` first; if the network is down and
+    /// this is a teller PIN login, fall back to an offline unlock against the
+    /// cached org bundle. Validation / auth errors propagate (no fallback) so a
+    /// wrong PIN online doesn't silently try the offline path.
+    pub async fn sign_in(
+        &self,
+        req: session::LoginRequest,
+    ) -> Result<session::SessionSnapshot, CoreError> {
+        match self.login(req.clone()).await {
+            Ok(snapshot) => Ok(snapshot),
+            Err(e @ (CoreError::Offline { .. } | CoreError::Transient { .. })) => {
+                match (req.mode, &req.name, &req.pin, &req.branch_id) {
+                    (session::LoginMode::Pin, Some(name), Some(pin), Some(branch)) => {
+                        self.unlock_offline(name.clone(), pin.clone(), branch.clone())
+                    }
+                    // Email logins (managers/admins) have no offline bundle.
+                    _ => Err(e),
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Pull the branch-effective catalog (items + categories + addons + bundles +
     /// payment methods + discounts) and mirror the canonical JSON into the local
     /// store. Online-only; the offline reads (`list_*`) then serve this mirror.
@@ -401,5 +425,66 @@ mod tests {
     #[test]
     fn surface_version_is_pinned() {
         assert_eq!(ffi_surface_version(), 0);
+    }
+
+    /// sign_in falls back to an offline unlock when the network is unreachable
+    /// and a cached bundle holds the teller's PIN. Points the core at a dead
+    /// port so the online `login` fails fast with `Offline`.
+    #[tokio::test]
+    async fn sign_in_falls_back_to_offline_unlock_when_network_down() {
+        use argon2::password_hash::SaltString;
+        use argon2::{Argon2, PasswordHasher};
+
+        let core = SufrixCore::new(SufrixConfig {
+            base_url: "http://127.0.0.1:1".into(), // nothing listening → connect refused
+            environment: "dev".into(),
+            db_path: String::new(),
+            locale: "en".into(),
+        })
+        .unwrap();
+
+        // Seed the org bundle the offline unlock verifies against.
+        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
+        let bundle = serde_json::json!({
+            "org_id": "00000000-0000-0000-0000-0000000000aa",
+            "generated_at": "2026-06-19T10:00:00Z",
+            "tellers": [{
+                "user_id": "00000000-0000-0000-0000-0000000000bb",
+                "name": "Sara", "role": "teller", "is_active": true,
+                "offline_pin_hash": phc,
+            }]
+        });
+        core.store.kv_put(session::BUNDLE_KEY, &bundle.to_string()).unwrap();
+        core.store
+            .kv_put(session::ORG_CONFIG_KEY, r#"{"org_id":"00000000-0000-0000-0000-0000000000aa","currency_code":"EGP","tax_rate":0.14}"#)
+            .unwrap();
+
+        let req = session::LoginRequest {
+            mode: session::LoginMode::Pin,
+            name: Some("Sara".into()),
+            pin: Some("1234".into()),
+            branch_id: Some("00000000-0000-0000-0000-000000000001".into()),
+            email: None,
+            password: None,
+            org_id: None,
+        };
+        let snap = core.sign_in(req).await.expect("offline fallback should sign in");
+        assert_eq!(snap.display_name, "Sara");
+        assert!(!snap.online);
+        assert!(core.is_authenticated());
+
+        // A wrong PIN offline (still network-down) must NOT sign in.
+        let bad = session::LoginRequest {
+            pin: Some("0000".into()),
+            ..session::LoginRequest {
+                mode: session::LoginMode::Pin,
+                name: Some("Sara".into()),
+                pin: None,
+                branch_id: Some("00000000-0000-0000-0000-000000000001".into()),
+                email: None, password: None, org_id: None,
+            }
+        };
+        assert!(core.sign_in(bad).await.is_err());
     }
 }

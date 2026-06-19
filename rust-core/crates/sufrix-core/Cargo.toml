@@ -22,7 +22,8 @@ uniffi = { version = "0.28", features = ["cli", "tokio"] }
 # (tool/generate_api.sh). The `net/` layer drives it; nothing here hand-rolls wire.
 sufrix-api = { path = "../sufrix-api" }
 # Async runtime backing the exported `async fn`s (and reqwest's executor).
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+# `macros` powers `#[tokio::test]` for the async fallback test.
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 # HTTP plumbing we touch directly in `net/` (client builder, status codes, errors).
 # Features union with sufrix-api's, resolving to one reqwest build.
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
