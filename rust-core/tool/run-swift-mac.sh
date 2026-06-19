@@ -43,10 +43,18 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Bundled Cairo faces + brand assets (the app registers the fonts at launch).
+# Bundled Cairo faces (the app registers the fonts at launch).
 cp "$RES_SRC"/Fonts/Cairo-*.ttf "$APP/Contents/Resources/" 2>/dev/null || true
-cp "$RES_SRC"/Icon.png "$RES_SRC"/Logo.png "$APP/Contents/Resources/" 2>/dev/null || true
 cp "$DEBUG/libsufrix_core.dylib" "$APP/Contents/Frameworks/"
+
+# Compile the real-logo asset catalog into the bundle (Assets.car).
+if [[ -d "$RES_SRC/Assets.xcassets" ]]; then
+  xcrun actool "$RES_SRC/Assets.xcassets" \
+    --compile "$APP/Contents/Resources" \
+    --platform macosx --minimum-deployment-target 13.0 \
+    --output-partial-info-plist "$(mktemp)" >/dev/null 2>&1 \
+    || echo "  (actool failed — the logo asset may not render)"
+fi
 
 # 3/4 — compile the SwiftUI app (the @main lives in SufrixApp.swift).
 INC="$(mktemp -d)"

@@ -1,13 +1,14 @@
-// Status chip + inline notice banner — both keyed off a semantic `ChipTone`,
-// mirroring the Flutter `StatusChip` / `_NoticeBanner`.
+// Status chip + inline notice banner — keyed off a semantic `ChipTone`. Matches
+// the Flutter `StatusChip` (bordered pill, w700/11 label) and `_NoticeBanner`.
 import SwiftUI
 
-enum ChipTone { case info, success, warning, danger, neutral }
+enum ChipTone { case info, accent, success, warning, danger, neutral }
 
 extension ChipTone {
     func fg(_ c: SufrixColors) -> Color {
         switch self {
         case .info: return c.navy
+        case .accent: return c.accent
         case .success: return c.success
         case .warning: return c.warning
         case .danger: return c.danger
@@ -17,6 +18,7 @@ extension ChipTone {
     func bg(_ c: SufrixColors) -> Color {
         switch self {
         case .info: return c.navyBg
+        case .accent: return c.accentBg
         case .success: return c.successBg
         case .warning: return c.warningBg
         case .danger: return c.dangerBg
@@ -29,21 +31,19 @@ struct StatusChip: View {
     @Environment(\.theme) private var theme
     let label: String
     var icon: String? = nil
-    var tone: ChipTone = .info
+    var tone: ChipTone = .neutral
 
     var body: some View {
-        HStack(spacing: 6) {
-            if let icon {
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
-            } else {
-                Circle().fill(tone.fg(theme.colors)).frame(width: 6, height: 6)
-            }
-            Text(label).font(.ui(12, .semibold))
+        let fg = tone.fg(theme.colors)
+        HStack(spacing: 5) {
+            if let icon { Image(systemName: icon).font(.system(size: 12, weight: .semibold)) }
+            Text(label).font(.ui(11, .bold))
         }
-        .foregroundStyle(tone.fg(theme.colors))
-        .padding(.horizontal, 11)
-        .padding(.vertical, 6)
+        .foregroundStyle(fg)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
         .background(tone.bg(theme.colors))
+        .overlay(Capsule().strokeBorder(fg.opacity(0.25), lineWidth: 1))
         .clipShape(Capsule())
     }
 }
@@ -56,11 +56,12 @@ struct NoticeBanner: View {
     var bold: Bool = false
 
     var body: some View {
+        let fg = tone.fg(theme.colors)
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon).font(.system(size: 16)).foregroundStyle(tone.fg(theme.colors))
+            Image(systemName: icon).font(.system(size: 16)).foregroundStyle(fg)
             Text(text)
                 .font(.ui(13, bold ? .bold : .medium))
-                .foregroundStyle(tone.fg(theme.colors))
+                .foregroundStyle(fg)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -70,7 +71,7 @@ struct NoticeBanner: View {
         .background(tone.bg(theme.colors))
         .overlay(
             RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                .strokeBorder(tone.fg(theme.colors).opacity(0.25), lineWidth: 1)
+                .strokeBorder(fg.opacity(0.25), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
     }

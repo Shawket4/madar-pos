@@ -26,7 +26,7 @@ impl SufrixConfig {
     pub fn from_env() -> Self {
         Self {
             base_url: option_env!("SUFRIX_BASE_URL")
-                .unwrap_or("https://api.sufrix.app")
+                .unwrap_or("https://sufrix.duckdns.org")
                 .to_string(),
             environment: option_env!("SUFRIX_ENV").unwrap_or("prod").to_string(),
             db_path: String::new(),

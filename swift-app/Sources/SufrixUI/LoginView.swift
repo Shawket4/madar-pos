@@ -211,13 +211,14 @@ private struct BrandPanel: View {
         ZStack {
             theme.colors.surfaceAlt.ignoresSafeArea()
             // Faded watermark mark.
-            SufrixMark(size: 360, armColor: theme.colors.accent.opacity(0.06), dotColor: theme.colors.accent.opacity(0.06))
+            SufrixMark(size: 360)
+                .opacity(0.05)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .offset(x: 80, y: 80)
                 .clipped()
 
             VStack(alignment: .leading, spacing: 0) {
-                SufrixLockup(markSize: 30, textSize: 24)
+                SufrixLockup(height: 28)
                 Spacer()
                 Text("Welcome\nback.")
                     .font(.ui(44, .black))

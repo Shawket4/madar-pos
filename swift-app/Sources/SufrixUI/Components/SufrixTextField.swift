@@ -1,13 +1,11 @@
-// Shared text field — tokenized, with an optional leading SF Symbol. Mirrors the
-// Flutter input decoration (filled surface, sm radius, muted icon). The keyboard
-// / capitalization hints are platform-agnostic in the API and only applied on iOS.
+// Shared text field — matches the Flutter InputDecorationTheme: filled with
+// `surface`, sm radius, 1pt border that thickens to a 2pt accent ring on focus,
+// h16/v14 content padding, muted hint. Optional leading SF Symbol.
 import SwiftUI
-
-enum SufrixKeyboard { case standard, email, number }
-enum SufrixCaps { case none, words }
 
 struct SufrixTextField: View {
     @Environment(\.theme) private var theme
+    @FocusState private var focused: Bool
 
     let placeholder: String
     @Binding var text: String
@@ -22,22 +20,25 @@ struct SufrixTextField: View {
             if let icon {
                 Image(systemName: icon)
                     .font(.system(size: 17))
-                    .foregroundStyle(theme.colors.textMuted)
+                    .foregroundStyle(focused ? theme.colors.accent : theme.colors.textMuted)
             }
             field
                 .font(.ui(15))
                 .foregroundStyle(theme.colors.textPrimary)
+                .focused($focused)
                 .disabled(disabled)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .background(theme.colors.surfaceAlt)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(theme.colors.surface)
         .overlay(
             RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                .strokeBorder(theme.colors.border, lineWidth: 1)
+                .strokeBorder(focused ? theme.colors.accent : theme.colors.border,
+                              lineWidth: focused ? 2 : 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         .opacity(disabled ? 0.6 : 1)
+        .animation(Motion.standard, value: focused)
     }
 
     @ViewBuilder private var field: some View {
@@ -65,3 +66,6 @@ struct SufrixTextField: View {
     }
     #endif
 }
+
+enum SufrixKeyboard { case standard, email, number }
+enum SufrixCaps { case none, words }

@@ -1,35 +1,50 @@
-# swift-app — Sufrix POS (iPhone / iPad)
+# swift-app — Sufrix POS (SwiftUI)
 
 Thin SwiftUI host. **No business logic** — it calls into `rust-core` over UniFFI.
 
-## What's here (Phase 1)
+## What's here
 
-- `Package.swift` — SwiftPM package with `SufrixUI` (the screens) and a
-  `smoketest` executable that exercises the FFI from the command line.
-- `Sources/SufrixUI/` — `SufrixApp` (entry) + `ContentView` (Phase-1 placeholder).
-- `Sources/smoketest/` — CLI proof, run by `../rust-core/tool/smoketest-swift.sh`.
+- `Sources/SufrixUI/` — the app:
+  - `Theme/Tokens.swift` — design tokens (colors light/dark, spacing, radius,
+    Cairo type, motion), ported 1:1 from the Flutter `AppTokens`.
+  - `Components/` — the shared library: `PressableScale`, `SufrixButton`,
+    `SufrixTextField`, `Chips`, `PinPad`, `SufrixMark`/`SufrixLockup`.
+  - `LoginView` + `AppModel` — the branch-gated login (manager device-setup →
+    teller PIN), `KeychainTokenStore`, `SufrixApp`/`ContentView`.
+- `Resources/Assets.xcassets` — the real brand vectors (`SufrixMark`,
+  `SufrixWordmark`) with light/dark variants. `Resources/Fonts/` — Cairo.
+- `project.yml` — xcodegen spec for the macOS app.
+- `Package.swift` — SwiftPM package (kept for the `smoketest` CLI proof).
 
-## Prove the binding works (macOS, no Xcode)
+## Run it (macOS, one command, no Xcode)
 
 ```bash
-cd ../rust-core && ./tool/smoketest-swift.sh
+cd ../rust-core && ./tool/run-swift-mac.sh
 ```
 
-Compiles the generated `SufrixCoreFFI.swift` + `smoketest` against
-`libsufrix_core` and runs it.
+Builds the core, generates the bindings, compiles `SufrixUI` into a native
+`SufrixPOS.app` (Cairo + the real logo bundled, the core dylib linked), and
+launches it.
 
-## Build the real iOS app
+## Open the Xcode project
 
-1. Build the framework + bindings:
-   ```bash
-   cd ../rust-core && ./tool/build-ios.sh        # -> target/SufrixCore.xcframework + swift glue
-   ```
-2. Create an iOS App target in Xcode (or `xcodegen`), then:
-   - Add `SufrixCore.xcframework` (Embed & Sign).
-   - Add the generated `SufrixCoreFFI.swift` to the target.
-   - Add `Sources/SufrixUI/*.swift`.
-3. Run on a simulator/device.
+```bash
+cd swift-app && xcodegen generate && open SufrixPOS.xcworkspace
+```
 
-> The shipping app is an Xcode project (not committed yet) wrapping this package.
-> Phase 6 builds out the real Login → Shift → Order → Cart → Payment → Receipt
-> screens per PLAN.md §6.
+`SufrixPOS.xcworkspace` → the `SufrixPOS` macOS app target. A pre-build phase
+regenerates the Rust bindings + builds `libsufrix_core`, so ⌘R just works.
+(`SufrixPOS.xcodeproj` and `Generated/` are gitignored — regenerated from
+`project.yml`.) The base API URL is baked from `rust-core/.env` at build time.
+
+## Smoke-test the FFI (CLI)
+
+```bash
+cd ../rust-core && ./tool/smoketest-swift.sh      # proves the binding end-to-end
+./tool/typecheck-swift-ui.sh                       # type-checks SufrixUI vs the binding
+```
+
+## iOS
+
+`./tool/build-ios.sh` builds `SufrixCore.xcframework`; add an iOS target to
+`project.yml` (framework dep + the SufrixUI sources) to ship to device/simulator.
