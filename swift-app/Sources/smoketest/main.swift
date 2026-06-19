@@ -25,3 +25,25 @@ let breakdown = priceCart(input: PriceCartInput(
     cashTip: 0))
 print("✓ pricing      : subtotal=\(breakdown.subtotalMinor) tax=\(breakdown.taxMinor) total=\(breakdown.totalMinor) change=\(breakdown.changeGivenMinor)")
 precondition(breakdown.totalMinor == 2280 && breakdown.changeGivenMinor == 220, "pricing FFI mismatch")
+
+// Session surface — all offline-safe, no server needed. Proves the callback
+// interface (TokenStore) and the new auth methods cross the FFI cleanly.
+final class MemoryTokenStore: TokenStore {
+    var blob: Data?
+    func saveBlob(blob: Data) { self.blob = blob }
+    func clearBlob() { self.blob = nil }
+}
+let vault = MemoryTokenStore()
+core.setTokenStore(store: vault)
+precondition(!core.isAuthenticated(), "fresh core must be signed out")
+precondition(core.currentSession() == nil, "no session before login")
+print("✓ session      : signed out, token vault installed")
+
+// Offline unlock with no cached bundle must fail cleanly (Swift throw, no crash).
+do {
+    _ = try core.unlockOffline(name: "Sara", pin: "1234",
+                               branchId: "00000000-0000-0000-0000-000000000001")
+    preconditionFailure("offline unlock should reject with no cached bundle")
+} catch {
+    print("✓ offline lock : unlock rejected w/o bundle (\(error))")
+}

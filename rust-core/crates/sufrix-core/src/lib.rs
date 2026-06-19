@@ -23,10 +23,16 @@ pub mod pricing;
 
 /// The coarse FFI error model the host reacts to (PLAN §7.6).
 pub mod error;
+/// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
+pub mod net;
+/// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
+pub mod session;
 /// Local store — SQLite mirror + durable outbox + id_map + sync cursors (PLAN §8).
 pub mod store;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
+
+use error::CoreError;
 
 /// Crate version (semver of the core library).
 #[uniffi::export]
@@ -58,16 +64,31 @@ pub fn greet(name: String) -> String {
 pub struct SufrixCore {
     config: SufrixConfig,
     store: store::Store,
+    /// HTTP client to the backend (holds the live bearer token).
+    api: net::ApiClient,
+    /// The live session (`None` = signed out). Set by login / offline unlock /
+    /// cold-start restore; cleared on logout.
+    session: RwLock<Option<session::SessionState>>,
+    /// The host's secure-bytes vault for the session blob (Keychain/Keystore).
+    token_store: Mutex<Option<Box<dyn session::TokenStore>>>,
 }
 
 #[uniffi::export]
 impl SufrixCore {
     /// Construct with explicit config (the host fills `db_path` with an
-    /// app-private file). Opens + migrates the local store.
+    /// app-private file). Opens + migrates the local store and builds the HTTP
+    /// client; the session starts empty (host calls `restore_session` at boot).
     #[uniffi::constructor]
     pub fn new(config: SufrixConfig) -> Result<Arc<Self>, error::CoreError> {
         let store = store::Store::open(&config.db_path)?;
-        Ok(Arc::new(Self { config, store }))
+        let api = net::ApiClient::new(config.base_url.clone())?;
+        Ok(Arc::new(Self {
+            config,
+            store,
+            api,
+            session: RwLock::new(None),
+            token_store: Mutex::new(None),
+        }))
     }
 
     /// Construct from the baked-in `.env` defaults (in-memory store until the
@@ -101,6 +122,143 @@ impl SufrixCore {
     /// this in the sync-status chrome.
     pub fn pending_outbox_count(&self) -> Result<u32, error::CoreError> {
         self.store.pending_count()
+    }
+
+    // ── session (sync) ──────────────────────────────────────────────────────
+
+    /// Install the host's secure-bytes vault. Call once, right after `new`,
+    /// before `restore_session`.
+    pub fn set_token_store(&self, store: Box<dyn session::TokenStore>) {
+        *self.token_store.lock().unwrap_or_else(|e| e.into_inner()) = Some(store);
+    }
+
+    /// Re-hydrate a session from the host's persisted blob at cold start. Returns
+    /// the snapshot if the blob is valid, else `None` (fresh install / corrupt).
+    pub fn restore_session(&self, blob: Vec<u8>) -> Option<session::SessionSnapshot> {
+        let state = session::SessionState::from_blob(&blob)?;
+        self.api.set_bearer(state.token.clone());
+        let snapshot = state.snapshot.clone();
+        *self.session.write().unwrap_or_else(|e| e.into_inner()) = Some(state);
+        Some(snapshot)
+    }
+
+    pub fn is_authenticated(&self) -> bool {
+        self.session.read().unwrap_or_else(|e| e.into_inner()).is_some()
+    }
+
+    /// The cached session — never hits the network.
+    pub fn current_session(&self) -> Option<session::SessionSnapshot> {
+        self.session
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|s| s.snapshot.clone())
+    }
+
+    /// Permission check against the mirrored matrix. Optimistic while a session
+    /// is offline-unlocked (permissions not yet loaded) — see `SessionState`.
+    pub fn has_permission(&self, resource: String, action: String) -> bool {
+        self.session
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|s| s.has_permission(&resource, &action))
+            .unwrap_or(false)
+    }
+
+    /// Offline unlock: verify a typed PIN against the cached org bundle
+    /// (argon2id). No network, no token; identity is the real server `user_id`.
+    pub fn unlock_offline(
+        &self,
+        name: String,
+        pin: String,
+        branch_id: String,
+    ) -> Result<session::SessionSnapshot, CoreError> {
+        let state = session::unlock_from_bundle(&self.store, &name, &pin, &branch_id)?;
+        let snapshot = state.snapshot.clone();
+        self.api.set_bearer(None);
+        self.persist_and_set(state);
+        Ok(snapshot)
+    }
+
+    /// Sign out: drop the live session + token, clear the host vault. Preserves
+    /// the outbox unless `wipe_outbox` (offline shifts are real sales — only wipe
+    /// on an explicit destructive sign-out).
+    pub fn logout(&self, wipe_outbox: bool) -> Result<(), CoreError> {
+        self.api.set_bearer(None);
+        *self.session.write().unwrap_or_else(|e| e.into_inner()) = None;
+        if let Some(ts) = self.token_store.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            ts.clear_blob();
+        }
+        if wipe_outbox {
+            self.store.wipe_outbox()?;
+        }
+        Ok(())
+    }
+}
+
+impl SufrixCore {
+    /// Persist a session to the host vault and install it as the live session.
+    fn persist_and_set(&self, state: session::SessionState) {
+        if let Some(ts) = self.token_store.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            ts.save_blob(state.to_blob());
+        }
+        *self.session.write().unwrap_or_else(|e| e.into_inner()) = Some(state);
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl SufrixCore {
+    /// Online login (PIN or email). Mints a bearer, mirrors permissions, caches
+    /// the org's offline-auth bundle for later offline unlock, and persists the
+    /// session to the host vault. Returns `Offline` if disconnected.
+    pub async fn login(
+        &self,
+        req: session::LoginRequest,
+    ) -> Result<session::SessionSnapshot, CoreError> {
+        use sufrix_api::apis::{auth_api, orgs_api};
+
+        let wire = session::wire_login_request(&req)?;
+        let resp = auth_api::login(&self.api.config(), auth_api::LoginParams { login_request: wire })
+            .await
+            .map_err(net::map_api_error)?;
+
+        // Token is live from here on.
+        self.api.set_bearer(Some(resp.token.clone()));
+
+        // PIN login carries the device branch; email login has none.
+        let branch_id = req.branch_id.clone();
+        let mut snapshot = session::snapshot_from_login(&resp, branch_id);
+
+        // Mirror permissions (best-effort — a perms blip must not void a good login).
+        let permissions = match auth_api::get_my_permissions(&self.api.config()).await {
+            Ok(p) => {
+                snapshot.permissions_loaded = true;
+                session::permissions_from(&p)
+            }
+            Err(_) => Vec::new(),
+        };
+
+        // Cache the org's offline-auth bundle so any org teller can unlock offline
+        // later (best-effort — failure just means no offline unlock until next login).
+        if let Some(org_id) = snapshot.org_id.clone() {
+            if let Ok(bundle) = orgs_api::offline_auth_bundle(
+                &self.api.config(),
+                orgs_api::OfflineAuthBundleParams { id: org_id },
+            )
+            .await
+            {
+                session::cache_bundle(&self.store, &bundle, &snapshot);
+            }
+        }
+
+        let state = session::SessionState {
+            snapshot: snapshot.clone(),
+            permissions,
+            token: Some(resp.token),
+        };
+        self.persist_and_set(state);
+        Ok(snapshot)
     }
 }
 

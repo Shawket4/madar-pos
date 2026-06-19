@@ -14,8 +14,21 @@ crate-type = ["lib", "cdylib", "staticlib"]
 name = "sufrix_core"
 
 [dependencies]
-# Proc-macro UniFFI (no .udl). "cli" gates uniffi_bindgen_main for the bin below.
-uniffi = { version = "0.28", features = ["cli"] }
+# Proc-macro UniFFI (no .udl). "cli" gates uniffi_bindgen_main for the bin below;
+# "tokio" lets us export `async fn`s with `async_runtime = "tokio"`.
+uniffi = { version = "0.28", features = ["cli", "tokio"] }
+
+# The typed reqwest API client generated from the backend OpenAPI spec
+# (tool/generate_api.sh). The `net/` layer drives it; nothing here hand-rolls wire.
+sufrix-api = { path = "../sufrix-api" }
+# Async runtime backing the exported `async fn`s (and reqwest's executor).
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+# HTTP plumbing we touch directly in `net/` (client builder, status codes, errors).
+# Features union with sufrix-api's, resolving to one reqwest build.
+reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
+# Offline-PIN verifier — argon2id, byte-compatible with the backend's
+# `auth::offline::hash_offline_pin` (verifies any PHC string it ships in the bundle).
+argon2 = "0.5"
 
 # Local store — embedded SQLite, the source of truth the UI reads from, online
 # or offline. `bundled` vendors SQLite so there's no system dependency.
@@ -23,7 +36,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # DTO/payload (de)serialization + ids + timestamps + the FFI error model.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 

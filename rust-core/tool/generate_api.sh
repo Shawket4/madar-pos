@@ -43,6 +43,13 @@ cat > "$PKG_DIR/.openapi-generator-ignore" <<'EOF'
 .travis.yml
 git_push.sh
 EOF
+# Silence clippy across the generated crate — it's machine output, not ours, and
+# a workspace member now (so `cargo clippy` would otherwise flood with
+# needless-return style lints). lib.rs already carries some allow attrs.
+if ! grep -q 'allow(clippy::all)' "$PKG_DIR/src/lib.rs"; then
+  { echo '#![allow(clippy::all)]'; cat "$PKG_DIR/src/lib.rs"; } > "$PKG_DIR/src/lib.rs.tmp" \
+    && mv "$PKG_DIR/src/lib.rs.tmp" "$PKG_DIR/src/lib.rs"
+fi
 
 # 4/4 — Sanity compile the generated crate on its own.
 echo "── 4/4 cargo check on generated client…"

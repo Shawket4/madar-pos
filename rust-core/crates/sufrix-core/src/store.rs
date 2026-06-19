@@ -206,6 +206,13 @@ impl Store {
             params![seq, error])?;
         Ok(())
     }
+
+    /// Drop every queued command. Only for an explicit destructive sign-out —
+    /// offline shifts are real sales, so the default logout preserves them.
+    pub fn wipe_outbox(&self) -> CoreResult<()> {
+        self.lock().execute("DELETE FROM outbox", [])?;
+        Ok(())
+    }
 }
 
 fn now_iso() -> String {
