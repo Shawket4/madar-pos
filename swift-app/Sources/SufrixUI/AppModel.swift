@@ -193,6 +193,24 @@ final class AppModel: ObservableObject {
         history = (try? await core.listShiftOrders()) ?? []
     }
 
+    /// Void a synced order (queues offline). Reloads history on success so the
+    /// row flips to Voided. Returns whether it succeeded (the sheet dismisses).
+    func voidOrder(orderId: String, reason: String, note: String?) async -> Bool {
+        isBusy = true; errorMessage = nil
+        defer { isBusy = false }
+        do {
+            try await core.voidOrder(orderId: orderId, reason: reason,
+                                     note: note?.isEmpty == true ? nil : note,
+                                     restoreInventory: true)
+            await loadHistory()
+            refreshPending()
+            return true
+        } catch {
+            errorMessage = humanMessage(error)
+            return false
+        }
+    }
+
     // ── close shift ───────────────────────────────────────────────────────────
     /// Drives the close-shift screen (presented over the order screen).
     @Published var showCloseShift = false

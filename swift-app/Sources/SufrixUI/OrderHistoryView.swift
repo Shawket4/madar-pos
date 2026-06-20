@@ -11,6 +11,7 @@ struct OrderHistoryView: View {
     let onClose: () -> Void
 
     @State private var expandedId: String?
+    @State private var voidTarget: OrderSummaryView?
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -44,6 +45,12 @@ struct OrderHistoryView: View {
             }
         }
         .task { await app.loadHistory() }
+        .sheet(item: $voidTarget) { order in
+            VoidSheet(app: app, order: order, onDone: { voidTarget = nil })
+                .frame(minWidth: 440, minHeight: 520)
+                .environment(\.theme, theme)
+                .environment(\.localize, t)
+        }
     }
 
     private var header: some View {
@@ -66,44 +73,60 @@ struct OrderHistoryView: View {
     }
 
     private func row(_ item: OrderSummaryView) -> some View {
-        Button {
-            Haptics.selection()
-            withAnimation(Motion.standard) { expandedId = expandedId == item.id ? nil : item.id }
-        } label: {
-            VStack(spacing: Space.sm) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.orderNumber.map { "#\($0)" } ?? t("history.order"))
-                            .font(.ui(14, .semibold)).foregroundStyle(theme.colors.textPrimary)
-                        Text(Self.timeOf(item.createdAt))
-                            .font(.ui(11)).foregroundStyle(theme.colors.textMuted)
-                    }
-                    Spacer(minLength: Space.sm)
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text(Money.format(item.totalMinor, currency))
-                            .font(.money(15, .bold)).foregroundStyle(theme.colors.textPrimary)
-                        statusChip(item)
-                    }
+        let canVoid = !item.queued && item.status != "voided"
+        return VStack(spacing: Space.sm) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.orderNumber.map { "#\($0)" } ?? t("history.order"))
+                        .font(.ui(14, .semibold)).foregroundStyle(theme.colors.textPrimary)
+                    Text(Self.timeOf(item.createdAt))
+                        .font(.ui(11)).foregroundStyle(theme.colors.textMuted)
                 }
-                if expandedId == item.id {
-                    Rectangle().fill(theme.colors.border).frame(height: 1)
-                    detailRow(t("order.subtotal"), Money.format(item.subtotalMinor, currency))
-                    detailRow(t("order.tax"), Money.format(item.taxMinor, currency))
-                    HStack {
-                        Text(item.paymentLabel).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
-                        Spacer()
+                Spacer(minLength: Space.sm)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(Money.format(item.totalMinor, currency))
+                        .font(.money(15, .bold)).foregroundStyle(theme.colors.textPrimary)
+                    statusChip(item)
+                }
+            }
+            // The header toggles the expanded detail (tap gesture, not a Button,
+            // so the Void button below isn't nested inside a button).
+            .contentShape(Rectangle())
+            .onTapGesture {
+                Haptics.selection()
+                withAnimation(Motion.standard) { expandedId = expandedId == item.id ? nil : item.id }
+            }
+
+            if expandedId == item.id {
+                Rectangle().fill(theme.colors.border).frame(height: 1)
+                detailRow(t("order.subtotal"), Money.format(item.subtotalMinor, currency))
+                detailRow(t("order.tax"), Money.format(item.taxMinor, currency))
+                HStack {
+                    Text(item.paymentLabel).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
+                    Spacer()
+                    if canVoid {
+                        Button {
+                            Haptics.selection()
+                            voidTarget = item
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "trash")
+                                Text(t("void.action"))
+                            }
+                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.danger)
+                        }
+                        .buttonStyle(.pressable)
                     }
                 }
             }
-            .padding(Space.md)
-            .background(theme.colors.surface)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                    .strokeBorder(theme.colors.border, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
-        .buttonStyle(.pressable(scale: 0.99))
+        .padding(Space.md)
+        .background(theme.colors.surface)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                .strokeBorder(theme.colors.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {

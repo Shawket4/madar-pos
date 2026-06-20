@@ -230,6 +230,24 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         isLoadingHistory = false
     }
 
+    /** Void a synced order (queues offline). Reloads history on success so the
+     *  row flips to Voided. Returns whether it succeeded (the sheet dismisses). */
+    suspend fun voidOrder(orderId: String, reason: String, note: String?): Boolean {
+        isBusy = true; error = null
+        return try {
+            core.voidOrder(orderId, reason, note?.takeIf { it.isNotBlank() }, true)
+            loadHistory()
+            refreshPending()
+            true
+        } catch (e: CoreException) {
+            error = humanMessage(e); false
+        } catch (e: Exception) {
+            error = e.message ?: core.tr("err.generic"); false
+        } finally {
+            isBusy = false
+        }
+    }
+
     // ── close shift ────────────────────────────────────────────────────────────
     /** Drives the close-shift screen (shown over the order screen). */
     var showCloseShift by mutableStateOf(false)

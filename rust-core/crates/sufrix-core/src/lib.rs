@@ -346,6 +346,25 @@ impl SufrixCore {
                         },
                     }
                 }
+                "void_order" => {
+                    use sufrix_api::apis::orders_api;
+                    let cmd: orders::VoidOrderCommand = serde_json::from_str(&item.payload)?;
+                    let res = orders_api::void_order(
+                        &self.api.config(),
+                        orders_api::VoidOrderParams {
+                            order_id: cmd.order_id,
+                            void_order_request: cmd.request,
+                        },
+                    )
+                    .await;
+                    match res {
+                        Ok(_) => self.store.mark_acked(item.seq, None)?,
+                        Err(e) => match net::map_api_error(e) {
+                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
+                            other => self.store.mark_dead(item.seq, &other.to_string())?,
+                        },
+                    }
+                }
                 _ => {} // future op types
             }
         }
@@ -909,10 +928,54 @@ impl SufrixCore {
                 include_items: None,
             };
             if let Ok(page) = orders_api::list_orders(&self.api.config(), params).await {
-                all.extend(page.data.iter().map(orders::from_server));
+                // Overlay an optimistic "voided" status for orders with a queued
+                // void command (the void hasn't synced yet).
+                let voiding = orders::pending_void_ids(&self.store)?;
+                all.extend(page.data.iter().map(|o| {
+                    let mut v = orders::from_server(o);
+                    if voiding.contains(&v.id) {
+                        v.status = "voided".into();
+                    }
+                    v
+                }));
             }
         }
         Ok(all)
+    }
+
+    /// Void a synced order (mistake/refund). Queues an idempotent `void_order`
+    /// command keyed `{order_id}:void` and tries to send now; works offline.
+    /// History reflects it immediately via the pending-void overlay. Only synced
+    /// orders (with a server id) can be voided — a queued order isn't on the
+    /// server yet.
+    pub async fn void_order(
+        &self,
+        order_id: String,
+        reason: String,
+        note: Option<String>,
+        restore_inventory: bool,
+    ) -> Result<(), CoreError> {
+        // Must be signed in (the replay needs a token).
+        if !self.is_authenticated() {
+            return Err(CoreError::Unauthenticated { message: "not signed in".into() });
+        }
+        let voided_at = chrono::Utc::now().fixed_offset();
+        let mut request = sufrix_api::models::VoidOrderRequest::new(reason);
+        request.note = Some(note);
+        request.restore_inventory = Some(Some(restore_inventory));
+        request.voided_at = Some(Some(voided_at));
+
+        let cmd = orders::VoidOrderCommand { order_id: order_id.clone(), request };
+        self.store.enqueue(&store::NewOutboxOp {
+            id: format!("{order_id}:void"),
+            op_type: "void_order".into(),
+            idempotency_key: format!("{order_id}:void"),
+            payload: serde_json::to_string(&cmd)?,
+            event_at: voided_at.to_rfc3339(),
+            depends_on_seq: None,
+        })?;
+        let _ = self.drain_outbox().await;
+        Ok(())
     }
 
     /// Reconcile the device's shift with the server (online). Caches the server's

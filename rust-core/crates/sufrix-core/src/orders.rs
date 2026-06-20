@@ -4,10 +4,35 @@
 //! before it syncs, and the whole list degrades to just the queued ones offline.
 //! Projection is pure (store/outbox in, view DTOs out) so it's unit-testable.
 
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
 use sufrix_api::models;
 
 use crate::error::CoreResult;
 use crate::store::Store;
+
+/// Outbox payload for a void-order command — carries the path `order_id`.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct VoidOrderCommand {
+    pub order_id: String,
+    pub request: models::VoidOrderRequest,
+}
+
+/// Server order ids that have a queued/failed void command — used to overlay an
+/// optimistic "voided" status on the synced orders before the void syncs.
+pub(crate) fn pending_void_ids(store: &Store) -> CoreResult<HashSet<String>> {
+    let mut ids = HashSet::new();
+    for item in store.list_active()? {
+        if item.op_type != "void_order" {
+            continue;
+        }
+        if let Ok(cmd) = serde_json::from_str::<VoidOrderCommand>(&item.payload) {
+            ids.insert(cmd.order_id);
+        }
+    }
+    Ok(ids)
+}
 
 /// One order row for the history list (+ a totals detail).
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
@@ -146,5 +171,30 @@ mod tests {
     fn empty_when_no_queued_orders() {
         let store = Store::open("").unwrap();
         assert!(queued(&store, SHIFT).unwrap().is_empty());
+    }
+
+    #[test]
+    fn pending_void_ids_collects_queued_voids() {
+        let store = Store::open("").unwrap();
+        assert!(pending_void_ids(&store).unwrap().is_empty());
+
+        let cmd = VoidOrderCommand {
+            order_id: "srv-order-1".into(),
+            request: models::VoidOrderRequest::new("mistake".into()),
+        };
+        store
+            .enqueue(&crate::store::NewOutboxOp {
+                id: "srv-order-1:void".into(),
+                op_type: "void_order".into(),
+                idempotency_key: "srv-order-1:void".into(),
+                payload: serde_json::to_string(&cmd).unwrap(),
+                event_at: "2026-06-20T12:00:00+00:00".into(),
+                depends_on_seq: None,
+            })
+            .unwrap();
+
+        let ids = pending_void_ids(&store).unwrap();
+        assert!(ids.contains("srv-order-1"));
+        assert_eq!(ids.len(), 1);
     }
 }
