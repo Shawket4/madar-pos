@@ -31,6 +31,8 @@ pub mod error;
 pub mod i18n;
 /// Menu / catalog reads — branch-effective mirror + view DTOs (PLAN §R9).
 pub mod menu;
+/// Order history reads — synced + still-queued orders for the shift.
+pub mod orders;
 /// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
 pub mod net;
 /// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
@@ -866,6 +868,51 @@ impl SufrixCore {
     pub async fn retry_outbox(&self) -> Result<(), CoreError> {
         self.store.requeue_dead()?;
         self.drain_outbox().await
+    }
+
+    /// The current shift's orders — the still-queued sales (from the outbox,
+    /// shown first, always available offline) plus the server's synced orders
+    /// when online (best-effort). Errors if there's no current shift.
+    pub async fn list_shift_orders(&self) -> Result<Vec<orders::OrderSummaryView>, CoreError> {
+        use sufrix_api::apis::orders_api;
+        let shift = shift::current(&self.store)?
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no shift".into() })?;
+        let (branch_id, online) = {
+            let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated { message: "not signed in".into() })?;
+            let b = s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
+                field: "branch_id".into(),
+                message: "session has no branch".into(),
+            })?;
+            (b, s.snapshot.online)
+        };
+
+        // Always show the still-queued sales (offline-safe).
+        let mut all = orders::queued(&self.store, &shift.id)?;
+
+        // Add the server's synced orders when online (best-effort — a failure
+        // just leaves the queued-only view).
+        if online {
+            let params = orders_api::ListOrdersParams {
+                branch_id: Some(branch_id),
+                shift_id: Some(shift.id.clone()),
+                updated_after: None,
+                page: None,
+                per_page: Some(200),
+                teller_name: None,
+                payment_method: None,
+                status: None,
+                from: None,
+                to: None,
+                order_type: None,
+                channel: None,
+                include_items: None,
+            };
+            if let Ok(page) = orders_api::list_orders(&self.api.config(), params).await {
+                all.extend(page.data.iter().map(orders::from_server));
+            }
+        }
+        Ok(all)
     }
 
     /// Reconcile the device's shift with the server (online). Caches the server's

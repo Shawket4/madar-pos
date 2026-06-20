@@ -12,6 +12,7 @@ import app.sufrix.core.CoreException
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
 import app.sufrix.core.MenuItemView
+import app.sufrix.core.OrderSummaryView
 import app.sufrix.core.OutboxItemView
 import app.sufrix.core.PaymentMethodView
 import app.sufrix.core.ReceiptView
@@ -213,6 +214,20 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun discardOutboxItem(id: String) {
         runCatching { core.discardOutboxItem(id) }
         loadOutbox()
+    }
+
+    // ── order history ────────────────────────────────────────────────────────────
+    var showHistory by mutableStateOf(false)
+    var history by mutableStateOf<List<OrderSummaryView>>(emptyList())
+        private set
+    var isLoadingHistory by mutableStateOf(false)
+        private set
+
+    /** Load the current shift's orders (synced + queued). Best-effort. */
+    suspend fun loadHistory() {
+        isLoadingHistory = true
+        history = runCatching { core.listShiftOrders() }.getOrDefault(emptyList())
+        isLoadingHistory = false
     }
 
     // ── close shift ────────────────────────────────────────────────────────────

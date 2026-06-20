@@ -140,6 +140,11 @@ fun OrderScreen(model: AppModel) {
         if (model.showSync) {
             SyncScreen(model)
         }
+
+        // Order history — full-screen over the order screen.
+        if (model.showHistory) {
+            OrderHistoryScreen(model)
+        }
     }
 }
 
@@ -158,6 +163,15 @@ private fun OrderTopBar(model: AppModel) {
             SufrixMark(size = 32.dp)
             model.shift?.let { StatusChip(it.tellerName, ChipTone.INFO) }
             Box(Modifier.weight(1f))
+            Text(
+                "≣", color = c.textMuted, fontSize = 19.sp,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() }, indication = null,
+                ) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    model.showHistory = true
+                },
+            )
             Text(
                 if (model.pendingCount > 0) "⟳ ${model.pendingCount}" else "✓",
                 color = if (model.pendingCount > 0) c.warning else c.textMuted,

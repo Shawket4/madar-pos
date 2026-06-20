@@ -181,6 +181,18 @@ final class AppModel: ObservableObject {
         loadOutbox()
     }
 
+    // ── order history ───────────────────────────────────────────────────────────
+    @Published var showHistory = false
+    @Published private(set) var history: [OrderSummaryView] = []
+    @Published private(set) var isLoadingHistory = false
+
+    /// Load the current shift's orders (synced + queued). Best-effort.
+    func loadHistory() async {
+        isLoadingHistory = true
+        defer { isLoadingHistory = false }
+        history = (try? await core.listShiftOrders()) ?? []
+    }
+
     // ── close shift ───────────────────────────────────────────────────────────
     /// Drives the close-shift screen (presented over the order screen).
     @Published var showCloseShift = false

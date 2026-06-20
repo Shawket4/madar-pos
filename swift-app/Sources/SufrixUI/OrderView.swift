@@ -88,6 +88,13 @@ struct OrderView: View {
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }
+            // Order history.
+            .sheet(isPresented: $app.showHistory) {
+                OrderHistoryView(app: app, onClose: { app.showHistory = false })
+                    .frame(minWidth: 460, minHeight: 560)
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -123,6 +130,15 @@ private struct OrderTopBar: View {
                 StatusChip(label: s.tellerName, icon: "person.fill", tone: .info)
             }
             Spacer(minLength: 0)
+            Button {
+                Haptics.selection()
+                app.showHistory = true
+            } label: {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.colors.textMuted)
+            }
+            .buttonStyle(.pressable)
             Button {
                 Haptics.selection()
                 app.loadOutbox()
