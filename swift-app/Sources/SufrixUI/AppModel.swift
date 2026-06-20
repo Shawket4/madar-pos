@@ -107,8 +107,13 @@ final class AppModel: ObservableObject {
     /// shift on login, and a dashboard force-close); use the local cache offline.
     /// Drives OpenShift ↔ Order routing.
     func reconcileShift() async {
-        if session?.online == true {
-            shift = (try? await core.refreshShift()) ?? nil
+        guard session?.online == true else { loadShift(); return }
+        // Refresh from the server, but NEVER let a transient/network error nuke a
+        // good local shift — that's what bounced the teller back to open-shift.
+        // Only a successful refresh (the core's authoritative answer, which is
+        // nil only on a real force-close) updates the shift.
+        if let refreshed = try? await core.refreshShift() {
+            shift = refreshed
         } else {
             loadShift()
         }

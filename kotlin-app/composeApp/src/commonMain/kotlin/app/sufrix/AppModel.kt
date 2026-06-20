@@ -144,7 +144,10 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
      *  dashboard force-close); use the local cache offline. */
     suspend fun reconcileShift() {
         shift = if (session?.online == true) {
-            runCatching { core.refreshShift() }.getOrNull()
+            // Never let a transient/network refresh error nuke a good local shift
+            // — that's what bounced the teller back to open-shift. Fall back to the
+            // local cache; only a successful refresh updates the shift.
+            runCatching { core.refreshShift() }.getOrElse { runCatching { core.currentShift() }.getOrNull() }
         } else {
             runCatching { core.currentShift() }.getOrNull()
         }

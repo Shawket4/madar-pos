@@ -755,14 +755,22 @@ impl SufrixCore {
         .await
         .map_err(net::map_api_error)?;
 
-        if prefill.has_open_shift {
-            if let Some(Some(server_shift)) = prefill.open_shift {
+        // The server's "no open shift" is only authoritative once our own
+        // open_shift command has actually reached it. While it's still queued,
+        // the optimistic local shift stands — clearing it here is what bounced
+        // the teller straight back to the open-shift screen.
+        let open_pending = self.store.pending()?.iter().any(|i| i.op_type == "open_shift");
+        match shift::reconcile(&prefill, open_pending) {
+            shift::ShiftReconcile::Adopt(server_shift) => {
                 shift::save(&self.store, &server_shift)?;
-                return Ok(Some(shift::view_from(&server_shift)));
+                Ok(Some(shift::view_from(&server_shift)))
+            }
+            shift::ShiftReconcile::KeepLocal => shift::current(&self.store),
+            shift::ShiftReconcile::Clear => {
+                shift::clear(&self.store)?;
+                Ok(None)
             }
         }
-        shift::clear(&self.store)?;
-        Ok(None)
     }
 }
 
