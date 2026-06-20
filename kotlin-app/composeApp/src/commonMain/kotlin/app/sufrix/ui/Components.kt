@@ -1,6 +1,8 @@
 package app.sufrix.ui
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,32 +12,30 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -45,10 +45,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.sufrix.resources.Res
+import org.jetbrains.compose.resources.painterResource
 
-// The Compose mirror of the SwiftUI component library. Same tokens, same shapes,
-// same tactile press (scale + haptic). NOT compiled in this checkout (no gradle /
-// Android SDK) — verified at the symbol level against the generated binding.
+// The Compose mirror of the refined SwiftUI component library — same tokens,
+// shapes, circular PIN keys, flat buttons, focus rings, real logo. NOT compiled
+// in this checkout (no gradle / Android SDK); kept in lockstep with Swift.
 
 /// The signature tactile press: scale down while held (Flutter AnimatedPressScale).
 @Composable
@@ -58,42 +60,42 @@ fun Modifier.pressScale(interaction: MutableInteractionSource, down: Float = 0.9
     return this.scale(s)
 }
 
-enum class BtnVariant { PRIMARY, SECONDARY, GHOST, DANGER }
+enum class BtnVariant { PRIMARY, OUTLINE, GHOST, DANGER }
 
 @Composable
 fun SufrixButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    icon: ImageVector? = null,
     variant: BtnVariant = BtnVariant.PRIMARY,
     loading: Boolean = false,
     enabled: Boolean = true,
     fullWidth: Boolean = true,
-    height: Dp = 52.dp,
+    height: Dp = 50.dp,
 ) {
     val c = sufrixColors()
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val fg = when (variant) {
         BtnVariant.PRIMARY -> c.textOnAccent
-        BtnVariant.SECONDARY -> c.accent
+        BtnVariant.DANGER -> Color.White
+        BtnVariant.OUTLINE -> c.accent
         BtnVariant.GHOST -> c.textSecondary
-        BtnVariant.DANGER -> c.danger
     }
-    val bg = when (variant) {
+    val base = when (variant) {
         BtnVariant.PRIMARY -> c.accent
-        BtnVariant.SECONDARY, BtnVariant.GHOST -> Color.Transparent
-        BtnVariant.DANGER -> c.dangerBg
+        BtnVariant.DANGER -> c.danger
+        BtnVariant.OUTLINE, BtnVariant.GHOST -> Color.Transparent
     }
+    val bg = if (enabled && !loading) base else base.copy(alpha = 0.45f)
     Box(
         modifier
             .then(if (fullWidth) Modifier.fillMaxWidth() else Modifier)
             .height(height)
-            .pressScale(interaction)
-            .clip(RoundedCornerShape(Radii.md))
+            .pressScale(interaction, 0.975f)
+            .clip(RoundedCornerShape(Radii.sm))
             .background(bg)
-            .then(if (variant == BtnVariant.SECONDARY) Modifier.border(1.5.dp, c.accent, RoundedCornerShape(Radii.md)) else Modifier)
+            .then(if (variant == BtnVariant.OUTLINE) Modifier.border(1.5.dp, c.accent, RoundedCornerShape(Radii.sm)) else Modifier)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled && !loading) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
             }
@@ -101,12 +103,9 @@ fun SufrixButton(
         contentAlignment = Alignment.Center,
     ) {
         if (loading) {
-            CircularProgressIndicator(color = fg, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+            CircularProgressIndicator(color = fg, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
-                Text(label, color = fg, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 15.5.sp)
-            }
+            Text(label, color = fg, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
     }
 }
@@ -117,26 +116,22 @@ fun SufrixTextField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
-    icon: ImageVector? = null,
     secure: Boolean = false,
     enabled: Boolean = true,
     keyboard: KeyboardType = KeyboardType.Text,
 ) {
     val c = sufrixColors()
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radii.sm))
-            .background(c.surfaceAlt)
-            .border(1.dp, c.border, RoundedCornerShape(Radii.sm))
-            .padding(horizontal = 14.dp, vertical = 13.dp),
+            .background(c.surface)
+            .border(if (focused) 2.dp else 1.dp, if (focused) c.accent else c.border, RoundedCornerShape(Radii.sm))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = c.textMuted, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(Space.md))
-        }
-        Box(Modifier.weight(1f)) {
+        Box(Modifier.fillMaxWidth()) {
             if (value.isEmpty()) {
                 Text(placeholder, color = c.textMuted, fontFamily = SufrixFont, fontSize = 15.sp)
             }
@@ -145,6 +140,7 @@ fun SufrixTextField(
                 onValueChange = onValueChange,
                 enabled = enabled,
                 singleLine = true,
+                modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
                 textStyle = TextStyle(color = c.textPrimary, fontFamily = SufrixFont, fontSize = 15.sp),
                 visualTransformation = if (secure) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(keyboardType = keyboard),
@@ -154,134 +150,119 @@ fun SufrixTextField(
     }
 }
 
-enum class ChipTone { INFO, SUCCESS, WARNING, DANGER, NEUTRAL }
+enum class ChipTone { INFO, ACCENT, SUCCESS, WARNING, DANGER, NEUTRAL }
 
 @Composable
 private fun ChipTone.fg(c: SufrixColors) = when (this) {
-    ChipTone.INFO -> c.navy; ChipTone.SUCCESS -> c.success; ChipTone.WARNING -> c.warning
-    ChipTone.DANGER -> c.danger; ChipTone.NEUTRAL -> c.textSecondary
+    ChipTone.INFO -> c.navy; ChipTone.ACCENT -> c.accent; ChipTone.SUCCESS -> c.success
+    ChipTone.WARNING -> c.warning; ChipTone.DANGER -> c.danger; ChipTone.NEUTRAL -> c.textSecondary
 }
 
 @Composable
 private fun ChipTone.bg(c: SufrixColors) = when (this) {
-    ChipTone.INFO -> c.navyBg; ChipTone.SUCCESS -> c.successBg; ChipTone.WARNING -> c.warningBg
-    ChipTone.DANGER -> c.dangerBg; ChipTone.NEUTRAL -> c.surfaceAlt
+    ChipTone.INFO -> c.navyBg; ChipTone.ACCENT -> c.accentBg; ChipTone.SUCCESS -> c.successBg
+    ChipTone.WARNING -> c.warningBg; ChipTone.DANGER -> c.dangerBg; ChipTone.NEUTRAL -> c.surfaceAlt
 }
 
 @Composable
-fun StatusChip(label: String, tone: ChipTone = ChipTone.INFO) {
+fun StatusChip(label: String, tone: ChipTone = ChipTone.NEUTRAL) {
     val c = sufrixColors()
+    val fg = tone.fg(c)
     Row(
-        Modifier.clip(CircleShape).background(tone.bg(c)).padding(horizontal = 11.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.clip(CircleShape).background(tone.bg(c)).border(1.dp, fg.copy(alpha = 0.25f), CircleShape)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(tone.fg(c)))
-        Text(label, color = tone.fg(c), fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Box(Modifier.size(6.dp).clip(CircleShape).background(fg))
+        Text(label, color = fg, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 11.sp)
     }
 }
 
 @Composable
 fun NoticeBanner(text: String, tone: ChipTone = ChipTone.WARNING, bold: Boolean = false) {
     val c = sufrixColors()
+    val fg = tone.fg(c)
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(tone.bg(c))
-            .border(1.dp, tone.fg(c).copy(alpha = 0.25f), RoundedCornerShape(Radii.sm))
+            .border(1.dp, fg.copy(alpha = 0.25f), RoundedCornerShape(Radii.sm))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Text(
-            text, color = tone.fg(c), fontFamily = SufrixFont,
-            fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp,
-        )
+        Text(text, color = fg, fontFamily = SufrixFont,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp)
     }
 }
 
 @Composable
-fun PinPad(pin: String, maxLength: Int = 6, onDigit: (String) -> Unit, onBackspace: () -> Unit) {
+fun PinPad(pin: String, maxLength: Int = 6, keySize: Dp = 64.dp, onDigit: (String) -> Unit, onBackspace: () -> Unit) {
     val c = sufrixColors()
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.xl),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
+        // Dots — spring 12→14, glow when filled.
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             repeat(maxLength) { i ->
                 val filled = i < pin.length
+                val d by animateDpAsState(if (filled) 14.dp else 12.dp, spring(), "dot")
                 Box(
-                    Modifier.size(12.dp).clip(CircleShape)
+                    Modifier.size(d).clip(CircleShape)
                         .background(if (filled) c.accent else Color.Transparent)
-                        .then(if (filled) Modifier else Modifier.border(1.5.dp, c.border, CircleShape)),
+                        .border(2.dp, if (filled) c.accent else c.border, CircleShape),
                 )
             }
         }
-        val rows = listOf(
-            listOf("1", "2", "3"), listOf("4", "5", "6"),
-            listOf("7", "8", "9"), listOf("", "0", "<"),
-        )
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            rows.forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    row.forEach { key ->
-                        Box(Modifier.weight(1f)) { PinKey(key, onDigit, onBackspace) }
-                    }
-                }
+        val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("", "0", "<"))
+        rows.forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                row.forEach { key -> PinKey(key, keySize, onDigit, onBackspace) }
             }
         }
     }
 }
 
 @Composable
-private fun PinKey(key: String, onDigit: (String) -> Unit, onBackspace: () -> Unit) {
+private fun PinKey(key: String, size: Dp, onDigit: (String) -> Unit, onBackspace: () -> Unit) {
     val c = sufrixColors()
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
-    when (key) {
-        "" -> Box(Modifier.height(56.dp))
-        "<" -> Box(
-            Modifier.fillMaxWidth().height(56.dp).pressScale(interaction)
-                .clickable(interactionSource = interaction, indication = null) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress); onBackspace()
-                },
-            contentAlignment = Alignment.Center,
-        ) { Text("⌫", color = c.textMuted, fontFamily = SufrixFont, fontSize = 22.sp) }
-        else -> Box(
-            Modifier.fillMaxWidth().height(56.dp).pressScale(interaction)
-                .clip(RoundedCornerShape(Radii.md)).background(c.surfaceAlt)
-                .border(1.dp, c.border, RoundedCornerShape(Radii.md))
-                .clickable(interactionSource = interaction, indication = null) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress); onDigit(key)
-                },
-            contentAlignment = Alignment.Center,
-        ) { Text(key, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 21.sp) }
+    if (key.isEmpty()) {
+        Box(Modifier.size(size))
+        return
+    }
+    Box(
+        Modifier.size(size).pressScale(interaction, 0.92f).clip(CircleShape).background(c.surface)
+            .border(1.5.dp, c.border, CircleShape)
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (key == "<") onBackspace() else onDigit(key)
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (key == "<") "⌫" else key,
+            color = if (key == "<") c.textSecondary else c.textPrimary,
+            fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 22.sp,
+        )
     }
 }
 
-/// Brand mark — 4-blade pinwheel + terracotta dot (geometric stand-in for the
-/// real Icon.svg, which drops in via Compose resources in the shipping apps).
+/// Brand mark — the REAL Icon asset (default-light renders navy; dark-variant TODO).
 @Composable
-fun SufrixMark(size: Dp = 44.dp, armColor: Color? = null, dotColor: Color = Color(0xFFC25B3F)) {
-    val c = sufrixColors()
-    val arm = armColor ?: if (c.isDark) Color(0xFFFAF7F2) else Color(0xFF0A2540)
-    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
-        repeat(4) { i ->
-            Box(Modifier.size(size).rotate(i * 90f + 45f), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier.size(width = size * 0.40f, height = size * 0.19f)
-                        .offset(x = size * 0.17f)
-                        .clip(RoundedCornerShape(size * 0.06f))
-                        .background(arm),
-                )
-            }
-        }
-        Box(Modifier.size(size * 0.17f).clip(CircleShape).background(dotColor))
-    }
+fun SufrixMark(size: Dp = 44.dp, alpha: Float = 1f) {
+    androidx.compose.foundation.Image(
+        painter = painterResource(Res.drawable.Icon),
+        contentDescription = "Sufrix",
+        modifier = Modifier.size(size),
+        contentScale = ContentScale.Fit,
+        alpha = alpha,
+    )
 }
 
+/// Full "Sufrix" wordmark (real Logo asset).
 @Composable
-fun SufrixLockup(markSize: Dp = 30.dp, textSize: Int = 26, textColor: Color? = null) {
-    val c = sufrixColors()
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-        SufrixMark(size = markSize)
-        Text("Sufrix", color = textColor ?: c.textPrimary, fontFamily = SufrixFont,
-            fontWeight = FontWeight.Black, fontSize = textSize.sp)
-    }
+fun SufrixLockup(height: Dp = 30.dp) {
+    androidx.compose.foundation.Image(
+        painter = painterResource(Res.drawable.Logo),
+        contentDescription = "Sufrix",
+        modifier = Modifier.height(height),
+        contentScale = ContentScale.Fit,
+    )
 }

@@ -48,6 +48,7 @@ import app.sufrix.ui.SufrixMark
 import app.sufrix.ui.SufrixTextField
 import app.sufrix.ui.pressScale
 import app.sufrix.ui.sufrixColors
+import app.sufrix.ui.t
 import app.sufrix.core.BranchView
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -134,19 +135,19 @@ private fun TellerForm(model: AppModel, showLogo: Boolean) {
     ) {
         if (showLogo) SufrixMark(size = 60.dp)
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            Text("Welcome back", color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 24.sp)
-            Text("Sign in to open your till", color = c.textSecondary, fontSize = 14.sp)
+            Text(t("login.welcome_back"), color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 24.sp)
+            Text(t("login.subtitle"), color = c.textSecondary, fontSize = 14.sp)
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            val branchLabel = if (model.branchName.isNotBlank()) model.branchName else "Branch ${model.branchId.take(8)}"
+            val branchLabel = if (model.branchName.isNotBlank()) model.branchName else "${t("login.branch")} ${model.branchId.take(8)}"
             StatusChip(branchLabel, ChipTone.INFO)
-            SufrixButton("Reconfigure device", { model.beginReconfigure() }, variant = BtnVariant.GHOST, fullWidth = false, height = 32.dp)
+            SufrixButton(t("login.reconfigure"), { model.beginReconfigure() }, variant = BtnVariant.GHOST, fullWidth = false, height = 32.dp)
         }
-        SufrixTextField(name, { name = it }, "Name", enabled = !model.isBusy)
-        PinPad(pin, maxPin, ::digit) { if (pin.isNotEmpty()) pin = pin.dropLast(1) }
+        SufrixTextField(name, { name = it }, t("login.name"), enabled = !model.isBusy)
+        PinPad(pin, maxPin, onDigit = ::digit, onBackspace = { if (pin.isNotEmpty()) pin = pin.dropLast(1) })
         model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
-        SufrixButton("Sign in", { submit() }, loading = model.isBusy)
-        Text("PIN auto-submits at 6 digits", color = c.textMuted, fontSize = 12.sp)
+        SufrixButton(t("login.sign_in"), { submit() }, loading = model.isBusy)
+        Text(t("login.pin_hint"), color = c.textMuted, fontSize = 12.sp)
     }
 }
 
@@ -161,25 +162,24 @@ private fun DeviceSetupForm(model: AppModel, showLogo: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.lg)) {
         if (showLogo) SufrixMark(size = 56.dp)
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            Text(if (picking) "Choose a branch" else "Configure this till", color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 22.sp)
+            Text(if (picking) t("setup.choose_branch") else t("setup.title"), color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 22.sp)
             Text(
-                if (picking) "Bind this till to one of your branches."
-                else "A manager signs in to bind this device to a branch. Tellers sign in after.",
+                if (picking) t("setup.choose_branch_desc") else t("setup.desc"),
                 color = c.textSecondary, fontSize = 13.sp, textAlign = TextAlign.Center,
             )
         }
         if (picking) {
             model.branches.forEach { b -> BranchRow(b) { model.bindBranch(b) } }
         } else {
-            SufrixTextField(email, { email = it }, "Manager email", enabled = !model.isBusy, keyboard = KeyboardType.Email)
-            SufrixTextField(password, { password = it }, "Password", secure = true, enabled = !model.isBusy)
+            SufrixTextField(email, { email = it }, t("setup.email"), enabled = !model.isBusy, keyboard = KeyboardType.Email)
+            SufrixTextField(password, { password = it }, t("setup.password"), secure = true, enabled = !model.isBusy)
         }
         model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
         if (!picking) {
-            SufrixButton("Continue", { scope.launch { model.authenticateManager(email.trim(), password) } }, loading = model.isBusy)
+            SufrixButton(t("setup.continue"), { scope.launch { model.authenticateManager(email.trim(), password) } }, loading = model.isBusy)
         }
         if (picking || model.isBranchConfigured) {
-            SufrixButton("Cancel", { model.cancelReconfigure() }, variant = BtnVariant.GHOST)
+            SufrixButton(t("setup.cancel"), { model.cancelReconfigure() }, variant = BtnVariant.GHOST)
         }
     }
 }
@@ -207,14 +207,14 @@ private fun BranchRow(branch: BranchView, onClick: () -> Unit) {
 private fun BrandPanel(modifier: Modifier = Modifier) {
     val c = sufrixColors()
     Box(modifier.background(c.surfaceAlt)) {
-        SufrixMark(size = 360.dp, armColor = c.accent.copy(alpha = 0.06f), dotColor = c.accent.copy(alpha = 0.06f))
+        SufrixMark(size = 360.dp, alpha = 0.05f)
         Column(Modifier.fillMaxSize().padding(48.dp)) {
-            SufrixLockup(markSize = 30.dp, textSize = 24)
+            SufrixLockup(height = 28.dp)
             Spacer(Modifier.weight(1f))
-            Text("Welcome\nback.", color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 44.sp)
+            Text(t("brand.headline"), color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 44.sp)
             Spacer(Modifier.height(Space.lg))
             Text(
-                "Sign in to open your till. Works online and off — your sales keep flowing either way.",
+                t("brand.tagline"),
                 color = c.textSecondary, fontSize = 15.sp, modifier = Modifier.widthIn(max = 300.dp),
             )
             Spacer(Modifier.weight(1f))

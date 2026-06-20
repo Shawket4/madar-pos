@@ -12,29 +12,39 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.ui.BtnVariant
 import app.sufrix.ui.ChipTone
+import app.sufrix.ui.LocalLocalize
 import app.sufrix.ui.Space
 import app.sufrix.ui.StatusChip
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixMark
 import app.sufrix.ui.SufrixTheme
 import app.sufrix.ui.sufrixColors
+import app.sufrix.ui.t
 
-// Shared Compose host (Android + desktop). Thin: it renders what the core hands
-// it and routes Login ↔ signed-in home at deliberate boundaries only — never on
-// connectivity (PLAN §R11). All logic stays in rust-core.
+// Shared Compose host (Android + desktop). Thin: renders what the core hands it
+// and routes Login ↔ home at deliberate boundaries only (PLAN §R11). Default
+// theme is light; localization + RTL come from the core.
 @Composable
 fun App(model: AppModel) {
-    SufrixTheme {
-        Box(Modifier.fillMaxSize().background(sufrixColors().bg)) {
-            if (model.isSignedIn) HomeScreen(model) else LoginScreen(model)
+    SufrixTheme(mode = model.themeMode) {
+        CompositionLocalProvider(
+            LocalLocalize provides { key -> model.t(key) },
+            LocalLayoutDirection provides if (model.isRTL) LayoutDirection.Rtl else LayoutDirection.Ltr,
+        ) {
+            Box(Modifier.fillMaxSize().background(sufrixColors().bg)) {
+                if (model.isSignedIn) HomeScreen(model) else LoginScreen(model)
+            }
         }
     }
 }
@@ -46,8 +56,6 @@ fun App(core: app.sufrix.core.SufrixCore, vault: HostVault) {
     App(model)
 }
 
-// Signed-in placeholder home. Proves the full auth round-trip from Compose;
-// Phase 6 replaces it with the real Shift → Order → Cart → Payment screens.
 @Composable
 private fun HomeScreen(model: AppModel) {
     val c = sufrixColors()
@@ -58,17 +66,17 @@ private fun HomeScreen(model: AppModel) {
     ) {
         SufrixMark(size = 56.dp)
         Spacer(Modifier.height(Space.lg))
-        Text("Signed in", color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 24.sp)
+        Text(t("home.signed_in"), color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 24.sp)
         Spacer(Modifier.height(Space.md))
         model.session?.let { s ->
-            StatusChip(if (s.online) "Online" else "Offline", if (s.online) ChipTone.SUCCESS else ChipTone.WARNING)
+            StatusChip(if (s.online) t("home.online") else t("home.offline"), if (s.online) ChipTone.SUCCESS else ChipTone.WARNING)
             Spacer(Modifier.height(Space.md))
-            StatRow("teller", s.displayName)
-            StatRow("role", s.role)
-            StatRow("currency", s.currencyCode)
+            StatRow(t("home.teller"), s.displayName)
+            StatRow(t("home.role"), s.role)
+            StatRow(t("home.currency"), s.currencyCode)
         }
         Spacer(Modifier.height(Space.lg))
-        SufrixButton("Sign out", { model.signOut() }, variant = BtnVariant.DANGER, fullWidth = false)
+        SufrixButton(t("home.sign_out"), { model.signOut() }, variant = BtnVariant.DANGER, fullWidth = false)
     }
 }
 

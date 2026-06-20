@@ -22,6 +22,8 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            // Compose resources — the real brand assets in composeResources/.
+            implementation(compose.components.resources)
             implementation(libs.kotlinx.coroutines.core)
             // The generated UniFFI binding (app/sufrix/core/sufrix_core.kt) lives
             // in commonMain and needs JNA at runtime.
@@ -50,6 +52,12 @@ android {
     }
     // Per-ABI .so produced by ../../rust-core/tool/build-android.sh land in
     // src/androidMain/jniLibs (the default jniLibs dir).
+}
+
+// Deterministic package for the generated `Res` class so imports are stable.
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "app.sufrix.resources"
 }
 
 compose.desktop {

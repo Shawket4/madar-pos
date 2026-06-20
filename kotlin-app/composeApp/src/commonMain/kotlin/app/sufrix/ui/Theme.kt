@@ -48,6 +48,16 @@ val LocalSufrixColors = staticCompositionLocalOf { SufrixLight }
 @Composable
 fun sufrixColors(): SufrixColors = LocalSufrixColors.current
 
+/// App theme preference. Default = LIGHT (the original navy palette); DARK is the
+/// terracotta identity; SYSTEM follows the OS. Mirrors the Swift `ThemeMode`.
+enum class ThemeMode { LIGHT, DARK, SYSTEM }
+
+/// Localization accessor injected from the core: `t("login.sign_in")`.
+val LocalLocalize = staticCompositionLocalOf<(String) -> String> { { it } }
+
+@Composable
+fun t(key: String): String = LocalLocalize.current(key)
+
 object Space {
     val xs = 4.dp; val sm = 8.dp; val md = 12.dp; val lg = 16.dp; val xl = 24.dp; val xxl = 32.dp
 }
@@ -59,8 +69,13 @@ object Radii {
 val SufrixFont = FontFamily.Default
 
 @Composable
-fun SufrixTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) SufrixDark else SufrixLight
+fun SufrixTheme(mode: ThemeMode = ThemeMode.LIGHT, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    val colors = if (dark) SufrixDark else SufrixLight
     CompositionLocalProvider(LocalSufrixColors provides colors) {
         MaterialTheme(content = content)
     }
