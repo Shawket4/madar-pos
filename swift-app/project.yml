@@ -75,7 +75,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
     preBuildScripts:
-      - name: Build iOS xcframework if missing
+      - name: Build iOS core (xcframework) + bindings
         basedOnDependencyAnalysis: false
         script: |
           set -e
@@ -84,4 +84,9 @@ targets:
           source "$HOME/.cargo/env" 2>/dev/null || true
           cd "$SRCROOT/../rust-core"
           ./tool/build-bindings.sh >/dev/null
-          [[ -d target/SufrixCore.xcframework ]] || ./tool/build-ios.sh
+          # Rebuild the xcframework if missing OR any core source changed — a stale
+          # static lib mismatches the freshly generated bindings (missing symbols).
+          XCF=target/SufrixCore.xcframework
+          if [[ ! -d "$XCF" ]] || [[ -n "$(find crates/sufrix-core/src crates/sufrix-api/src -name '*.rs' -newer "$XCF" 2>/dev/null | head -1)" ]]; then
+            ./tool/build-ios.sh
+          fi
