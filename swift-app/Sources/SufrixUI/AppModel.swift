@@ -29,6 +29,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var setupPhase: SetupPhase = .credentials
     /// Branches fetched after the manager authenticates (the picker source).
     @Published private(set) var branches: [BranchView] = []
+    /// Theme preference — defaults to light (the original navy palette).
+    @Published var themeMode: ThemeMode {
+        didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: Self.themeKey) }
+    }
 
     init() {
         Self.registerFonts()
@@ -39,6 +43,7 @@ final class AppModel: ObservableObject {
         core = try! SufrixCore(config: cfg)
         branchId = UserDefaults.standard.string(forKey: Self.branchKey) ?? ""
         branchName = UserDefaults.standard.string(forKey: Self.branchNameKey) ?? ""
+        themeMode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: Self.themeKey) ?? "") ?? .light
 
         core.setTokenStore(store: vault)
         if let blob = vault.loadBlob() {
@@ -61,7 +66,7 @@ final class AppModel: ObservableObject {
                 mode: .pin, name: name, pin: pin, branchId: branchId,
                 email: nil, password: nil, orgId: nil))
         } catch {
-            errorMessage = Self.humanMessage(error)
+            errorMessage = humanMessage(error)
         }
     }
 
@@ -80,7 +85,7 @@ final class AppModel: ObservableObject {
             branches = try await core.listBranches()
             setupPhase = .pickBranch
         } catch {
-            errorMessage = Self.humanMessage(error)
+            errorMessage = humanMessage(error)
             try? core.logout(wipeOutbox: false)
             session = nil
         }
@@ -116,25 +121,33 @@ final class AppModel: ObservableObject {
         errorMessage = nil
     }
 
+    // ── localization ────────────────────────────────────────────────────────────
+    /// Localized UI string (from the core's shared i18n table).
+    func t(_ key: String) -> String { core.tr(key: key) }
+    /// Whether the active locale is right-to-left (host flips layout direction).
+    var isRTL: Bool { core.isRtl() }
+
     // ── plumbing ────────────────────────────────────────────────────────────────
 
-    /// Map the coarse `CoreError` to something a teller can read.
-    static func humanMessage(_ error: Error) -> String {
+    /// Map the coarse `CoreError` to something a teller can read. Host-generated
+    /// messages are localized; server-provided ones (auth/validation/server) pass
+    /// through as the backend sent them.
+    func humanMessage(_ error: Error) -> String {
         guard let e = error as? CoreError else { return error.localizedDescription }
         switch e {
-        case .Offline:
-            return "You're offline and this teller hasn't been set up for offline sign-in yet."
+        case .Offline: return t("err.offline_no_setup")
         case let .Unauthenticated(message): return message
         case let .Validation(_, message): return message
         case let .Server(_, _, message): return message
-        case let .Transient(message): return "Network problem: \(message)"
-        case let .Forbidden(resource, action): return "Not allowed: \(resource)/\(action)"
-        case let .Internal(message): return "Something went wrong: \(message)"
+        case .Transient: return t("err.network")
+        case .Forbidden: return t("err.not_allowed")
+        case let .Internal(message): return message.isEmpty ? t("err.generic") : message
         }
     }
 
     private static let branchKey = "sufrix.branch_id"
     private static let branchNameKey = "sufrix.branch_name"
+    private static let themeKey = "sufrix.theme"
 
     /// App-private SQLite path under Application Support.
     private static func databasePath() -> String {

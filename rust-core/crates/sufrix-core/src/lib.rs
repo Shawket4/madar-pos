@@ -23,6 +23,8 @@ pub mod pricing;
 
 /// The coarse FFI error model the host reacts to (PLAN §7.6).
 pub mod error;
+/// Static UI-string localization — one source of truth for both hosts.
+pub mod i18n;
 /// Menu / catalog reads — branch-effective mirror + view DTOs (PLAN §R9).
 pub mod menu;
 /// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
@@ -220,6 +222,24 @@ impl SufrixCore {
             message: "session has no org".into(),
         })?;
         Ok((org, s.snapshot.branch_id.clone()))
+    }
+}
+
+// ── localization (sync) ──────────────────────────────────────────────────────
+#[uniffi::export]
+impl SufrixCore {
+    /// Localized UI string for `key` in the device locale (en/ar; falls back to
+    /// en, then the key). The single source of truth for both hosts.
+    pub fn tr(&self, key: String) -> String {
+        i18n::tr(&self.config.locale, &key)
+    }
+    /// The active locale (BCP-47).
+    pub fn locale(&self) -> String {
+        self.config.locale.clone()
+    }
+    /// Whether the locale is right-to-left (host flips layout direction).
+    pub fn is_rtl(&self) -> bool {
+        i18n::is_rtl(&self.config.locale)
     }
 }
 

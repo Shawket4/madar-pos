@@ -93,6 +93,10 @@ struct SufrixTheme {
     static let dark = SufrixTheme(colors: .dark, isDark: true)
 }
 
+/// App theme preference. Default is `.light` (the original navy palette);
+/// `.dark` is the terracotta identity; `.system` follows the OS.
+enum ThemeMode: String, CaseIterable { case light, dark, system }
+
 private struct SufrixThemeKey: EnvironmentKey {
     static let defaultValue = SufrixTheme.light
 }
@@ -103,16 +107,37 @@ extension EnvironmentValues {
     }
 }
 
-/// Injects the light/dark token set based on the system color scheme. Wrap the
-/// root in this so every descendant reads `@Environment(\.theme)`.
+/// Localization accessor injected from the core — `Text(t("login.sign_in"))`.
+private struct LocalizeKey: EnvironmentKey {
+    static let defaultValue: (String) -> String = { $0 }
+}
+extension EnvironmentValues {
+    var localize: (String) -> String {
+        get { self[LocalizeKey.self] }
+        set { self[LocalizeKey.self] = newValue }
+    }
+}
+
+/// Injects the token set for the chosen `mode` (default light). Wrap the root so
+/// every descendant reads `@Environment(\.theme)`.
 struct ThemedRoot<Content: View>: View {
-    @Environment(\.colorScheme) private var scheme
+    let mode: ThemeMode
+    @Environment(\.colorScheme) private var systemScheme
     @ViewBuilder var content: () -> Content
+
     var body: some View {
-        let theme: SufrixTheme = scheme == .dark ? .dark : .light
+        let isDark: Bool = {
+            switch mode {
+            case .light: return false
+            case .dark: return true
+            case .system: return systemScheme == .dark
+            }
+        }()
+        let theme = isDark ? SufrixTheme.dark : .light
         content()
             .environment(\.theme, theme)
             .tint(theme.colors.accent)
+            .preferredColorScheme(mode == .system ? nil : (isDark ? .dark : .light))
     }
 }
 

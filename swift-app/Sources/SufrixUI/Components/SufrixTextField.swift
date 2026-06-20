@@ -30,6 +30,7 @@ struct SufrixTextField: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.colors.surface)
         .overlay(
             RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)

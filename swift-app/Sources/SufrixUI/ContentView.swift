@@ -7,29 +7,30 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
 
     var body: some View {
         ZStack {
             theme.colors.bg.ignoresSafeArea()
             VStack(spacing: Space.lg) {
                 SufrixMark(size: 56)
-                Text("Signed in").font(.ui(24, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                Text(t("home.signed_in")).font(.ui(24, .heavy)).foregroundStyle(theme.colors.textPrimary)
 
                 if let s = app.session {
                     StatusChip(
-                        label: s.online ? "Online" : "Offline",
+                        label: s.online ? t("home.online") : t("home.offline"),
                         icon: s.online ? "wifi" : "wifi.slash",
                         tone: s.online ? .success : .warning
                     )
                     VStack(spacing: Space.sm) {
-                        row("teller", s.displayName)
-                        row("role", s.role)
-                        row("currency", s.currencyCode)
+                        row(t("home.teller"), s.displayName)
+                        row(t("home.role"), s.role)
+                        row(t("home.currency"), s.currencyCode)
                     }
                     .padding(.top, Space.sm)
                 }
 
-                SufrixButton(label: "Sign out", variant: .danger, fullWidth: false) { app.signOut() }
+                SufrixButton(label: t("home.sign_out"), variant: .danger, fullWidth: false) { app.signOut() }
                     .padding(.top, Space.sm)
             }
             .padding(Space.xxl)

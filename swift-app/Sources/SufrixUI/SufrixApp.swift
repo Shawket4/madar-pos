@@ -26,12 +26,16 @@ struct RootView: View {
     @ObservedObject var app: AppModel
 
     var body: some View {
-        ThemedRoot {
-            if app.isSignedIn {
-                ContentView(app: app)
-            } else {
-                LoginView(app: app)
+        ThemedRoot(mode: app.themeMode) {
+            Group {
+                if app.isSignedIn {
+                    ContentView(app: app)
+                } else {
+                    LoginView(app: app)
+                }
             }
+            .environment(\.localize, { app.t($0) })
+            .environment(\.layoutDirection, app.isRTL ? .rightToLeft : .leftToRight)
         }
     }
 }

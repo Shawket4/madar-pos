@@ -1,7 +1,8 @@
 // Login — a full-screen brand moment outside the nav shell. Branch-gated
 // (replicates Flutter): a till that isn't bound to a branch shows the manager
 // device-setup; once configured it shows the teller PIN pad with a reconfigure
-// link. Wide screens (iPad / desktop) split into a brand panel + form.
+// link. Wide screens (iPad / desktop) split into a brand panel + form. All
+// strings come from the core's shared i18n table via `@Environment(\.localize)`.
 import SwiftUI
 
 struct LoginView: View {
@@ -27,19 +28,17 @@ struct LoginView: View {
 
     @ViewBuilder private func form(showLogo: Bool) -> some View {
         ScrollView {
-            VStack(spacing: 0) {
-                Group {
-                    if app.isBranchConfigured && !app.reconfiguring {
-                        TellerForm(app: app, showLogo: showLogo)
-                    } else {
-                        DeviceSetupForm(app: app, showLogo: showLogo)
-                    }
+            Group {
+                if app.isBranchConfigured && !app.reconfiguring {
+                    TellerForm(app: app, showLogo: showLogo)
+                } else {
+                    DeviceSetupForm(app: app, showLogo: showLogo)
                 }
-                .frame(maxWidth: 400)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, Space.xxl)
-                .padding(.vertical, 48)
             }
+            .frame(maxWidth: 400)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Space.xxl)
+            .padding(.vertical, 48)
         }
     }
 }
@@ -49,6 +48,7 @@ struct LoginView: View {
 private struct TellerForm: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
     var showLogo: Bool
 
     @State private var name = ""
@@ -62,19 +62,18 @@ private struct TellerForm: View {
             if showLogo { SufrixMark(size: 60) }
 
             VStack(spacing: Space.xs) {
-                Text("Welcome back").font(.ui(24, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                Text("Sign in to open your till")
-                    .font(.ui(14)).foregroundStyle(theme.colors.textSecondary)
+                Text(t("login.welcome_back")).font(.ui(24, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                Text(t("login.subtitle")).font(.ui(14)).foregroundStyle(theme.colors.textSecondary)
             }
 
             VStack(spacing: Space.xs) {
                 StatusChip(label: branchLabel, icon: "building.2", tone: .info)
-                Button("Reconfigure device") { app.beginReconfigure() }
+                Button(t("login.reconfigure")) { app.beginReconfigure() }
                     .buttonStyle(.plain)
                     .font(.ui(12)).foregroundStyle(theme.colors.textMuted)
             }
 
-            SufrixTextField(placeholder: "Name", text: $name, icon: "person", disabled: app.isBusy, caps: .words)
+            SufrixTextField(placeholder: t("login.name"), text: $name, icon: "person", disabled: app.isBusy, caps: .words)
 
             PinPad(pin: pin, maxLength: maxPin, onDigit: digit, onBackspace: backspace)
 
@@ -82,15 +81,16 @@ private struct TellerForm: View {
                 NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
             }
 
-            SufrixButton(label: "Sign in", loading: app.isBusy) { submit() }
-            Text("PIN auto-submits at 6 digits")
+            SufrixButton(label: t("login.sign_in"), loading: app.isBusy) { submit() }
+            Text(t("login.pin_hint"))
                 .font(.ui(12)).foregroundStyle(theme.colors.textMuted)
+                .multilineTextAlignment(.center)
         }
         .modifier(Shake(animatableData: shake))
     }
 
     private var branchLabel: String {
-        app.branchName.isEmpty ? "Branch \(app.branchId.prefix(8))" : app.branchName
+        app.branchName.isEmpty ? "\(t("login.branch")) \(app.branchId.prefix(8))" : app.branchName
     }
 
     private func digit(_ d: String) {
@@ -128,6 +128,7 @@ private struct TellerForm: View {
 private struct DeviceSetupForm: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
     var showLogo: Bool
 
     @State private var email = ""
@@ -140,11 +141,9 @@ private struct DeviceSetupForm: View {
             if showLogo { SufrixMark(size: 56) }
 
             VStack(spacing: Space.xs) {
-                Text(picking ? "Choose a branch" : "Configure this till")
+                Text(picking ? t("setup.choose_branch") : t("setup.title"))
                     .font(.ui(22, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                Text(picking
-                     ? "Bind this till to one of your branches."
-                     : "A manager signs in to bind this device to a branch. Tellers sign in after.")
+                Text(picking ? t("setup.choose_branch_desc") : t("setup.desc"))
                     .font(.ui(13.5)).foregroundStyle(theme.colors.textSecondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
@@ -153,9 +152,9 @@ private struct DeviceSetupForm: View {
             if picking {
                 ForEach(app.branches, id: \.id) { branch in branchRow(branch) }
             } else {
-                SufrixTextField(placeholder: "Manager email", text: $email, icon: "envelope",
+                SufrixTextField(placeholder: t("setup.email"), text: $email, icon: "envelope",
                                 disabled: app.isBusy, keyboard: .email)
-                SufrixTextField(placeholder: "Password", text: $password, icon: "lock",
+                SufrixTextField(placeholder: t("setup.password"), text: $password, icon: "lock",
                                 secure: true, disabled: app.isBusy)
             }
 
@@ -164,7 +163,7 @@ private struct DeviceSetupForm: View {
             }
 
             if !picking {
-                SufrixButton(label: "Continue", loading: app.isBusy) {
+                SufrixButton(label: t("setup.continue"), loading: app.isBusy) {
                     Task {
                         await app.authenticateManager(
                             email: email.trimmingCharacters(in: .whitespaces),
@@ -173,7 +172,7 @@ private struct DeviceSetupForm: View {
                 }
             }
             if picking || app.isBranchConfigured {
-                SufrixButton(label: "Cancel", variant: .ghost) { app.cancelReconfigure() }
+                SufrixButton(label: t("setup.cancel"), variant: .ghost) { app.cancelReconfigure() }
             }
         }
     }
@@ -206,6 +205,7 @@ private struct DeviceSetupForm: View {
 
 private struct BrandPanel: View {
     @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
 
     var body: some View {
         ZStack {
@@ -220,11 +220,11 @@ private struct BrandPanel: View {
             VStack(alignment: .leading, spacing: 0) {
                 SufrixLockup(height: 28)
                 Spacer()
-                Text("Welcome\nback.")
+                Text(t("brand.headline"))
                     .font(.ui(44, .black))
                     .foregroundStyle(theme.colors.textPrimary)
                     .lineSpacing(2)
-                Text("Sign in to open your till. Works online and off — your sales keep flowing either way.")
+                Text(t("brand.tagline"))
                     .font(.ui(15)).foregroundStyle(theme.colors.textSecondary)
                     .lineSpacing(4)
                     .frame(maxWidth: 300, alignment: .leading)
