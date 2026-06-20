@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,10 +40,15 @@ fun AmountField(
     onAmountMinor: (Long) -> Unit,
     currencyCode: String,
     modifier: Modifier = Modifier,
+    autofocus: Boolean = false,
 ) {
     val c = sufrixColors()
     var text by remember { mutableStateOf(if (amountMinor == 0L) "" else minorToText(amountMinor)) }
     var focused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(autofocus) {
+        if (autofocus) runCatching { focusRequester.requestFocus() }
+    }
 
     Column(
         modifier
@@ -68,7 +76,7 @@ fun AmountField(
                 onAmountMinor(toMinor(newValue))
             },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
+            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onFocusChanged { focused = it.isFocused },
             textStyle = TextStyle(
                 color = c.textPrimary, fontFamily = SufrixFont,
                 fontWeight = FontWeight.Black, fontSize = 34.sp, textAlign = TextAlign.Center,

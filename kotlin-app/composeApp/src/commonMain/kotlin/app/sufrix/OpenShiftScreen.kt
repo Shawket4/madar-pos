@@ -3,7 +3,10 @@ package app.sufrix
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,65 +33,104 @@ import app.sufrix.ui.NoticeBanner
 import app.sufrix.ui.Space
 import app.sufrix.ui.StatusChip
 import app.sufrix.ui.SufrixButton
+import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixMark
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
 import kotlinx.coroutines.launch
 
-// Open-shift screen — the gate between sign-in and selling. Count the drawer's
-// opening cash and open the shift (writes locally + queues; works offline).
-// Mirror of the SwiftUI OpenShiftView.
+// Open-shift — the continuation of login: login confirms WHO you are, this
+// confirms WHAT'S in the drawer. A name-first greeting, one isolated hero count
+// field (auto-focused), one loud primary. Wide screens split into the same
+// BrandPanel as login; phones show one calm centered column. Mirror of the
+// SwiftUI OpenShiftView.
 @Composable
 fun OpenShiftScreen(model: AppModel) {
+    val c = sufrixColors()
+    BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
+        val wide = maxWidth >= 760.dp
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                BrandPanel(Modifier.weight(1f).fillMaxHeight())
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    FormColumn(model, showLogo = false)
+                }
+            }
+        } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                FormColumn(model, showLogo = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FormColumn(model: AppModel, showLogo: Boolean) {
     val c = sufrixColors()
     val scope = rememberCoroutineScope()
     var openingMinor by remember { mutableStateOf(0L) }
 
-    Box(Modifier.fillMaxSize().background(c.bg)) {
+    Column(
+        Modifier.widthIn(max = 400.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+            .padding(horizontal = Space.xxl, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (showLogo) SufrixMark(size = 56.dp)
+
+        // ── Greeting (the teller's name IS the hero) ──────────────────────────
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = Space.xxl, vertical = 48.dp),
+            Modifier.padding(top = if (showLogo) Space.xl else 0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            Column(
-                Modifier.widthIn(max = 400.dp).fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(Space.xl),
-            ) {
-                SufrixMark(size = 56.dp)
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(Space.xs),
-                ) {
-                    Text(t("shift.open_title"), color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 24.sp)
-                    Text(
-                        t("shift.opening_desc"), color = c.textSecondary, fontSize = 14.sp,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-
-                model.session?.let { s ->
-                    StatusChip("${t("shift.signed_in_as")} ${s.displayName}", ChipTone.INFO)
-                }
-
-                Column(
-                    Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(Space.sm),
-                ) {
-                    Text(t("shift.opening_cash"), color = c.textMuted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    AmountField(
-                        amountMinor = openingMinor,
-                        onAmountMinor = { openingMinor = it },
-                        currencyCode = model.session?.currencyCode ?: "",
-                    )
-                }
-
-                model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
-
-                SufrixButton(t("shift.open_button"), { scope.launch { model.openShift(openingMinor) } }, loading = model.isBusy)
-                SufrixButton(t("shift.switch_teller"), { model.signOut() }, variant = BtnVariant.GHOST, fullWidth = false, height = 32.dp)
+            Text(t("shift.welcome"), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+            Text(
+                model.session?.displayName ?: t("shift.open_title"),
+                color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 28.sp, textAlign = TextAlign.Center,
+            )
+            if (model.branchName.isNotBlank()) {
+                Box(Modifier.padding(top = Space.xs)) { StatusChip(model.branchName, ChipTone.INFO) }
             }
         }
+
+        // ── Hero count field ─────────────────────────────────────────────────
+        Column(
+            Modifier.fillMaxWidth().padding(top = Space.xxl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+        ) {
+            Text(t("shift.opening_cash"), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            AmountField(
+                amountMinor = openingMinor,
+                onAmountMinor = { openingMinor = it },
+                currencyCode = model.session?.currencyCode ?: "",
+                autofocus = true,
+            )
+            Text(
+                t("shift.opening_hint"), color = c.textMuted, fontFamily = SufrixFont, fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        // ── Error (next to the action that triggers it) ───────────────────────
+        model.error?.let {
+            Box(Modifier.fillMaxWidth().padding(top = Space.xl)) { NoticeBanner(it, ChipTone.DANGER) }
+        }
+
+        // ── Primary action ────────────────────────────────────────────────────
+        SufrixButton(
+            t("shift.open_button"),
+            { scope.launch { model.openShift(openingMinor) } },
+            modifier = Modifier.padding(top = if (model.error == null) Space.xl else Space.md),
+            loading = model.isBusy,
+        )
+
+        // ── Recessive exit ─────────────────────────────────────────────────────
+        SufrixButton(
+            t("shift.switch_teller"),
+            { model.signOut() },
+            modifier = Modifier.padding(top = Space.sm),
+            variant = BtnVariant.GHOST,
+        )
     }
 }

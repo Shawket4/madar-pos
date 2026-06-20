@@ -4,10 +4,14 @@ import SwiftUI
 
 struct AmountField: View {
     @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
     @FocusState private var focused: Bool
 
     @Binding var amountMinor: Int64
     var currencyCode: String
+    /// Raise the keyboard on appear (the hero count field; off by default so
+    /// existing call sites are unchanged).
+    var autofocus: Bool = false
 
     @State private var text = ""
 
@@ -29,7 +33,20 @@ struct AmountField: View {
             .focused($focused)
             #if os(iOS)
             .keyboardType(.decimalPad)
+            // The decimalPad has no return key — give it a Done dismiss.
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button(t("common.done")) { focused = false }
+                }
+            }
             #endif
+        }
+        .onAppear {
+            // Let the navigation transition settle before raising the pad.
+            if autofocus {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focused = true }
+            }
         }
         .padding(.vertical, Space.lg)
         .frame(maxWidth: .infinity)

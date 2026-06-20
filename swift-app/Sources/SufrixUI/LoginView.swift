@@ -201,46 +201,6 @@ private struct DeviceSetupForm: View {
     }
 }
 
-// MARK: - Brand panel (wide layout)
-
-private struct BrandPanel: View {
-    @Environment(\.theme) private var theme
-    @Environment(\.localize) private var t
-
-    var body: some View {
-        ZStack {
-            theme.colors.surfaceAlt.ignoresSafeArea()
-            // Faded watermark mark.
-            SufrixMark(size: 360)
-                .opacity(0.05)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .offset(x: 80, y: 80)
-                .clipped()
-
-            VStack(alignment: .leading, spacing: 0) {
-                SufrixLockup(height: 28)
-                Spacer()
-                Text(t("brand.headline"))
-                    .font(.ui(44, .black))
-                    .foregroundStyle(theme.colors.textPrimary)
-                    .lineSpacing(2)
-                Text(t("brand.tagline"))
-                    .font(.ui(15)).foregroundStyle(theme.colors.textSecondary)
-                    .lineSpacing(4)
-                    .frame(maxWidth: 300, alignment: .leading)
-                    .padding(.top, Space.lg)
-                Spacer()
-                HStack(spacing: Space.sm) {
-                    Circle().fill(theme.colors.accent).frame(width: 6, height: 6)
-                    Text("© 2026 Sufrix").font(.ui(12)).foregroundStyle(theme.colors.textMuted)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(48)
-        }
-    }
-}
-
 // MARK: - Shake (error feedback)
 
 private struct Shake: GeometryEffect {

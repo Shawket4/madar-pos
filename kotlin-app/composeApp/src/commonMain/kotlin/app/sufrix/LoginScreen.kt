@@ -203,25 +203,3 @@ private fun BranchRow(branch: BranchView, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun BrandPanel(modifier: Modifier = Modifier) {
-    val c = sufrixColors()
-    Box(modifier.background(c.surfaceAlt)) {
-        SufrixMark(size = 360.dp, alpha = 0.05f)
-        Column(Modifier.fillMaxSize().padding(48.dp)) {
-            SufrixLockup(height = 28.dp)
-            Spacer(Modifier.weight(1f))
-            Text(t("brand.headline"), color = c.textPrimary, fontWeight = FontWeight.Black, fontSize = 44.sp)
-            Spacer(Modifier.height(Space.lg))
-            Text(
-                t("brand.tagline"),
-                color = c.textSecondary, fontSize = 15.sp, modifier = Modifier.widthIn(max = 300.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(c.accent))
-                Text("© 2026 Sufrix", color = c.textMuted, fontSize = 12.sp)
-            }
-        }
-    }
-}
