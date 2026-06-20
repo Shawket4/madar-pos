@@ -458,7 +458,30 @@ impl SufrixCore {
     ) -> Result<Vec<cart::CartLineView>, CoreError> {
         cart::add(&self.store, &item_id, &name, unit_price_minor)
     }
-    /// Set a line's absolute quantity; `qty <= 0` removes the line.
+    /// Add a CONFIGURED line (size + addons + optionals + notes). The core
+    /// resolves the charged prices from the cached catalog (size unit price;
+    /// addon swap-delta vs additive; optional prices) and merges identical
+    /// configs. `addons` carry the chosen ids + quantities; the prices are
+    /// resolved here, not trusted from the host.
+    pub fn cart_add_configured(
+        &self,
+        item_id: String,
+        size_label: Option<String>,
+        addons: Vec<cart::AddonSelection>,
+        optional_field_ids: Vec<String>,
+        qty: i64,
+        notes: Option<String>,
+    ) -> Result<Vec<cart::CartLineView>, CoreError> {
+        let items = menu::menu_items(&self.store, &self.config.locale)?;
+        let item = items
+            .iter()
+            .find(|i| i.id == item_id)
+            .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
+        let addon_catalog = menu::addons(&self.store, &self.config.locale)?;
+        let line = cart::resolve_line(item, &addon_catalog, size_label, &addons, &optional_field_ids, qty, notes);
+        cart::add_resolved(&self.store, line)
+    }
+    /// Set a line's absolute quantity (by its key); `qty <= 0` removes the line.
     pub fn cart_set_qty(
         &self,
         item_id: String,

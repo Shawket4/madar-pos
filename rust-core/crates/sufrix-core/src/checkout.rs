@@ -110,8 +110,12 @@ pub(crate) fn prepare(
                 quantity: l.qty,
                 unit_price: l.unit_price_minor,
                 is_bundle: false,
-                addons: vec![],
-                optionals: vec![],
+                addons: l
+                    .addons
+                    .iter()
+                    .map(|a| pricing::AddonSel { price_modifier: a.price_modifier_minor, quantity: a.qty })
+                    .collect(),
+                optionals: l.optionals.iter().map(|o| pricing::OptionalSel { price: o.price_minor }).collect(),
                 bundle_components: vec![],
             })
             .collect(),
@@ -127,10 +131,28 @@ pub(crate) fn prepare(
     let items: Vec<models::OrderItemInput> = lines
         .iter()
         .map(|l| {
-            let mut item = models::OrderItemInput::new(vec![], vec![], l.qty as i32);
-            // Cart item_ids are menu-item UUIDs; record the charged unit price so
-            // the DB equals the receipt even on a stale/offline price.
+            // Addons carry their CHARGED unit price (swap delta / extra) verbatim.
+            let addons: Vec<models::AddonInput> = l
+                .addons
+                .iter()
+                .filter_map(|a| {
+                    let id = uuid::Uuid::parse_str(&a.addon_item_id).ok()?;
+                    let mut ai = models::AddonInput::new(id);
+                    ai.quantity = Some(a.qty as i32);
+                    ai.unit_price = Some(Some(a.price_modifier_minor as i32));
+                    Some(ai)
+                })
+                .collect();
+            let optional_ids: Vec<uuid::Uuid> = l
+                .optionals
+                .iter()
+                .filter_map(|o| uuid::Uuid::parse_str(&o.optional_field_id).ok())
+                .collect();
+            let mut item = models::OrderItemInput::new(addons, optional_ids, l.qty as i32);
+            // Cart item_ids are menu-item UUIDs; record the size + charged unit
+            // price so the DB equals the receipt even on a stale/offline price.
             item.menu_item_id = uuid::Uuid::parse_str(&l.item_id).ok().map(Some);
+            item.size_label = Some(l.size_label.clone());
             item.unit_price = Some(Some(l.unit_price_minor as i32));
             item
         })
