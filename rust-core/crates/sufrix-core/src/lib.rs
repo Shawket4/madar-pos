@@ -21,6 +21,8 @@ pub use config::SufrixConfig;
 /// The client-authoritative pricing engine (pure; the money source of truth).
 pub mod pricing;
 
+/// Cart — client-only in-progress order state, priced via `pricing`.
+pub mod cart;
 /// The coarse FFI error model the host reacts to (PLAN §7.6).
 pub mod error;
 /// Static UI-string localization — one source of truth for both hosts.
@@ -214,6 +216,7 @@ impl SufrixCore {
             ts.clear_blob();
         }
         let _ = shift::clear(&self.store);
+        let _ = cart::clear(&self.store);
         if wipe_outbox {
             self.store.wipe_outbox()?;
         }
@@ -347,6 +350,47 @@ impl SufrixCore {
     }
     pub fn list_discounts(&self) -> Result<Vec<menu::DiscountView>, CoreError> {
         menu::discounts(&self.store, &self.config.locale)
+    }
+}
+
+// ── cart (sync; client-only order state, offline-safe, kv-persisted) ──────────
+#[uniffi::export]
+impl SufrixCore {
+    /// The current cart lines (empty when none).
+    pub fn cart_lines(&self) -> Result<Vec<cart::CartLineView>, CoreError> {
+        cart::lines(&self.store)
+    }
+    /// Add one unit of a menu item (merges into the matching line). The host
+    /// passes the resolved display name + unit price so the cart is self-contained.
+    pub fn cart_add(
+        &self,
+        item_id: String,
+        name: String,
+        unit_price_minor: i64,
+    ) -> Result<Vec<cart::CartLineView>, CoreError> {
+        cart::add(&self.store, &item_id, &name, unit_price_minor)
+    }
+    /// Set a line's absolute quantity; `qty <= 0` removes the line.
+    pub fn cart_set_qty(
+        &self,
+        item_id: String,
+        qty: i64,
+    ) -> Result<Vec<cart::CartLineView>, CoreError> {
+        cart::set_qty(&self.store, &item_id, qty)
+    }
+    /// Remove a line entirely.
+    pub fn cart_remove(&self, item_id: String) -> Result<Vec<cart::CartLineView>, CoreError> {
+        cart::remove(&self.store, &item_id)
+    }
+    /// Empty the cart.
+    pub fn cart_clear(&self) -> Result<(), CoreError> {
+        cart::clear(&self.store)
+    }
+    /// Priced cart summary at the session's org tax rate (0 when signed out),
+    /// computed through the pricing engine.
+    pub fn cart_totals(&self) -> Result<cart::CartTotals, CoreError> {
+        let tax_rate = self.current_session().map(|s| s.tax_rate).unwrap_or(0.0);
+        cart::totals(&self.store, tax_rate)
     }
 }
 
