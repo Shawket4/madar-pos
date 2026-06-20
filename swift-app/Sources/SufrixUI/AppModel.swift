@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var setupPhase: SetupPhase = .credentials
     /// Branches fetched after the manager authenticates (the picker source).
     @Published private(set) var branches: [BranchView] = []
+    /// The device's current shift (drives OpenShift ↔ Order routing).
+    @Published private(set) var shift: ShiftView?
     /// Theme preference — defaults to light (the original navy palette).
     @Published var themeMode: ThemeMode {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: Self.themeKey) }
@@ -49,9 +51,15 @@ final class AppModel: ObservableObject {
         if let blob = vault.loadBlob() {
             session = core.restoreSession(blob: blob)
         }
+        loadShift()
     }
 
     var isSignedIn: Bool { session != nil }
+    /// The screen to show — the core decides; this re-evaluates whenever the
+    /// observed @Published state (session, shift, branch, reconfiguring) changes.
+    var route: AppRoute {
+        core.appRoute(branchConfigured: isBranchConfigured, reconfiguring: reconfiguring)
+    }
     /// Till bound to a branch → teller PIN login; until then, manager device-setup.
     var isBranchConfigured: Bool { !branchId.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -65,9 +73,27 @@ final class AppModel: ObservableObject {
             session = try await core.signIn(req: LoginRequest(
                 mode: .pin, name: name, pin: pin, branchId: branchId,
                 email: nil, password: nil, orgId: nil))
+            loadShift()
         } catch {
             errorMessage = humanMessage(error)
         }
+    }
+
+    // ── shift ─────────────────────────────────────────────────────────────────
+    /// Open a shift with the counted opening cash (minor units). The core writes
+    /// it locally + queues the command (works offline); routing flips to Order.
+    func openShift(openingCashMinor: Int64) async {
+        isBusy = true; errorMessage = nil
+        defer { isBusy = false }
+        do {
+            shift = try await core.openShift(openingCashMinor: openingCashMinor)
+        } catch {
+            errorMessage = humanMessage(error)
+        }
+    }
+
+    private func loadShift() {
+        shift = (try? core.currentShift()) ?? nil
     }
 
     // ── device setup (manager) ──────────────────────────────────────────────────
@@ -118,6 +144,7 @@ final class AppModel: ObservableObject {
     func signOut() {
         try? core.logout(wipeOutbox: false)
         session = nil
+        shift = nil
         errorMessage = nil
     }
 

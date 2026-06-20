@@ -31,6 +31,8 @@ pub mod menu;
 pub mod net;
 /// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
 pub mod session;
+/// Shift lifecycle — open/current via the outbox (PLAN §7.4).
+pub mod shift;
 /// Local store — SQLite mirror + durable outbox + id_map + sync cursors (PLAN §8).
 pub mod store;
 
@@ -57,6 +59,21 @@ pub fn ffi_surface_version() -> u32 {
 #[uniffi::export]
 pub fn greet(name: String) -> String {
     format!("Sufrix core v{} says hello, {name}", core_version())
+}
+
+/// The screen the host should show, decided by the core (PLAN §R11). The host
+/// consults this only at deliberate transitions (cold start, post-login,
+/// post-open/close-shift, sign-out) — never as a side effect of connectivity.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppRoute {
+    /// Till not bound to a branch → manager device-setup.
+    DeviceSetup,
+    /// Configured but signed out → teller PIN login.
+    Login,
+    /// Signed in, no open shift → open-shift screen.
+    OpenShift,
+    /// Signed in with an open shift → order screen.
+    Order,
 }
 
 /// Top-level handle the host creates once and keeps alive for the app lifetime.
@@ -222,6 +239,70 @@ impl SufrixCore {
             message: "session has no org".into(),
         })?;
         Ok((org, s.snapshot.branch_id.clone()))
+    }
+
+    /// Drain the durable outbox in FIFO order. Each op dispatches by `op_type`;
+    /// a connectivity error stops the drain (items stay pending for next time),
+    /// a 4xx marks the item dead. The single place outbox writes hit the network.
+    async fn drain_outbox(&self) -> Result<(), CoreError> {
+        use sufrix_api::apis::shifts_api;
+        for item in self.store.pending()? {
+            match item.op_type.as_str() {
+                "open_shift" => {
+                    let cmd: shift::OpenShiftCommand = serde_json::from_str(&item.payload)?;
+                    let res = shifts_api::open_shift(
+                        &self.api.config(),
+                        shifts_api::OpenShiftParams {
+                            branch_id: cmd.branch_id,
+                            open_shift_request: cmd.request,
+                        },
+                    )
+                    .await;
+                    match res {
+                        Ok(server) => {
+                            shift::save(&self.store, &server)?;
+                            self.store.mark_acked(item.seq, Some(&server.id.to_string()))?;
+                        }
+                        Err(e) => match net::map_api_error(e) {
+                            // Network down → stop; retry the whole queue later.
+                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
+                            // 4xx/terminal → dead-letter, keep draining the rest.
+                            other => self.store.mark_dead(item.seq, &other.to_string())?,
+                        },
+                    }
+                }
+                _ => {} // op types added with cart/checkout
+            }
+        }
+        Ok(())
+    }
+}
+
+// ── shift + routing (sync reads) ─────────────────────────────────────────────
+#[uniffi::export]
+impl SufrixCore {
+    /// The device's current shift (open or closed), served from the local store.
+    pub fn current_shift(&self) -> Result<Option<shift::ShiftView>, CoreError> {
+        shift::current(&self.store)
+    }
+
+    /// The screen to show. `branch_configured` + `reconfiguring` are host-owned
+    /// bits (the device branch lives in the host vault); the rest is core state.
+    pub fn app_route(&self, branch_configured: bool, reconfiguring: bool) -> AppRoute {
+        if reconfiguring || !branch_configured {
+            return AppRoute::DeviceSetup;
+        }
+        let guard = self.session.read().unwrap_or_else(|e| e.into_inner());
+        let session = match guard.as_ref() {
+            Some(s) => s,
+            None => return AppRoute::Login,
+        };
+        // An open shift counts only if it belongs to THIS teller (a stale shift
+        // from a previous teller on the device must not route them past setup).
+        match shift::current(&self.store) {
+            Ok(Some(s)) if s.is_open && s.teller_id == session.snapshot.user_id => AppRoute::Order,
+            _ => AppRoute::OpenShift,
+        }
     }
 }
 
@@ -456,6 +537,72 @@ impl SufrixCore {
         self.store.kv_put(menu::K_PAYMENT_METHODS, &serde_json::to_string(&payment_methods)?)?;
         self.store.kv_put(menu::K_DISCOUNTS, &serde_json::to_string(&discounts)?)?;
         Ok(())
+    }
+
+    /// Open a shift. Writes an optimistic local shift + queues an idempotent
+    /// open-shift command (client UUID = shift PK), then drains best-effort. The
+    /// shift is usable immediately, online or offline. Returns the current shift.
+    pub async fn open_shift(&self, opening_cash_minor: i64) -> Result<shift::ShiftView, CoreError> {
+        let (branch_id, teller_id, teller_name) = {
+            let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
+                message: "not signed in".into(),
+            })?;
+            let branch = s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
+                field: "branch_id".into(),
+                message: "session has no branch".into(),
+            })?;
+            (branch, s.snapshot.user_id.clone(), s.snapshot.display_name.clone())
+        };
+        let branch_uuid = uuid::Uuid::parse_str(&branch_id)
+            .map_err(|_| CoreError::Validation { field: "branch_id".into(), message: "bad uuid".into() })?;
+        let teller_uuid = uuid::Uuid::parse_str(&teller_id)
+            .map_err(|_| CoreError::Validation { field: "teller_id".into(), message: "bad uuid".into() })?;
+        let shift_id = uuid::Uuid::new_v4();
+        let opened_at = chrono::Utc::now().fixed_offset();
+        let opening_cash = opening_cash_minor as i32;
+
+        // Optimistic local shift — visible immediately on every read.
+        let local = sufrix_api::models::Shift {
+            branch_id: branch_uuid,
+            id: shift_id,
+            opened_at,
+            opening_cash,
+            opening_cash_was_edited: false,
+            status: "open".into(),
+            teller_id: teller_uuid,
+            teller_name,
+            ..Default::default()
+        };
+        shift::save(&self.store, &local)?;
+
+        // Queue the durable command (idempotent on the client shift UUID).
+        let request = sufrix_api::models::OpenShiftRequest {
+            id: Some(Some(shift_id)),
+            opened_at: Some(Some(opened_at)),
+            opening_cash,
+            ..Default::default()
+        };
+        let cmd = shift::OpenShiftCommand { branch_id, request };
+        self.store.enqueue(&store::NewOutboxOp {
+            id: shift_id.to_string(),
+            op_type: "open_shift".into(),
+            idempotency_key: shift_id.to_string(),
+            payload: serde_json::to_string(&cmd)?,
+            event_at: opened_at.to_rfc3339(),
+            depends_on_seq: None,
+        })?;
+
+        // Best-effort: send now if online (offline just leaves it queued).
+        let _ = self.drain_outbox().await;
+
+        shift::current(&self.store)?
+            .ok_or_else(|| CoreError::Internal { message: "shift not persisted".into() })
+    }
+
+    /// Force a sync now — drains the outbox. Cancellable/idempotent.
+    pub async fn sync_now(&self) -> Result<(), CoreError> {
+        self.drain_outbox().await
     }
 }
 

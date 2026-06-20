@@ -28,10 +28,13 @@ struct RootView: View {
     var body: some View {
         ThemedRoot(mode: app.themeMode) {
             Group {
-                if app.isSignedIn {
-                    ContentView(app: app)
-                } else {
+                switch app.route {
+                case .deviceSetup, .login:
                     LoginView(app: app)
+                case .openShift:
+                    OpenShiftView(app: app)
+                case .order:
+                    OrderView(app: app)
                 }
             }
             .environment(\.localize, { app.t($0) })
