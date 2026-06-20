@@ -1,12 +1,14 @@
-# xcodegen spec for the Sufrix POS macOS app. Regenerate the .xcodeproj with:
+# xcodegen spec for the Sufrix POS apps (macOS + iOS). Regenerate with:
 #   cd swift-app && xcodegen generate
-# then open SufrixPOS.xcworkspace. A pre-build phase regenerates the Rust
-# bindings + builds libsufrix_core, so ⌘R just works after `xcodegen generate`.
+# then open SufrixPOS.xcworkspace and pick a scheme (SufrixPOS = macOS,
+# SufrixPOS-iOS = iPhone/iPad). Pre-build phases regenerate the Rust bindings
+# and build the core (dylib for macOS, xcframework for iOS), so ⌘R just works.
 name: SufrixPOS
 options:
   bundleIdPrefix: app.sufrix
   deploymentTarget:
     macOS: "13.0"
+    iOS: "16.0"
   createIntermediateGroups: true
 
 settings:
@@ -14,8 +16,10 @@ settings:
     SWIFT_VERSION: "5.9"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
 
 targets:
+  # ── macOS app (links the cargo dylib; FFI module map via SWIFT_INCLUDE_PATHS) ──
   SufrixPOS:
     type: application
     platform: macOS
@@ -31,10 +35,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.sufrix.pos
         PRODUCT_NAME: Sufrix POS
         GENERATE_INFOPLIST_FILE: YES
-        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
-        # The C FFI module map (regenerated into Generated/ by the pre-build step).
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated
-        # Link the Rust core dylib from the cargo target dir.
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../rust-core/target/debug
         OTHER_LDFLAGS: -lsufrix_core
         LD_RUNPATH_SEARCH_PATHS: $(SRCROOT)/../rust-core/target/debug
@@ -48,3 +49,33 @@ targets:
           mkdir -p "$SRCROOT/Generated"
           cp bindings/swift/SufrixCoreFFIFFI.h "$SRCROOT/Generated/"
           cp bindings/swift/SufrixCoreFFIFFI.modulemap "$SRCROOT/Generated/module.modulemap"
+
+  # ── iOS app (iPhone + iPad; links SufrixCore.xcframework from build-ios.sh) ──
+  SufrixPOS-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/SufrixUI
+      - path: ../rust-core/bindings/swift/SufrixCoreFFI.swift
+        group: Generated
+      - path: Resources/Assets.xcassets
+      - path: Resources/Fonts
+        type: folder
+    dependencies:
+      - framework: ../rust-core/target/SufrixCore.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.sufrix.pos
+        PRODUCT_NAME: Sufrix POS
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    preBuildScripts:
+      - name: Build iOS xcframework if missing
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          cd "$SRCROOT/../rust-core"
+          ./tool/build-bindings.sh >/dev/null
+          [[ -d target/SufrixCore.xcframework ]] || ./tool/build-ios.sh
