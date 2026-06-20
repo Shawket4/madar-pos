@@ -70,8 +70,29 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     var seeded by remember { mutableStateOf(false) }
 
     LaunchedEffect(item.id) {
-        if (!seeded) {
-            seeded = true
+        if (seeded) return@LaunchedEffect
+        seeded = true
+        val editLine = model.detailEditLine
+        if (editLine != null) {
+            // Edit mode: reconstruct the selection from the existing line.
+            size = editLine.sizeLabel ?: item.sizes.firstOrNull()?.label
+            val newMulti = mutableMapOf<String, MutableMap<String, Int>>()
+            editLine.addons.forEach { a ->
+                val type = model.itemAddons.firstOrNull { it.addonItemId == a.addonItemId }?.addonType ?: return@forEach
+                val slot = item.addonSlots.firstOrNull { it.addonType == type }
+                if (slot != null) {
+                    if ((slot.maxSelections?.toInt() ?: 2) > 1) newMulti.getOrPut(slot.id) { mutableMapOf() }[a.addonItemId] = a.qty.toInt()
+                    else single[slot.id] = a.addonItemId
+                } else {
+                    val gid = "type:$type"
+                    if (type != "milk_type") newMulti.getOrPut(gid) { mutableMapOf() }[a.addonItemId] = a.qty.toInt()
+                    else single[gid] = a.addonItemId
+                }
+            }
+            multi = newMulti.mapValues { it.value.toMap() }
+            optionals = editLine.optionals.map { it.optionalFieldId }.toSet()
+            qty = maxOf(1, editLine.qty.toInt())
+        } else {
             size = item.sizes.firstOrNull()?.label
             item.defaultMilkAddonId?.let { single["type:milk_type"] = it }
         }

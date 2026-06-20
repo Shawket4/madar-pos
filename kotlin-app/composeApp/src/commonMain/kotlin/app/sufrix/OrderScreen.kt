@@ -398,10 +398,12 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
                 items(model.cartLines, key = { it.key }) { line ->
+                    val onEdit: (() -> Unit)? = if (line.key != line.itemId) { { model.editCartLine(line) } } else null
                     CartLineRow(
                         line, currency,
                         onDec = { model.setCartQty(line.key, line.qty - 1) },
                         onInc = { model.setCartQty(line.key, line.qty + 1) },
+                        onEdit = onEdit,
                     )
                 }
             }
@@ -411,21 +413,36 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
 }
 
 @Composable
-private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit, onInc: () -> Unit) {
+private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit, onInc: () -> Unit, onEdit: (() -> Unit)? = null) {
     val c = sufrixColors()
+    val summary = configSummary(line)
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
             .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).padding(Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            Modifier.weight(1f).then(if (onEdit != null) Modifier.clickable { onEdit() } else Modifier),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
             Text(line.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
+            if (summary != null) Text(summary, color = c.textSecondary, fontFamily = SufrixFont, fontSize = 11.sp, maxLines = 2)
             Text(Money.format(line.lineTotalMinor, currency), color = c.accent, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
         // The minus button removes the line at qty 1 (the remove affordance).
         QtyStepper(line.qty, onDec, onInc)
     }
+}
+
+/** "Large · Oat milk · Extra shot ×2 · Vanilla" — the line's config, compact. */
+private fun configSummary(line: CartLineView): String? {
+    val parts = buildList {
+        line.sizeLabel?.let { add(it) }
+        line.addons.forEach { add(if (it.qty > 1) "${it.name} ×${it.qty}" else it.name) }
+        line.optionals.forEach { add(it.name) }
+    }
+    return if (parts.isEmpty()) null else parts.joinToString(" · ")
 }
 
 @Composable

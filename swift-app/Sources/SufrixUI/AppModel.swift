@@ -267,6 +267,8 @@ final class AppModel: ObservableObject {
     @Published var detailItem: MenuItemView?
     /// The cart line key being edited (nil = adding a new line).
     @Published var detailEditKey: String?
+    /// The cart line being edited (seeds the sheet), nil when adding fresh.
+    @Published var detailEditLine: CartLineView?
     /// The item's addons with charged prices resolved by the core (for the sheet).
     @Published private(set) var itemAddons: [ItemAddonView] = []
 
@@ -275,12 +277,18 @@ final class AppModel: ObservableObject {
         !item.sizes.isEmpty || !item.addonSlots.isEmpty || !item.optionalFields.isEmpty
     }
 
-    func openItemDetail(_ item: MenuItemView, editKey: String? = nil) {
+    func openItemDetail(_ item: MenuItemView, editKey: String? = nil, editLine: CartLineView? = nil) {
         detailEditKey = editKey
+        detailEditLine = editLine
         itemAddons = (try? core.listItemAddons(itemId: item.id)) ?? []
         detailItem = item
     }
-    func closeItemDetail() { detailItem = nil; detailEditKey = nil }
+    /// Re-open the sheet for a configured cart line so the teller can change it.
+    func editCartLine(_ line: CartLineView) {
+        guard line.key != line.itemId, let item = menuItems.first(where: { $0.id == line.itemId }) else { return }
+        openItemDetail(item, editKey: line.key, editLine: line)
+    }
+    func closeItemDetail() { detailItem = nil; detailEditKey = nil; detailEditLine = nil }
 
     /// Add (or, in edit mode, replace) a configured line. The core resolves the
     /// charged prices from the catalog; we just pass the selection.

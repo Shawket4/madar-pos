@@ -303,6 +303,8 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     var detailItem by mutableStateOf<MenuItemView?>(null)
     /** The cart line key being edited (null = adding a new line). */
     var detailEditKey by mutableStateOf<String?>(null)
+    /** The cart line being edited (seeds the sheet), null when adding fresh. */
+    var detailEditLine by mutableStateOf<CartLineView?>(null)
     /** The item's addons with charged prices resolved by the core (for the sheet). */
     var itemAddons by mutableStateOf<List<ItemAddonView>>(emptyList())
         private set
@@ -311,12 +313,19 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun hasOptions(item: MenuItemView): Boolean =
         item.sizes.isNotEmpty() || item.addonSlots.isNotEmpty() || item.optionalFields.isNotEmpty()
 
-    fun openItemDetail(item: MenuItemView, editKey: String? = null) {
+    fun openItemDetail(item: MenuItemView, editKey: String? = null, editLine: CartLineView? = null) {
         detailEditKey = editKey
+        detailEditLine = editLine
         itemAddons = runCatching { core.listItemAddons(item.id) }.getOrDefault(emptyList())
         detailItem = item
     }
-    fun closeItemDetail() { detailItem = null; detailEditKey = null }
+    /** Re-open the sheet for a configured cart line so the teller can change it. */
+    fun editCartLine(line: CartLineView) {
+        if (line.key == line.itemId) return
+        val item = menuItems.firstOrNull { it.id == line.itemId } ?: return
+        openItemDetail(item, line.key, line)
+    }
+    fun closeItemDetail() { detailItem = null; detailEditKey = null; detailEditLine = null }
 
     /** Add (or, in edit mode, replace) a configured line. The core resolves the
      *  charged prices from the catalog; we just pass the selection. */

@@ -428,7 +428,8 @@ private struct CartPanel: View {
                             CartLineRow(
                                 line: line, currency: currency,
                                 onDec: { app.setCartQty(line.key, line.qty - 1) },
-                                onInc: { app.setCartQty(line.key, line.qty + 1) }
+                                onInc: { app.setCartQty(line.key, line.qty + 1) },
+                                onEdit: line.key != line.itemId ? { app.editCartLine(line) } : nil
                             )
                         }
                     }
@@ -447,15 +448,30 @@ private struct CartLineRow: View {
     let currency: String
     let onDec: () -> Void
     let onInc: () -> Void
+    var onEdit: (() -> Void)? = nil
+
+    private var configSummary: String? {
+        var parts: [String] = []
+        if let s = line.sizeLabel { parts.append(s) }
+        parts += line.addons.map { $0.qty > 1 ? "\($0.name) ×\($0.qty)" : $0.name }
+        parts += line.optionals.map { $0.name }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 
     var body: some View {
         HStack(spacing: Space.md) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(line.name).font(.ui(14, .semibold))
                     .foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+                if let summary = configSummary {
+                    Text(summary).font(.ui(11)).foregroundStyle(theme.colors.textSecondary).lineLimit(2)
+                }
                 Text(Money.format(line.lineTotalMinor, currency))
                     .font(.money(13, .bold)).foregroundStyle(theme.colors.accent)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { onEdit?() }
             Spacer(minLength: Space.sm)
             // The minus button removes the line at qty 1 (the remove affordance).
             QtyStepper(qty: line.qty, onDec: onDec, onInc: onInc)

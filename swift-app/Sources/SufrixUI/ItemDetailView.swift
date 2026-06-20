@@ -142,11 +142,30 @@ struct ItemDetailView: View {
         .onAppear(perform: seed)
     }
 
+    private func group(forAddon addonId: String) -> Group? {
+        groups.first { g in g.addons.contains { $0.addonItemId == addonId } }
+    }
+
     private func seed() {
         guard !seeded else { return }
         seeded = true
-        if size == nil { size = item.sizes.first?.label }
-        if let dm = item.defaultMilkAddonId { single["type:milk_type"] = dm }
+        if let line = app.detailEditLine {
+            // Edit mode: reconstruct the selection from the existing line.
+            size = line.sizeLabel ?? item.sizes.first?.label
+            for a in line.addons {
+                guard let g = group(forAddon: a.addonItemId) else { continue }
+                if g.isMulti {
+                    var m = multi[g.id] ?? [:]; m[a.addonItemId] = Int(a.qty); multi[g.id] = m
+                } else {
+                    single[g.id] = a.addonItemId
+                }
+            }
+            optionals = Set(line.optionals.map { $0.optionalFieldId })
+            qty = Swift.max(1, Int(line.qty))
+        } else {
+            if size == nil { size = item.sizes.first?.label }
+            if let dm = item.defaultMilkAddonId { single["type:milk_type"] = dm }
+        }
     }
 
     private var header: some View {
