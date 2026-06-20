@@ -134,6 +134,7 @@ final class AppModel: ObservableObject {
         menuItems = (try? core.listMenuItems()) ?? []
         paymentMethods = (try? core.listPaymentMethods()) ?? []
         loadCart()
+        refreshPending()
     }
 
     // ── checkout ────────────────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ final class AppModel: ObservableObject {
         do {
             receipt = try await core.checkout(paymentMethodId: paymentMethodId, amountTenderedMinor: amountTenderedMinor)
             loadCart()
+            refreshPending()
         } catch {
             errorMessage = humanMessage(error)
         }
@@ -152,6 +154,32 @@ final class AppModel: ObservableObject {
 
     /// Dismiss the receipt confirmation (back to the catalog).
     func dismissReceipt() { receipt = nil }
+
+    // ── sync center (outbox) ────────────────────────────────────────────────────
+    @Published var showSync = false
+    @Published private(set) var outbox: [OutboxItemView] = []
+    /// Queued/in-flight command count — the sync chip badge.
+    @Published private(set) var pendingCount: Int = 0
+
+    /// Refresh just the pending count (the action-bar sync chip).
+    func refreshPending() {
+        pendingCount = Int((try? core.pendingOutboxCount()) ?? 0)
+    }
+    /// Load the full outbox (for the sync sheet) + the count.
+    func loadOutbox() {
+        outbox = (try? core.listOutbox()) ?? []
+        refreshPending()
+    }
+    /// Requeue every failed command and try to send now.
+    func retryOutbox() async {
+        try? await core.retryOutbox()
+        loadOutbox()
+    }
+    /// Discard a single failed command.
+    func discardOutboxItem(_ id: String) {
+        _ = try? core.discardOutboxItem(id: id)
+        loadOutbox()
+    }
 
     // ── close shift ───────────────────────────────────────────────────────────
     /// Drives the close-shift screen (presented over the order screen).

@@ -193,6 +193,42 @@ impl Store {
         Ok(n as u32)
     }
 
+    /// Every un-acked outbox row (pending/inflight/dead) in FIFO order — the
+    /// sync-center read. Acked + superseded rows are hidden (nothing to act on).
+    pub fn list_active(&self) -> CoreResult<Vec<OutboxItem>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT seq,id,op_type,idempotency_key,payload,event_at,status,attempts,last_error,server_id,depends_on_seq
+             FROM outbox WHERE status IN ('pending','inflight','dead') ORDER BY seq ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(OutboxItem {
+                    seq: r.get(0)?, id: r.get(1)?, op_type: r.get(2)?, idempotency_key: r.get(3)?,
+                    payload: r.get(4)?, event_at: r.get(5)?, status: r.get(6)?, attempts: r.get(7)?,
+                    last_error: r.get(8)?, server_id: r.get(9)?, depends_on_seq: r.get(10)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Reset every dead command back to `pending` (clearing its error) so the
+    /// next drain retries it. Returns how many were requeued.
+    pub fn requeue_dead(&self) -> CoreResult<u32> {
+        let n = self.lock().execute(
+            "UPDATE outbox SET status='pending', last_error=NULL WHERE status='dead'", [])?;
+        Ok(n as u32)
+    }
+
+    /// Discard a single DEAD command by client id (the teller gives up on it).
+    /// Only dead rows can be discarded — a pending/inflight op might still land.
+    pub fn discard_dead(&self, id: &str) -> CoreResult<bool> {
+        let n = self.lock().execute(
+            "DELETE FROM outbox WHERE id=?1 AND status='dead'", params![id])?;
+        Ok(n > 0)
+    }
+
     pub fn mark_acked(&self, seq: i64, server_id: Option<&str>) -> CoreResult<()> {
         self.lock().execute(
             "UPDATE outbox SET status='acked', server_id=?2 WHERE seq=?1",
@@ -279,5 +315,31 @@ mod tests {
 
         s.mark_dead(b, "4xx rejected").unwrap();
         assert_eq!(s.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn list_active_requeue_and_discard() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        s.enqueue(&op("b")).unwrap();
+        s.mark_acked(a, Some("srv")).unwrap(); // acked → hidden from list_active
+
+        // b still pending → shown; a (acked) hidden.
+        let active = s.list_active().unwrap();
+        assert_eq!(active.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), vec!["b"]);
+
+        // Kill b, then it shows as dead and is requeue/discard-able.
+        let b_seq = active[0].seq;
+        s.mark_dead(b_seq, "boom").unwrap();
+        assert_eq!(s.list_active().unwrap()[0].status, "dead");
+        assert!(!s.discard_dead("a").unwrap()); // a is acked, not dead → no-op
+        assert_eq!(s.requeue_dead().unwrap(), 1);
+        assert_eq!(s.list_active().unwrap()[0].status, "pending");
+        assert_eq!(s.pending_count().unwrap(), 1);
+
+        // Kill again, then discard it.
+        s.mark_dead(b_seq, "boom2").unwrap();
+        assert!(s.discard_dead("b").unwrap());
+        assert!(s.list_active().unwrap().is_empty());
     }
 }

@@ -461,6 +461,47 @@ impl SufrixCore {
     }
 }
 
+/// A queued/failed outbox command, projected for the sync center.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct OutboxItemView {
+    pub id: String,
+    /// `open_shift` | `close_shift` | `create_order` | …
+    pub op_type: String,
+    /// `pending` | `inflight` | `dead`.
+    pub status: String,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+    pub event_at: String,
+}
+
+// ── sync center (outbox visibility + retry/discard) ──────────────────────────
+#[uniffi::export]
+impl SufrixCore {
+    /// Queued + failed commands for the sync center (acked rows hidden), oldest
+    /// first. Always succeeds offline.
+    pub fn list_outbox(&self) -> Result<Vec<OutboxItemView>, CoreError> {
+        Ok(self
+            .store
+            .list_active()?
+            .into_iter()
+            .map(|i| OutboxItemView {
+                id: i.id,
+                op_type: i.op_type,
+                status: i.status,
+                attempts: i.attempts,
+                last_error: i.last_error,
+                event_at: i.event_at,
+            })
+            .collect())
+    }
+
+    /// Discard a single DEAD command (the teller gives up on it). Returns true
+    /// if a dead command with that id was removed.
+    pub fn discard_outbox_item(&self, id: String) -> Result<bool, CoreError> {
+        self.store.discard_dead(&id)
+    }
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 impl SufrixCore {
     /// Online login (PIN or email). Mints a bearer, mirrors permissions, caches
@@ -817,6 +858,13 @@ impl SufrixCore {
 
     /// Force a sync now — drains the outbox. Cancellable/idempotent.
     pub async fn sync_now(&self) -> Result<(), CoreError> {
+        self.drain_outbox().await
+    }
+
+    /// Requeue every dead command (clearing its error) and try to send now.
+    /// Best-effort — offline just leaves them pending again.
+    pub async fn retry_outbox(&self) -> Result<(), CoreError> {
+        self.store.requeue_dead()?;
         self.drain_outbox().await
     }
 

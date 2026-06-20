@@ -135,6 +135,11 @@ fun OrderScreen(model: AppModel) {
         if (model.showCloseShift) {
             CloseShiftScreen(model)
         }
+
+        // Sync center — full-screen over the order screen.
+        if (model.showSync) {
+            SyncScreen(model)
+        }
     }
 }
 
@@ -153,6 +158,18 @@ private fun OrderTopBar(model: AppModel) {
             SufrixMark(size = 32.dp)
             model.shift?.let { StatusChip(it.tellerName, ChipTone.INFO) }
             Box(Modifier.weight(1f))
+            Text(
+                if (model.pendingCount > 0) "⟳ ${model.pendingCount}" else "✓",
+                color = if (model.pendingCount > 0) c.warning else c.textMuted,
+                fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() }, indication = null,
+                ) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    model.loadOutbox()
+                    model.showSync = true
+                },
+            )
             Text(
                 t("order.close_shift"),
                 color = c.textSecondary, fontFamily = SufrixFont,

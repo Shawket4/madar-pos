@@ -81,6 +81,13 @@ struct OrderView: View {
                     .environment(\.localize, t)
             }
             #endif
+            // Sync center.
+            .sheet(isPresented: $app.showSync) {
+                SyncView(app: app, onClose: { app.showSync = false })
+                    .frame(minWidth: 420, minHeight: 520)
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -116,6 +123,19 @@ private struct OrderTopBar: View {
                 StatusChip(label: s.tellerName, icon: "person.fill", tone: .info)
             }
             Spacer(minLength: 0)
+            Button {
+                Haptics.selection()
+                app.loadOutbox()
+                app.showSync = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: app.pendingCount > 0 ? "arrow.triangle.2.circlepath" : "checkmark.icloud")
+                    if app.pendingCount > 0 { Text("\(app.pendingCount)") }
+                }
+                .font(.ui(13, .semibold))
+                .foregroundStyle(app.pendingCount > 0 ? theme.colors.warning : theme.colors.textMuted)
+            }
+            .buttonStyle(.pressable)
             Button {
                 Haptics.selection()
                 app.errorMessage = nil

@@ -12,6 +12,7 @@ import app.sufrix.core.CoreException
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
 import app.sufrix.core.MenuItemView
+import app.sufrix.core.OutboxItemView
 import app.sufrix.core.PaymentMethodView
 import app.sufrix.core.ReceiptView
 import app.sufrix.core.SessionSnapshot
@@ -166,6 +167,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         menuItems = runCatching { core.listMenuItems() }.getOrDefault(emptyList())
         paymentMethods = runCatching { core.listPaymentMethods() }.getOrDefault(emptyList())
         loadCart()
+        refreshPending()
     }
 
     // ── checkout ───────────────────────────────────────────────────────────────
@@ -176,6 +178,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         try {
             receipt = core.checkout(paymentMethodId, amountTenderedMinor)
             loadCart()
+            refreshPending()
         } catch (e: CoreException) {
             error = humanMessage(e)
         } catch (e: Exception) {
@@ -187,6 +190,30 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
 
     /** Dismiss the receipt confirmation (back to the catalog). */
     fun dismissReceipt() { receipt = null }
+
+    // ── sync center (outbox) ─────────────────────────────────────────────────────
+    var showSync by mutableStateOf(false)
+    var outbox by mutableStateOf<List<OutboxItemView>>(emptyList())
+        private set
+    /** Queued/in-flight command count — the sync chip badge. */
+    var pendingCount by mutableStateOf(0)
+        private set
+
+    fun refreshPending() {
+        pendingCount = runCatching { core.pendingOutboxCount().toInt() }.getOrDefault(0)
+    }
+    fun loadOutbox() {
+        outbox = runCatching { core.listOutbox() }.getOrDefault(emptyList())
+        refreshPending()
+    }
+    suspend fun retryOutbox() {
+        runCatching { core.retryOutbox() }
+        loadOutbox()
+    }
+    fun discardOutboxItem(id: String) {
+        runCatching { core.discardOutboxItem(id) }
+        loadOutbox()
+    }
 
     // ── close shift ────────────────────────────────────────────────────────────
     /** Drives the close-shift screen (shown over the order screen). */
