@@ -329,18 +329,36 @@ impl SufrixCore {
         &self,
         req: session::LoginRequest,
     ) -> Result<session::SessionSnapshot, CoreError> {
-        match self.login(req.clone()).await {
-            Ok(snapshot) => Ok(snapshot),
-            Err(e @ (CoreError::Offline { .. } | CoreError::Transient { .. })) => {
-                match (req.mode, &req.name, &req.pin, &req.branch_id) {
-                    (session::LoginMode::Pin, Some(name), Some(pin), Some(branch)) => {
-                        self.unlock_offline(name.clone(), pin.clone(), branch.clone())
-                    }
-                    // Email logins (managers/admins) have no offline bundle.
-                    _ => Err(e),
-                }
-            }
-            Err(e) => Err(e),
+        // Whether a connectivity failure may fall back to an offline unlock.
+        let offline_ok = matches!(req.mode, session::LoginMode::Pin)
+            && req.name.is_some()
+            && req.pin.is_some()
+            && req.branch_id.is_some();
+        let offline = |this: &Self| {
+            this.unlock_offline(
+                req.name.clone().unwrap_or_default(),
+                req.pin.clone().unwrap_or_default(),
+                req.branch_id.clone().unwrap_or_default(),
+            )
+        };
+
+        // Hard-bound the online attempt: a black-holed/slow network must never
+        // leave the teller on an endless spinner. On timeout → treat as offline.
+        let attempt =
+            tokio::time::timeout(std::time::Duration::from_secs(7), self.login(req.clone())).await;
+
+        match attempt {
+            Ok(Ok(snapshot)) => Ok(snapshot),
+            // Connectivity error → offline fallback (PIN only); auth/validation propagate.
+            Ok(Err(e)) => match e {
+                CoreError::Offline { .. } | CoreError::Transient { .. } if offline_ok => offline(self),
+                other => Err(other),
+            },
+            // Timed out → treat as offline.
+            Err(_elapsed) if offline_ok => offline(self),
+            Err(_elapsed) => Err(CoreError::Offline {
+                message: "sign-in timed out — check your connection".into(),
+            }),
         }
     }
 

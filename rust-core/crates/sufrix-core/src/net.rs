@@ -36,8 +36,10 @@ impl ApiClient {
     pub fn new(base_url: String) -> CoreResult<Self> {
         let user_agent = format!("sufrix-core/{}", env!("CARGO_PKG_VERSION"));
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(8))
-            .timeout(Duration::from_secs(30))
+            // Short connect timeout so an unreachable server fails fast and the
+            // hot path can fall back to offline instead of stranding a teller.
+            .connect_timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(20))
             .user_agent(user_agent.clone())
             .build()
             .map_err(|e| CoreError::Internal { message: format!("http client: {e}") })?;
