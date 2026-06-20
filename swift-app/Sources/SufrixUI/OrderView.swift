@@ -15,6 +15,10 @@ struct OrderView: View {
     @State private var selectedCategory: String?
     @State private var search = ""
     @State private var showCart = false
+    /// Wide layouts open tender as a root sheet; phones swap the cart sheet's
+    /// content to tender (avoids unreliable sheet-over-sheet presentation).
+    @State private var showTenderWide = false
+    @State private var tenderInCart = false
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -36,7 +40,7 @@ struct OrderView: View {
                         HStack(spacing: 0) {
                             catalogColumn
                             Rectangle().fill(theme.colors.border).frame(width: 1)
-                            CartPanel(app: app).frame(width: 340)
+                            CartPanel(app: app, onCheckout: { showTenderWide = true }).frame(width: 340)
                         }
                     } else {
                         catalogColumn
@@ -44,8 +48,21 @@ struct OrderView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showCart) {
-                CartPanel(app: app, onClose: { showCart = false })
+            // Phone: the cart sheet swaps its content to tender on checkout.
+            .sheet(isPresented: $showCart, onDismiss: { tenderInCart = false; app.dismissReceipt() }) {
+                Group {
+                    if tenderInCart {
+                        TenderView(app: app, onClose: { tenderInCart = false; showCart = false })
+                    } else {
+                        CartPanel(app: app, onClose: { showCart = false }, onCheckout: { tenderInCart = true })
+                    }
+                }
+                .environment(\.theme, theme)
+                .environment(\.localize, t)
+            }
+            // Wide: tender is a root sheet beside the cart column.
+            .sheet(isPresented: $showTenderWide, onDismiss: { app.dismissReceipt() }) {
+                TenderView(app: app, onClose: { showTenderWide = false })
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }
@@ -296,6 +313,8 @@ private struct CartPanel: View {
     @Environment(\.localize) private var t
     /// Set when shown as a phone sheet (shows a close affordance).
     var onClose: (() -> Void)? = nil
+    /// Opens the tender flow.
+    var onCheckout: () -> Void
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -347,7 +366,7 @@ private struct CartPanel: View {
                     }
                     .padding(Space.lg)
                 }
-                CartFooter(totals: app.cartTotals, currency: currency)
+                CartFooter(totals: app.cartTotals, currency: currency, onCheckout: onCheckout)
             }
         }
         .background(theme.colors.bg)
@@ -427,16 +446,15 @@ private struct CartFooter: View {
     @Environment(\.localize) private var t
     let totals: CartTotals
     let currency: String
+    let onCheckout: () -> Void
 
     var body: some View {
         VStack(spacing: Space.sm) {
             TotalRow(label: t("order.subtotal"), value: Money.format(totals.subtotalMinor, currency))
             TotalRow(label: t("order.tax"), value: Money.format(totals.taxMinor, currency))
             TotalRow(label: t("order.total"), value: Money.format(totals.totalMinor, currency), emphasized: true)
-            SufrixButton(label: t("order.checkout"), icon: "creditcard") {
-                // Tender flow lands in the next phase.
-            }
-            .padding(.top, Space.xs)
+            SufrixButton(label: t("order.checkout"), icon: "creditcard") { onCheckout() }
+                .padding(.top, Space.xs)
         }
         .padding(Space.lg)
         .background(theme.colors.surface)

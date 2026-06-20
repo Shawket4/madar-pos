@@ -12,6 +12,8 @@ import app.sufrix.core.CoreException
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
 import app.sufrix.core.MenuItemView
+import app.sufrix.core.PaymentMethodView
+import app.sufrix.core.ReceiptView
 import app.sufrix.core.SessionSnapshot
 import app.sufrix.core.ShiftView
 import app.sufrix.core.SufrixCore
@@ -71,6 +73,14 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     var cartLines by mutableStateOf<List<CartLineView>>(emptyList())
         private set
     var cartTotals by mutableStateOf(CartTotals(0L, 0L, 0L, 0L))
+        private set
+    /** Org payment methods (cached) — the tender picker source. */
+    var paymentMethods by mutableStateOf<List<PaymentMethodView>>(emptyList())
+        private set
+    /** The last placed order's receipt (drives the confirmation screen). */
+    var receipt by mutableStateOf<ReceiptView?>(null)
+        private set
+    var isPlacingOrder by mutableStateOf(false)
         private set
 
     init {
@@ -151,8 +161,29 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         if (session?.online == true) runCatching { core.refreshCatalog() }
         categories = runCatching { core.listCategories() }.getOrDefault(emptyList())
         menuItems = runCatching { core.listMenuItems() }.getOrDefault(emptyList())
+        paymentMethods = runCatching { core.listPaymentMethods() }.getOrDefault(emptyList())
         loadCart()
     }
+
+    // ── checkout ───────────────────────────────────────────────────────────────
+    /** Place the cart as an order via the core (online or queued offline). On
+     *  success the core has emptied the cart; reload it and surface the receipt. */
+    suspend fun placeOrder(paymentMethodId: String, amountTenderedMinor: Long) {
+        isPlacingOrder = true; error = null
+        try {
+            receipt = core.checkout(paymentMethodId, amountTenderedMinor)
+            loadCart()
+        } catch (e: CoreException) {
+            error = humanMessage(e)
+        } catch (e: Exception) {
+            error = e.message ?: core.tr("err.generic")
+        } finally {
+            isPlacingOrder = false
+        }
+    }
+
+    /** Dismiss the receipt confirmation (back to the catalog). */
+    fun dismissReceipt() { receipt = null }
 
     // ── cart ───────────────────────────────────────────────────────────────────
     /** Add one unit of [item]. Sync (the core just touches kv) so the tap feels
@@ -224,6 +255,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         shift = null
         cartLines = emptyList()
         cartTotals = CartTotals(0L, 0L, 0L, 0L)
+        receipt = null
         error = null
     }
 

@@ -76,6 +76,7 @@ fun OrderScreen(model: AppModel) {
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var showCart by remember { mutableStateOf(false) }
+    var showTender by remember { mutableStateOf(false) }
     val currency = model.session?.currencyCode ?: ""
 
     // Reconcile the shift (catches a dashboard force-close) and load the catalog
@@ -101,7 +102,7 @@ fun OrderScreen(model: AppModel) {
                     }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(c.border))
                     Box(Modifier.width(340.dp).fillMaxHeight()) {
-                        CartPanel(model, currency)
+                        CartPanel(model, currency, onCheckout = { showTender = true })
                     }
                 }
             } else {
@@ -121,8 +122,13 @@ fun OrderScreen(model: AppModel) {
                     .clip(RoundedCornerShape(topStart = Radii.lg, topEnd = Radii.lg)).background(c.bg)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
             ) {
-                CartPanel(model, currency, onClose = { showCart = false })
+                CartPanel(model, currency, onClose = { showCart = false }, onCheckout = { showCart = false; showTender = true })
             }
+        }
+
+        // Tender overlay (checkout) — covers either layout.
+        if (showTender) {
+            TenderOverlay(model, currency) { showTender = false; model.dismissReceipt() }
         }
     }
 }
@@ -307,7 +313,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, placeholder: 
 
 // ── Cart panel (wide column + phone drawer) ─────────────────────────────────────
 @Composable
-private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? = null) {
+private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? = null, onCheckout: () -> Unit) {
     val c = sufrixColors()
     Column(Modifier.fillMaxSize().background(c.bg)) {
         Row(
@@ -348,7 +354,7 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                     )
                 }
             }
-            CartFooter(model.cartTotals, currency)
+            CartFooter(model.cartTotals, currency, onCheckout)
         }
     }
 }
@@ -399,7 +405,7 @@ private fun StepButton(glyph: String, danger: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CartFooter(totals: CartTotals, currency: String) {
+private fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> Unit) {
     val c = sufrixColors()
     Column(
         Modifier.fillMaxWidth().background(c.surface).padding(Space.lg),
@@ -409,7 +415,7 @@ private fun CartFooter(totals: CartTotals, currency: String) {
         TotalRow(t("order.subtotal"), Money.format(totals.subtotalMinor, currency))
         TotalRow(t("order.tax"), Money.format(totals.taxMinor, currency))
         TotalRow(t("order.total"), Money.format(totals.totalMinor, currency), emphasized = true)
-        SufrixButton(t("order.checkout"), { /* Tender flow lands next phase. */ })
+        SufrixButton(t("order.checkout"), { onCheckout() })
     }
 }
 

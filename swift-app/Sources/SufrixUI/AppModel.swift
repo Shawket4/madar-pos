@@ -37,6 +37,11 @@ final class AppModel: ObservableObject {
     /// The in-progress cart (client-only, kv-persisted in the core).
     @Published private(set) var cartLines: [CartLineView] = []
     @Published private(set) var cartTotals: CartTotals = .zero
+    /// Org payment methods (cached) — the tender picker source.
+    @Published private(set) var paymentMethods: [PaymentMethodView] = []
+    /// The last placed order's receipt (drives the confirmation screen).
+    @Published private(set) var receipt: ReceiptView?
+    @Published private(set) var isPlacingOrder = false
     /// Theme preference — defaults to light (the original navy palette).
     @Published var themeMode: ThemeMode {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: Self.themeKey) }
@@ -122,8 +127,26 @@ final class AppModel: ObservableObject {
         }
         categories = (try? core.listCategories()) ?? []
         menuItems = (try? core.listMenuItems()) ?? []
+        paymentMethods = (try? core.listPaymentMethods()) ?? []
         loadCart()
     }
+
+    // ── checkout ────────────────────────────────────────────────────────────────
+    /// Place the cart as an order via the core (online or queued offline). On
+    /// success the core has emptied the cart; we reload it and surface the receipt.
+    func placeOrder(paymentMethodId: String, amountTenderedMinor: Int64) async {
+        isPlacingOrder = true; errorMessage = nil
+        defer { isPlacingOrder = false }
+        do {
+            receipt = try await core.checkout(paymentMethodId: paymentMethodId, amountTenderedMinor: amountTenderedMinor)
+            loadCart()
+        } catch {
+            errorMessage = humanMessage(error)
+        }
+    }
+
+    /// Dismiss the receipt confirmation (back to the catalog).
+    func dismissReceipt() { receipt = nil }
 
     // ── cart ──────────────────────────────────────────────────────────────────
     /// Add one unit of `item`. Sync (the core just touches kv) so the tap feels
@@ -208,6 +231,7 @@ final class AppModel: ObservableObject {
         shift = nil
         cartLines = []
         cartTotals = .zero
+        receipt = nil
         errorMessage = nil
     }
 
