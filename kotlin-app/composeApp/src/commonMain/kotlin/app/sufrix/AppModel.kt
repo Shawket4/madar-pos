@@ -3,11 +3,13 @@ package app.sufrix
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.sufrix.core.AppRoute
 import app.sufrix.core.BranchView
 import app.sufrix.core.CoreException
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
 import app.sufrix.core.SessionSnapshot
+import app.sufrix.core.ShiftView
 import app.sufrix.core.SufrixCore
 import app.sufrix.core.TokenStore
 import app.sufrix.ui.ThemeMode
@@ -53,10 +55,14 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         runCatching { ThemeMode.valueOf(vault.themeMode) }.getOrDefault(ThemeMode.LIGHT)
     )
         private set
+    /** The device's current shift (drives OpenShift ↔ Order routing). */
+    var shift by mutableStateOf<ShiftView?>(null)
+        private set
 
     init {
         core.setTokenStore(vault)
         vault.loadBlob()?.let { session = core.restoreSession(it) }
+        loadShift()
     }
 
     val isSignedIn: Boolean get() = session != null
@@ -76,6 +82,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         isBusy = true; error = null
         try {
             session = core.signIn(LoginRequest(LoginMode.PIN, name, pin, branchId, null, null, null))
+            reconcileShift()
         } catch (e: CoreException) {
             error = humanMessage(e)
         } catch (e: Exception) {
@@ -83,6 +90,44 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         } finally {
             isBusy = false
         }
+    }
+
+    // ── shift + routing ────────────────────────────────────────────────────────
+    /** The screen to show — the core decides. Reading session/shift/branch here
+     *  registers them so Compose recomposes the route when they change. */
+    val route: AppRoute
+        get() {
+            @Suppress("UNUSED_EXPRESSION")
+            run { session; shift; branchId; reconfiguring }
+            return core.appRoute(isBranchConfigured, reconfiguring)
+        }
+
+    /** Open a shift with the counted opening cash (minor units). Works offline. */
+    suspend fun openShift(openingCashMinor: Long) {
+        isBusy = true; error = null
+        try {
+            shift = core.openShift(openingCashMinor)
+        } catch (e: CoreException) {
+            error = humanMessage(e)
+        } catch (e: Exception) {
+            error = e.message ?: core.tr("err.generic")
+        } finally {
+            isBusy = false
+        }
+    }
+
+    /** Reconcile the shift with the server when online (existing shift on login,
+     *  dashboard force-close); use the local cache offline. */
+    suspend fun reconcileShift() {
+        shift = if (session?.online == true) {
+            runCatching { core.refreshShift() }.getOrNull()
+        } else {
+            runCatching { core.currentShift() }.getOrNull()
+        }
+    }
+
+    fun loadShift() {
+        shift = runCatching { core.currentShift() }.getOrNull()
     }
 
     // ── device setup (manager) ────────────────────────────────────────────────
@@ -125,6 +170,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun signOut() {
         runCatching { core.logout(false) }
         session = null
+        shift = null
         error = null
     }
 
