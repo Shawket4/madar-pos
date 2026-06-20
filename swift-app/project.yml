@@ -30,11 +30,19 @@ targets:
       - path: Resources/Assets.xcassets
       - path: Resources/Fonts
         type: folder
+    info:
+      path: Generated/Info-macOS.plist
+      properties:
+        NSPrincipalClass: NSApplication
+        NSHighResolutionCapable: true
+        # Dev: allow plaintext HTTP so a self-hosted / localhost backend works.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.sufrix.pos
         PRODUCT_NAME: Sufrix POS
-        GENERATE_INFOPLIST_FILE: YES
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../rust-core/target/debug
         OTHER_LDFLAGS: -lsufrix_core
@@ -44,14 +52,15 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           set -e
-          # Xcode build phases run with a minimal PATH — make cargo/rustup findable.
-          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-          source "$HOME/.cargo/env" 2>/dev/null || true
-          cd "$SRCROOT/../rust-core"
-          ./tool/build-bindings.sh >/dev/null
+          RUST="$SRCROOT/../rust-core"
+          # Run cargo in a CLEAN env — Xcode injects SDKROOT/ICONV/etc. that break
+          # the HOST cargo build (links against the app SDK → "iconv not found").
+          # A clean env lets cargo resolve the right SDK per-target via xcrun.
+          P="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+          env -i HOME="$HOME" PATH="$P" bash "$RUST/tool/build-bindings.sh" >/dev/null
           mkdir -p "$SRCROOT/Generated"
-          cp bindings/swift/SufrixCoreFFIFFI.h "$SRCROOT/Generated/"
-          cp bindings/swift/SufrixCoreFFIFFI.modulemap "$SRCROOT/Generated/module.modulemap"
+          cp "$RUST/bindings/swift/SufrixCoreFFIFFI.h" "$SRCROOT/Generated/"
+          cp "$RUST/bindings/swift/SufrixCoreFFIFFI.modulemap" "$SRCROOT/Generated/module.modulemap"
 
   # ── iOS app (iPhone + iPad; links SufrixCore.xcframework from build-ios.sh) ──
   SufrixPOS-iOS:
@@ -67,26 +76,39 @@ targets:
     dependencies:
       - framework: ../rust-core/target/SufrixCore.xcframework
         embed: false
+    info:
+      path: Generated/Info-iOS.plist
+      properties:
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Dev: allow plaintext HTTP so a self-hosted / localhost backend works.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.sufrix.pos
         PRODUCT_NAME: Sufrix POS
-        GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1,2"
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
     preBuildScripts:
       - name: Build iOS core (xcframework) + bindings
         basedOnDependencyAnalysis: false
         script: |
           set -e
-          # Xcode build phases run with a minimal PATH — make cargo/rustup findable.
-          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-          source "$HOME/.cargo/env" 2>/dev/null || true
-          cd "$SRCROOT/../rust-core"
-          ./tool/build-bindings.sh >/dev/null
-          # Rebuild the xcframework if missing OR any core source changed — a stale
-          # static lib mismatches the freshly generated bindings (missing symbols).
-          XCF=target/SufrixCore.xcframework
-          if [[ ! -d "$XCF" ]] || [[ -n "$(find crates/sufrix-core/src crates/sufrix-api/src -name '*.rs' -newer "$XCF" 2>/dev/null | head -1)" ]]; then
-            ./tool/build-ios.sh
+          RUST="$SRCROOT/../rust-core"
+          # Run cargo in a CLEAN env — Xcode injects SDKROOT/ICONV/etc. that break
+          # the HOST cargo build (links against the app SDK → "iconv not found").
+          # A clean env lets cargo resolve the right SDK per-target via xcrun.
+          P="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+          env -i HOME="$HOME" PATH="$P" bash "$RUST/tool/build-bindings.sh" >/dev/null
+          # Rebuild the xcframework whenever the core actually changed: build-bindings
+          # rebuilds the debug dylib if ANY input changed (incl. .env → baked URL),
+          # so a dylib newer than the xcframework means the static lib is stale.
+          XCF="$RUST/target/SufrixCore.xcframework"
+          DYLIB="$RUST/target/debug/libsufrix_core.dylib"
+          if [[ ! -d "$XCF" ]] || [[ "$DYLIB" -nt "$XCF" ]]; then
+            env -i HOME="$HOME" PATH="$P" bash "$RUST/tool/build-ios.sh"
           fi
