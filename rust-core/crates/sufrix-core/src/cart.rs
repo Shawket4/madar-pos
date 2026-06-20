@@ -64,6 +64,17 @@ pub struct AddonSelection {
     pub qty: i64,
 }
 
+/// An addon offered for an item, with its CHARGED price already resolved (swap
+/// delta / full) — so the customization sheet just displays it, no pricing rules
+/// in the UI. Grouped by `addon_type` by the host (per slot / global card).
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct ItemAddonView {
+    pub addon_item_id: String,
+    pub name: String,
+    pub addon_type: String,
+    pub charged_price_minor: i64,
+}
+
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
 pub struct CartAddonView {
     pub addon_item_id: String,
@@ -260,6 +271,30 @@ pub(crate) fn resolve_line(
         optionals,
         notes,
     }
+}
+
+/// Every active addon offered for `item`, with its charged price resolved (the
+/// swap rule lives here, not in the UI). The host groups by `addon_type`.
+pub(crate) fn item_addons(
+    item: &menu::MenuItemView,
+    addon_catalog: &[menu::AddonItemView],
+) -> Vec<ItemAddonView> {
+    let milk_base = item
+        .default_milk_addon_id
+        .as_ref()
+        .and_then(|id| addon_catalog.iter().find(|a| &a.id == id))
+        .map(|a| a.default_price_minor)
+        .unwrap_or(0);
+    addon_catalog
+        .iter()
+        .filter(|a| a.is_active)
+        .map(|a| ItemAddonView {
+            addon_item_id: a.id.clone(),
+            name: a.name.clone(),
+            addon_type: a.addon_type.clone(),
+            charged_price_minor: adjusted_addon_price(a, milk_base),
+        })
+        .collect()
 }
 
 // ── operations (store in, updated views out) ─────────────────────────────────
@@ -504,6 +539,16 @@ mod tests {
         assert_eq!(t.subtotal_minor, 11_600);
         assert_eq!(t.tax_minor, 1624); // round(11600 * 0.14)
         assert_eq!(t.total_minor, 13_224);
+    }
+
+    #[test]
+    fn item_addons_resolve_charged_prices_for_display() {
+        let v = item_addons(&item(), &catalog());
+        let p = |id: &str| v.iter().find(|a| a.addon_item_id == id).unwrap().charged_price_minor;
+        assert_eq!(p("almond"), 500); // milk swap delta over oat base
+        assert_eq!(p("whole"), 0); // downgrade clamped
+        assert_eq!(p("oat"), 0); // the default milk itself is free
+        assert_eq!(p("shot"), 800); // additive full
     }
 
     #[test]

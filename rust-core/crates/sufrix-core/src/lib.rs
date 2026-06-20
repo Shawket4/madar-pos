@@ -481,6 +481,17 @@ impl SufrixCore {
         let line = cart::resolve_line(item, &addon_catalog, size_label, &addons, &optional_field_ids, qty, notes);
         cart::add_resolved(&self.store, line)
     }
+    /// Active addons offered for an item, with their CHARGED price resolved (swap
+    /// delta / full) — the customization sheet groups these by `addon_type`.
+    pub fn list_item_addons(&self, item_id: String) -> Result<Vec<cart::ItemAddonView>, CoreError> {
+        let items = menu::menu_items(&self.store, &self.config.locale)?;
+        let item = items
+            .iter()
+            .find(|i| i.id == item_id)
+            .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
+        let addon_catalog = menu::addons(&self.store, &self.config.locale)?;
+        Ok(cart::item_addons(item, &addon_catalog))
+    }
     /// Set a line's absolute quantity (by its key); `qty <= 0` removes the line.
     pub fn cart_set_qty(
         &self,
