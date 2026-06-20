@@ -44,6 +44,9 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           set -e
+          # Xcode build phases run with a minimal PATH — make cargo/rustup findable.
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          source "$HOME/.cargo/env" 2>/dev/null || true
           cd "$SRCROOT/../rust-core"
           ./tool/build-bindings.sh >/dev/null
           mkdir -p "$SRCROOT/Generated"
@@ -76,6 +79,9 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           set -e
+          # Xcode build phases run with a minimal PATH — make cargo/rustup findable.
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          source "$HOME/.cargo/env" 2>/dev/null || true
           cd "$SRCROOT/../rust-core"
           ./tool/build-bindings.sh >/dev/null
           [[ -d target/SufrixCore.xcframework ]] || ./tool/build-ios.sh
