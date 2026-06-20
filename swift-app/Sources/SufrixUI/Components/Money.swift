@@ -12,3 +12,10 @@ enum Money {
         return c.isEmpty ? amount : "\(c) \(amount)"
     }
 }
+
+extension CartTotals {
+    /// An empty cart — the default before the first read.
+    static var zero: CartTotals {
+        CartTotals(itemCount: 0, subtotalMinor: 0, taxMinor: 0, totalMinor: 0)
+    }
+}

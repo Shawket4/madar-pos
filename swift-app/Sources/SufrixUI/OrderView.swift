@@ -1,7 +1,9 @@
 // Order screen — the heart of the POS. Per the design language the order screen's
-// action bar is the only nav hub (no tabs/shells). This phase: browse the
-// branch-effective catalog (category strip + item grid), served from the local
-// mirror so it works offline. Tap-to-cart + tender land in the next phases.
+// action bar is the only nav hub (no tabs/shells). Browse the branch-effective
+// catalog (served from the local mirror, offline-safe) and build a cart: tap an
+// item to add it, adjust quantities, see live totals. On wide layouts (iPad /
+// desktop) the cart is a column beside the grid; on phones it's a bottom bar that
+// opens a sheet. Tender lands in the next phase.
 import SwiftUI
 
 struct OrderView: View {
@@ -12,6 +14,7 @@ struct OrderView: View {
     /// `nil` = the "All" pseudo-category.
     @State private var selectedCategory: String?
     @State private var search = ""
+    @State private var showCart = false
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -23,23 +26,47 @@ struct OrderView: View {
     }
 
     var body: some View {
-        ZStack {
-            theme.colors.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                OrderTopBar(app: app)
-                CategoryStrip(categories: app.categories, selected: $selectedCategory)
-                SearchField(text: $search, placeholder: t("order.search"))
-                    .padding(.horizontal, Space.lg)
-                    .padding(.bottom, Space.sm)
-                ItemGridOrEmpty(items: visibleItems, currency: currency, searching: !search.isEmpty)
+        GeometryReader { geo in
+            let wide = geo.size.width >= 760
+            ZStack {
+                theme.colors.bg.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    OrderTopBar(app: app)
+                    if wide {
+                        HStack(spacing: 0) {
+                            catalogColumn
+                            Rectangle().fill(theme.colors.border).frame(width: 1)
+                            CartPanel(app: app).frame(width: 340)
+                        }
+                    } else {
+                        catalogColumn
+                        CartBar(app: app, currency: currency) { showCart = true }
+                    }
+                }
+            }
+            .sheet(isPresented: $showCart) {
+                CartPanel(app: app, onClose: { showCart = false })
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
             }
         }
-        // Reconcile the shift (catches a dashboard force-close) and load the
-        // catalog (fresh when online, cached otherwise) on appear.
         .task {
             await app.reconcileShift()
             await app.loadCatalog()
         }
+    }
+
+    private var catalogColumn: some View {
+        VStack(spacing: 0) {
+            CategoryStrip(categories: app.categories, selected: $selectedCategory)
+            SearchField(text: $search, placeholder: t("order.search"))
+                .padding(.horizontal, Space.lg)
+                .padding(.bottom, Space.sm)
+            ItemGridOrEmpty(items: visibleItems, currency: currency, searching: !search.isEmpty) { item in
+                app.addToCart(item)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -140,6 +167,7 @@ private struct ItemGridOrEmpty: View {
     let items: [MenuItemView]
     let currency: String
     let searching: Bool
+    let onAdd: (MenuItemView) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: Space.md)]
 
@@ -157,7 +185,7 @@ private struct ItemGridOrEmpty: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: Space.md) {
                     ForEach(items, id: \.id) { item in
-                        ItemCard(item: item, currency: currency)
+                        ItemCard(item: item, currency: currency) { onAdd(item) }
                     }
                 }
                 .padding(Space.lg)
@@ -170,11 +198,12 @@ private struct ItemCard: View {
     @Environment(\.theme) private var theme
     let item: MenuItemView
     let currency: String
+    let onAdd: () -> Void
 
     var body: some View {
         Button {
             Haptics.impact()
-            // Tap-to-add lands with the cart phase.
+            onAdd()
         } label: {
             VStack(alignment: .leading, spacing: Space.sm) {
                 Monogram(name: item.name)
@@ -256,6 +285,222 @@ private struct SearchField: View {
                 .strokeBorder(theme.colors.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+    }
+}
+
+// MARK: - Cart panel (wide column + phone sheet)
+
+private struct CartPanel: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    /// Set when shown as a phone sheet (shows a close affordance).
+    var onClose: (() -> Void)? = nil
+
+    private var currency: String { app.session?.currencyCode ?? "" }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(t("order.cart")).font(.ui(18, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                if app.cartTotals.itemCount > 0 {
+                    StatusChip(label: "\(app.cartTotals.itemCount)", tone: .accent)
+                }
+                Spacer()
+                if !app.cartLines.isEmpty {
+                    Button(t("order.clear")) { app.clearCart() }
+                        .buttonStyle(.plain)
+                        .font(.ui(13, .semibold))
+                        .foregroundStyle(theme.colors.danger)
+                }
+                if let onClose {
+                    Button { onClose() } label: {
+                        Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.colors.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, Space.sm)
+                }
+            }
+            .padding(Space.lg)
+            Rectangle().fill(theme.colors.border).frame(height: 1)
+
+            if app.cartLines.isEmpty {
+                VStack(spacing: Space.md) {
+                    Image(systemName: "cart")
+                        .font(.system(size: 34, weight: .light))
+                        .foregroundStyle(theme.colors.textMuted)
+                    Text(t("order.cart_empty"))
+                        .font(.ui(14)).foregroundStyle(theme.colors.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(spacing: Space.sm) {
+                        ForEach(app.cartLines, id: \.itemId) { line in
+                            CartLineRow(
+                                line: line, currency: currency,
+                                onDec: { app.setCartQty(line.itemId, line.qty - 1) },
+                                onInc: { app.setCartQty(line.itemId, line.qty + 1) }
+                            )
+                        }
+                    }
+                    .padding(Space.lg)
+                }
+                CartFooter(totals: app.cartTotals, currency: currency)
+            }
+        }
+        .background(theme.colors.bg)
+    }
+}
+
+private struct CartLineRow: View {
+    @Environment(\.theme) private var theme
+    let line: CartLineView
+    let currency: String
+    let onDec: () -> Void
+    let onInc: () -> Void
+
+    var body: some View {
+        HStack(spacing: Space.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(line.name).font(.ui(14, .semibold))
+                    .foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+                Text(Money.format(line.lineTotalMinor, currency))
+                    .font(.money(13, .bold)).foregroundStyle(theme.colors.accent)
+            }
+            Spacer(minLength: Space.sm)
+            // The minus button removes the line at qty 1 (the remove affordance).
+            QtyStepper(qty: line.qty, onDec: onDec, onInc: onInc)
+        }
+        .padding(Space.md)
+        .background(theme.colors.surface)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                .strokeBorder(theme.colors.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+    }
+}
+
+private struct QtyStepper: View {
+    @Environment(\.theme) private var theme
+    let qty: Int64
+    let onDec: () -> Void
+    let onInc: () -> Void
+
+    var body: some View {
+        HStack(spacing: Space.sm) {
+            StepButton(symbol: qty <= 1 ? "trash" : "minus", action: onDec)
+            Text("\(qty)").font(.ui(15, .bold))
+                .foregroundStyle(theme.colors.textPrimary)
+                .frame(minWidth: 18)
+            StepButton(symbol: "plus", action: onInc)
+        }
+    }
+}
+
+private struct StepButton: View {
+    @Environment(\.theme) private var theme
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(symbol == "trash" ? theme.colors.danger : theme.colors.textPrimary)
+                .frame(width: 30, height: 30)
+                .background(theme.colors.surfaceAlt)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(theme.colors.border, lineWidth: 1))
+        }
+        .buttonStyle(.pressable(scale: 0.9))
+    }
+}
+
+private struct CartFooter: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let totals: CartTotals
+    let currency: String
+
+    var body: some View {
+        VStack(spacing: Space.sm) {
+            TotalRow(label: t("order.subtotal"), value: Money.format(totals.subtotalMinor, currency))
+            TotalRow(label: t("order.tax"), value: Money.format(totals.taxMinor, currency))
+            TotalRow(label: t("order.total"), value: Money.format(totals.totalMinor, currency), emphasized: true)
+            SufrixButton(label: t("order.checkout"), icon: "creditcard") {
+                // Tender flow lands in the next phase.
+            }
+            .padding(.top, Space.xs)
+        }
+        .padding(Space.lg)
+        .background(theme.colors.surface)
+        .overlay(alignment: .top) {
+            Rectangle().fill(theme.colors.border).frame(height: 1)
+        }
+    }
+}
+
+private struct TotalRow: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let value: String
+    var emphasized = false
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.ui(emphasized ? 16 : 14, emphasized ? .bold : .medium))
+                .foregroundStyle(emphasized ? theme.colors.textPrimary : theme.colors.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.money(emphasized ? 18 : 14, emphasized ? .heavy : .semibold))
+                .foregroundStyle(emphasized ? theme.colors.textPrimary : theme.colors.textSecondary)
+        }
+    }
+}
+
+// MARK: - Phone bottom cart bar
+
+private struct CartBar: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let currency: String
+    let onOpen: () -> Void
+
+    var body: some View {
+        if app.cartTotals.itemCount > 0 {
+            Button {
+                Haptics.selection()
+                onOpen()
+            } label: {
+                HStack(spacing: Space.md) {
+                    Text("\(app.cartTotals.itemCount) \(t("order.items"))")
+                        .font(.ui(13, .semibold))
+                        .foregroundStyle(theme.colors.textOnAccent.opacity(0.9))
+                    Spacer()
+                    Text(t("order.view_cart")).font(.ui(14, .bold))
+                        .foregroundStyle(theme.colors.textOnAccent)
+                    Text(Money.format(app.cartTotals.totalMinor, currency))
+                        .font(.money(15, .heavy))
+                        .foregroundStyle(theme.colors.textOnAccent)
+                    Image(systemName: "chevron.up").font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(theme.colors.textOnAccent)
+                }
+                .padding(.horizontal, Space.lg)
+                .frame(height: 56)
+                .background(theme.colors.accent)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+            }
+            .buttonStyle(.pressable(scale: 0.985))
+            .padding(Space.md)
+        }
     }
 }
 

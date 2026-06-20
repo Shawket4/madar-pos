@@ -34,6 +34,9 @@ final class AppModel: ObservableObject {
     /// Branch-effective catalog (cached; reads always succeed offline).
     @Published private(set) var categories: [CategoryView] = []
     @Published private(set) var menuItems: [MenuItemView] = []
+    /// The in-progress cart (client-only, kv-persisted in the core).
+    @Published private(set) var cartLines: [CartLineView] = []
+    @Published private(set) var cartTotals: CartTotals = .zero
     /// Theme preference — defaults to light (the original navy palette).
     @Published var themeMode: ThemeMode {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: Self.themeKey) }
@@ -119,6 +122,39 @@ final class AppModel: ObservableObject {
         }
         categories = (try? core.listCategories()) ?? []
         menuItems = (try? core.listMenuItems()) ?? []
+        loadCart()
+    }
+
+    // ── cart ──────────────────────────────────────────────────────────────────
+    /// Add one unit of `item`. Sync (the core just touches kv) so the tap feels
+    /// instant; the core merges into the matching line.
+    func addToCart(_ item: MenuItemView) {
+        applyCart { try core.cartAdd(itemId: item.id, name: item.name, unitPriceMinor: item.basePriceMinor) }
+    }
+    func setCartQty(_ itemId: String, _ qty: Int64) {
+        applyCart { try core.cartSetQty(itemId: itemId, qty: qty) }
+    }
+    func removeCartLine(_ itemId: String) {
+        applyCart { try core.cartRemove(itemId: itemId) }
+    }
+    func clearCart() {
+        try? core.cartClear()
+        cartLines = []
+        refreshCartTotals()
+    }
+
+    private func loadCart() {
+        cartLines = (try? core.cartLines()) ?? []
+        refreshCartTotals()
+    }
+    /// Run a cart mutation that returns the new lines, then refresh totals.
+    private func applyCart(_ op: () throws -> [CartLineView]) {
+        guard let lines = try? op() else { return }
+        cartLines = lines
+        refreshCartTotals()
+    }
+    private func refreshCartTotals() {
+        cartTotals = (try? core.cartTotals()) ?? .zero
     }
 
     // ── device setup (manager) ──────────────────────────────────────────────────
@@ -170,6 +206,8 @@ final class AppModel: ObservableObject {
         try? core.logout(wipeOutbox: false)
         session = nil
         shift = nil
+        cartLines = []
+        cartTotals = .zero
         errorMessage = nil
     }
 

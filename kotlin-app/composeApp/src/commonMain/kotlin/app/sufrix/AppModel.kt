@@ -5,6 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.sufrix.core.AppRoute
 import app.sufrix.core.BranchView
+import app.sufrix.core.CartLineView
+import app.sufrix.core.CartTotals
 import app.sufrix.core.CategoryView
 import app.sufrix.core.CoreException
 import app.sufrix.core.LoginMode
@@ -64,6 +66,11 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     var categories by mutableStateOf<List<CategoryView>>(emptyList())
         private set
     var menuItems by mutableStateOf<List<MenuItemView>>(emptyList())
+        private set
+    /** The in-progress cart (client-only, kv-persisted in the core). */
+    var cartLines by mutableStateOf<List<CartLineView>>(emptyList())
+        private set
+    var cartTotals by mutableStateOf(CartTotals(0L, 0L, 0L, 0L))
         private set
 
     init {
@@ -144,6 +151,34 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         if (session?.online == true) runCatching { core.refreshCatalog() }
         categories = runCatching { core.listCategories() }.getOrDefault(emptyList())
         menuItems = runCatching { core.listMenuItems() }.getOrDefault(emptyList())
+        loadCart()
+    }
+
+    // ── cart ───────────────────────────────────────────────────────────────────
+    /** Add one unit of [item]. Sync (the core just touches kv) so the tap feels
+     *  instant; the core merges into the matching line. */
+    fun addToCart(item: MenuItemView) = applyCart { core.cartAdd(item.id, item.name, item.basePriceMinor) }
+    fun setCartQty(itemId: String, qty: Long) = applyCart { core.cartSetQty(itemId, qty) }
+    fun removeCartLine(itemId: String) = applyCart { core.cartRemove(itemId) }
+    fun clearCart() {
+        runCatching { core.cartClear() }
+        cartLines = emptyList()
+        refreshCartTotals()
+    }
+
+    private fun loadCart() {
+        cartLines = runCatching { core.cartLines() }.getOrDefault(emptyList())
+        refreshCartTotals()
+    }
+    /** Run a cart mutation that returns the new lines, then refresh totals. */
+    private fun applyCart(op: () -> List<CartLineView>) {
+        runCatching { op() }.getOrNull()?.let {
+            cartLines = it
+            refreshCartTotals()
+        }
+    }
+    private fun refreshCartTotals() {
+        cartTotals = runCatching { core.cartTotals() }.getOrDefault(CartTotals(0L, 0L, 0L, 0L))
     }
 
     // ── device setup (manager) ────────────────────────────────────────────────
@@ -187,6 +222,8 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         runCatching { core.logout(false) }
         session = null
         shift = null
+        cartLines = emptyList()
+        cartTotals = CartTotals(0L, 0L, 0L, 0L)
         error = null
     }
 
