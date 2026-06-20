@@ -26,7 +26,7 @@ struct TenderView: View {
         ZStack {
             theme.colors.bg.ignoresSafeArea()
             if let receipt = app.receipt {
-                ReceiptConfirmation(receipt: receipt, currency: currency) { onClose() }
+                ReceiptConfirmation(app: app, receipt: receipt, currency: currency) { onClose() }
             } else {
                 tenderForm
             }
@@ -151,6 +151,7 @@ private struct MethodChip: View {
 }
 
 private struct ReceiptConfirmation: View {
+    @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     let receipt: ReceiptView
@@ -189,6 +190,9 @@ private struct ReceiptConfirmation: View {
 
                 VStack(spacing: Space.sm) {
                     SummaryRow(label: t("order.subtotal"), value: Money.format(receipt.subtotalMinor, currency))
+                    if receipt.discountMinor > 0 {
+                        SummaryRow(label: t("order.discount"), value: "−\(Money.format(receipt.discountMinor, currency))")
+                    }
                     SummaryRow(label: t("order.tax"), value: Money.format(receipt.taxMinor, currency))
                     SummaryRow(label: t("order.total"), value: Money.format(receipt.totalMinor, currency), emphasized: true)
                     if receipt.isCash {
@@ -197,12 +201,34 @@ private struct ReceiptConfirmation: View {
                     }
                 }
 
+                printControl
+
                 SufrixButton(label: t("order.new_order"), icon: "plus") { onDone() }
                     .padding(.top, Space.sm)
             }
             .frame(maxWidth: 460)
             .frame(maxWidth: .infinity)
             .padding(Space.xl)
+        }
+    }
+
+    /// Print receipt — best-effort send to the configured network printer, with
+    /// inline state (printing / sent / unreachable / not-configured).
+    @ViewBuilder private var printControl: some View {
+        switch app.printState {
+        case .printed:
+            StatusChip(label: t("receipt.printed"), icon: "checkmark.circle", tone: .success)
+        case .noPrinter:
+            StatusChip(label: t("receipt.no_printer"), icon: "exclamationmark.triangle", tone: .warning)
+        default:
+            SufrixButton(
+                label: app.printState == .failed ? t("receipt.print_failed") : t("receipt.print"),
+                icon: "printer",
+                variant: .outline,
+                loading: app.printState == .printing
+            ) {
+                Task { await app.printCurrentReceipt() }
+            }
         }
     }
 }

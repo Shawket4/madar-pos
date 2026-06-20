@@ -40,6 +40,7 @@ import app.sufrix.ui.NoticeBanner
 import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
 import app.sufrix.ui.StatusChip
+import app.sufrix.ui.BtnVariant
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixMark
@@ -70,7 +71,7 @@ fun TenderOverlay(model: AppModel, currency: String, onClose: () -> Unit) {
         ) {
             val receipt = model.receipt
             if (receipt != null) {
-                ReceiptConfirmation(receipt, currency, onDone = onClose)
+                ReceiptConfirmation(model, receipt, currency, onDone = onClose)
             } else {
                 TenderForm(model, currency, onClose)
             }
@@ -175,8 +176,9 @@ private fun MethodChip(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ReceiptConfirmation(receipt: ReceiptView, currency: String, onDone: () -> Unit) {
+private fun ReceiptConfirmation(model: AppModel, receipt: ReceiptView, currency: String, onDone: () -> Unit) {
     val c = sufrixColors()
+    val scope = rememberCoroutineScope()
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -205,12 +207,27 @@ private fun ReceiptConfirmation(receipt: ReceiptView, currency: String, onDone: 
 
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             SummaryRow(t("order.subtotal"), Money.format(receipt.subtotalMinor, currency))
+            if (receipt.discountMinor > 0) {
+                SummaryRow(t("order.discount"), "−${Money.format(receipt.discountMinor, currency)}")
+            }
             SummaryRow(t("order.tax"), Money.format(receipt.taxMinor, currency))
             SummaryRow(t("order.total"), Money.format(receipt.totalMinor, currency), emphasized = true)
             if (receipt.isCash) {
                 SummaryRow(t("order.cash_received"), Money.format(receipt.amountTenderedMinor, currency))
                 SummaryRow(t("order.change"), Money.format(receipt.changeMinor, currency))
             }
+        }
+
+        // Print receipt — best-effort send to the configured network printer.
+        when (model.printState) {
+            PrintState.PRINTED -> StatusChip(t("receipt.printed"), ChipTone.SUCCESS)
+            PrintState.NO_PRINTER -> StatusChip(t("receipt.no_printer"), ChipTone.WARNING)
+            else -> SufrixButton(
+                if (model.printState == PrintState.FAILED) t("receipt.print_failed") else t("receipt.print"),
+                { scope.launch { model.printReceipt() } },
+                variant = BtnVariant.OUTLINE,
+                loading = model.printState == PrintState.PRINTING,
+            )
         }
 
         SufrixButton(t("order.new_order"), { onDone() })

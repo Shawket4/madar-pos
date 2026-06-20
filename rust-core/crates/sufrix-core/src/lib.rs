@@ -33,6 +33,8 @@ pub mod i18n;
 pub mod menu;
 /// Order history reads — synced + still-queued orders for the shift.
 pub mod orders;
+/// Thermal-receipt rendering (ESC/POS) + best-effort network printing.
+pub mod receipt;
 /// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
 pub mod net;
 /// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
@@ -431,6 +433,42 @@ impl SufrixCore {
     /// Whether the locale is right-to-left (host flips layout direction).
     pub fn is_rtl(&self) -> bool {
         i18n::is_rtl(&self.current_locale())
+    }
+}
+
+// ── receipt rendering (sync; pure byte assembly) ─────────────────────────────
+#[uniffi::export]
+impl SufrixCore {
+    /// Render a placed order's receipt to ESC/POS bytes ready to stream to a
+    /// thermal printer. Labels resolve from the active locale; `store_name`
+    /// (branch) and `currency` come from the host, `width` is the paper's
+    /// column count (58mm ≈ 32, 80mm ≈ 48). Pair with `send_to_printer`.
+    pub fn render_receipt(
+        &self,
+        receipt: checkout::ReceiptView,
+        store_name: String,
+        currency: String,
+        width: u32,
+    ) -> Vec<u8> {
+        let loc = self.current_locale();
+        let tr = |k: &str| i18n::tr(&loc, k);
+        let ctx = receipt::EscPosCtx {
+            store_name,
+            currency,
+            width,
+            labels: receipt::ReceiptLabels {
+                order: tr("receipt.order"),
+                subtotal: tr("order.subtotal"),
+                discount: tr("order.discount"),
+                tax: tr("order.tax"),
+                total: tr("order.total"),
+                paid: tr("order.cash_received"),
+                change: tr("order.change"),
+                queued: tr("order.queued_hint"),
+                thank_you: tr("receipt.thank_you"),
+            },
+        };
+        receipt::escpos(&receipt, &ctx)
     }
 }
 
@@ -1102,6 +1140,32 @@ impl SufrixCore {
                 Ok(None)
             }
         }
+    }
+
+    /// Best-effort raw-TCP send of pre-rendered ESC/POS bytes to a network
+    /// (JetDirect / port 9100) thermal printer. Opens a short-lived socket,
+    /// writes, flushes. Errors map to `Transient` so the host can offer a retry.
+    ///
+    /// NOTE: unverifiable here without hardware — the rendered bytes are the
+    /// tested contract (`receipt` module); delivery is the host's to confirm.
+    pub async fn send_to_printer(&self, host: String, port: u16, bytes: Vec<u8>) -> Result<(), CoreError> {
+        use tokio::io::AsyncWriteExt;
+        use tokio::time::{timeout, Duration};
+        let addr = format!("{host}:{port}");
+        let connect = tokio::net::TcpStream::connect(&addr);
+        let mut stream = timeout(Duration::from_secs(5), connect)
+            .await
+            .map_err(|_| CoreError::Transient { message: format!("printer timeout: {addr}") })?
+            .map_err(|e| CoreError::Transient { message: format!("printer connect: {e}") })?;
+        stream
+            .write_all(&bytes)
+            .await
+            .map_err(|e| CoreError::Transient { message: format!("printer write: {e}") })?;
+        stream
+            .flush()
+            .await
+            .map_err(|e| CoreError::Transient { message: format!("printer flush: {e}") })?;
+        Ok(())
     }
 }
 

@@ -30,6 +30,7 @@ import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
+import app.sufrix.ui.SufrixTextField
 import app.sufrix.ui.ThemeMode
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
@@ -69,6 +70,9 @@ fun SettingsScreen(model: AppModel) {
                         Chip(Modifier.weight(1f), "English", model.locale.startsWith("en")) { model.setLocale("en") }
                         Chip(Modifier.weight(1f), "العربية", model.locale.startsWith("ar")) { model.setLocale("ar") }
                     }
+                }
+                Card(t("settings.printer")) {
+                    SufrixTextField(model.printerHost, { model.setPrinterHost(it) }, t("settings.printer_hint"))
                 }
                 Card(t("settings.device")) {
                     Row(

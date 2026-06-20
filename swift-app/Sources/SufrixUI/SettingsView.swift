@@ -18,6 +18,7 @@ struct SettingsView: View {
                     VStack(spacing: Space.lg) {
                         appearanceCard
                         languageCard
+                        printerCard
                         deviceCard
                         diagnosticsCard
                         SufrixButton(label: t("settings.sign_out"),
@@ -83,6 +84,12 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(.pressable)
+        }
+    }
+
+    private var printerCard: some View {
+        card(t("settings.printer")) {
+            SufrixTextField(placeholder: t("settings.printer_hint"), text: $app.printerHost, icon: "printer")
         }
     }
 

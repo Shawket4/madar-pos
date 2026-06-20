@@ -37,7 +37,11 @@ interface HostVault : TokenStore {
     var branchName: String
     var themeMode: String
     var locale: String
+    var printerHost: String
 }
+
+/** Receipt-printing progress for the confirmation screen's Print button. */
+enum class PrintState { IDLE, PRINTING, PRINTED, FAILED, NO_PRINTER }
 
 /** Device-setup is two steps: a manager authenticates, then picks the branch. */
 enum class SetupPhase { CREDENTIALS, PICK_BRANCH }
@@ -73,6 +77,13 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         private set
     /** Drives the settings screen (shown over the order screen). */
     var showSettings by mutableStateOf(false)
+    /** Network printer address ("host" or "host:port"; default port 9100). Empty
+     *  = no printer configured. Set in Settings, persisted in the host vault. */
+    var printerHost by mutableStateOf(vault.printerHost)
+        private set
+    /** Print progress for the receipt confirmation's Print button. */
+    var printState by mutableStateOf(PrintState.IDLE)
+        private set
     /** The device's current shift (drives OpenShift ↔ Order routing). */
     var shift by mutableStateOf<ShiftView?>(null)
         private set
@@ -211,6 +222,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         isPlacingOrder = true; error = null
         try {
             receipt = core.checkout(paymentMethodId, amountTenderedMinor)
+            printState = PrintState.IDLE
             loadCart()
             refreshPending()
         } catch (e: CoreException) {
@@ -223,7 +235,41 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     }
 
     /** Dismiss the receipt confirmation (back to the catalog). */
-    fun dismissReceipt() { receipt = null }
+    fun dismissReceipt() { receipt = null; printState = PrintState.IDLE }
+
+    /** Set the network printer address (Settings); persisted in the host vault. */
+    fun setPrinterHost(value: String) {
+        printerHost = value
+        vault.printerHost = value
+    }
+
+    /** Render the current receipt in the core and stream it to the configured
+     *  network printer (best-effort; unverifiable without hardware). All the
+     *  layout/bytes live in the core — this only moves them onto the wire. */
+    suspend fun printReceipt() {
+        val r = receipt ?: return
+        val (host, port) = parsePrinter(printerHost)
+        if (host.isBlank()) { printState = PrintState.NO_PRINTER; return }
+        printState = PrintState.PRINTING
+        val bytes = core.renderReceipt(r, branchName, session?.currencyCode ?: "", 32u)
+        printState = try {
+            core.sendToPrinter(host, port, bytes)
+            PrintState.PRINTED
+        } catch (e: Exception) {
+            PrintState.FAILED
+        }
+    }
+
+    /** Split "host" / "host:port" → (host, port); default JetDirect port 9100. */
+    private fun parsePrinter(raw: String): Pair<String, UShort> {
+        val default: UShort = 9100.toUShort()
+        val trimmed = raw.trim()
+        val colon = trimmed.lastIndexOf(':')
+        if (colon < 0) return trimmed to default
+        val host = trimmed.substring(0, colon)
+        val port = trimmed.substring(colon + 1).toUShortOrNull() ?: default
+        return host to port
+    }
 
     // ── sync center (outbox) ─────────────────────────────────────────────────────
     var showSync by mutableStateOf(false)

@@ -9,6 +9,9 @@ import SwiftUI
 /// Device-setup is two steps: a manager authenticates, then picks the branch.
 enum SetupPhase { case credentials, pickBranch }
 
+/// Receipt-printing progress for the confirmation screen's Print button.
+enum PrintState: Equatable { case idle, printing, printed, failed, noPrinter }
+
 @MainActor
 final class AppModel: ObservableObject {
     let core: SufrixCore
@@ -60,6 +63,13 @@ final class AppModel: ObservableObject {
     }
     /// Drives the settings screen (presented over the order screen).
     @Published var showSettings = false
+    /// Network printer address ("host" or "host:port"; default port 9100). Empty
+    /// = no printer configured. Set in Settings, persisted in UserDefaults.
+    @Published var printerHost: String {
+        didSet { UserDefaults.standard.set(printerHost, forKey: Self.printerKey) }
+    }
+    /// Print progress for the receipt confirmation's Print button.
+    @Published private(set) var printState: PrintState = .idle
 
     init() {
         Self.registerFonts()
@@ -71,6 +81,7 @@ final class AppModel: ObservableObject {
         branchId = UserDefaults.standard.string(forKey: Self.branchKey) ?? ""
         branchName = UserDefaults.standard.string(forKey: Self.branchNameKey) ?? ""
         themeMode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: Self.themeKey) ?? "") ?? .light
+        printerHost = UserDefaults.standard.string(forKey: Self.printerKey) ?? ""
         // Apply the saved locale to the core before any string resolves.
         let savedLocale = UserDefaults.standard.string(forKey: Self.localeKey)
         if let savedLocale { core.setLocale(locale: savedLocale) }
@@ -171,6 +182,7 @@ final class AppModel: ObservableObject {
         defer { isPlacingOrder = false }
         do {
             receipt = try await core.checkout(paymentMethodId: paymentMethodId, amountTenderedMinor: amountTenderedMinor)
+            printState = .idle
             loadCart()
             refreshPending()
         } catch {
@@ -179,7 +191,38 @@ final class AppModel: ObservableObject {
     }
 
     /// Dismiss the receipt confirmation (back to the catalog).
-    func dismissReceipt() { receipt = nil }
+    func dismissReceipt() { receipt = nil; printState = .idle }
+
+    /// Render the current receipt in the core and stream it to the configured
+    /// network printer (best-effort; unverifiable without hardware). All the
+    /// layout/bytes live in the core — this only moves them onto the wire.
+    func printCurrentReceipt() async {
+        guard let receipt else { return }
+        let (host, port) = Self.parsePrinter(printerHost)
+        guard !host.isEmpty else { printState = .noPrinter; return }
+        printState = .printing
+        let bytes = core.renderReceipt(
+            receipt: receipt,
+            storeName: branchName,
+            currency: session?.currencyCode ?? "",
+            width: 32
+        )
+        do {
+            try await core.sendToPrinter(host: host, port: port, bytes: bytes)
+            printState = .printed
+        } catch {
+            printState = .failed
+        }
+    }
+
+    /// Split "host" / "host:port" → (host, port); default JetDirect port 9100.
+    private static func parsePrinter(_ raw: String) -> (String, UInt16) {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard let colon = trimmed.lastIndex(of: ":") else { return (trimmed, 9100) }
+        let host = String(trimmed[..<colon])
+        let port = UInt16(trimmed[trimmed.index(after: colon)...]) ?? 9100
+        return (host, port)
+    }
 
     // ── sync center (outbox) ────────────────────────────────────────────────────
     @Published var showSync = false
@@ -419,6 +462,7 @@ final class AppModel: ObservableObject {
     private static let branchNameKey = "sufrix.branch_name"
     private static let themeKey = "sufrix.theme"
     private static let localeKey = "sufrix.locale"
+    private static let printerKey = "sufrix.printer"
 
     /// App-private SQLite path under Application Support.
     private static func databasePath() -> String {

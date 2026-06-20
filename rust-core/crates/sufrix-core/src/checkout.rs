@@ -46,6 +46,8 @@ pub struct ReceiptView {
     /// Localized payment-method label for display.
     pub payment_label: String,
     pub subtotal_minor: i64,
+    /// Discount applied before tax (0 when none). Shown on the printed receipt.
+    pub discount_minor: i64,
     pub tax_minor: i64,
     pub total_minor: i64,
     pub amount_tendered_minor: i64,
@@ -192,6 +194,7 @@ pub(crate) fn prepare(
             .collect(),
         payment_label,
         subtotal_minor: priced.subtotal_minor,
+        discount_minor: priced.discount_minor,
         tax_minor: priced.tax_minor,
         total_minor: priced.total_minor,
         amount_tendered_minor: if is_cash { amount_tendered_minor } else { 0 },
