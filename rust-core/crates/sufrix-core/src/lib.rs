@@ -863,6 +863,28 @@ impl SufrixCore {
         Ok(())
     }
 
+    /// The current shift's report — drives the close-shift system-cash +
+    /// discrepancy. Online: the server report plus still-queued cash sales.
+    /// Offline / on error: opening cash + queued cash (`from_server = false`).
+    pub async fn shift_report(&self) -> Result<shift::ShiftReportView, CoreError> {
+        use sufrix_api::apis::shifts_api;
+        let shift = shift::current(&self.store)?
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no shift".into() })?;
+        let queued_cash = checkout::queued_cash_total(&self.store)?;
+        let online = self.current_session().map(|s| s.online).unwrap_or(false);
+        if online {
+            let res = shifts_api::get_shift_report(
+                &self.api.config(),
+                shifts_api::GetShiftReportParams { shift_id: shift.id.clone() },
+            )
+            .await;
+            if let Ok(report) = res {
+                return Ok(shift::report_view(&report, queued_cash));
+            }
+        }
+        Ok(shift::offline_report_view(shift.opening_cash_minor, queued_cash))
+    }
+
     /// Place the current cart as an order: price it (client-authoritative),
     /// queue an idempotent `create_order` command, clear the cart, and try to
     /// send now. Works offline — the order stays queued and `queued_offline` is

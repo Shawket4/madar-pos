@@ -39,6 +39,68 @@ pub(crate) struct CloseShiftCommand {
     pub request: models::CloseShiftRequest,
 }
 
+/// One payment-method line in the shift report.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct ShiftReportPaymentLine {
+    pub method: String,
+    pub is_cash: bool,
+    pub order_count: i64,
+    pub total_minor: i64,
+}
+
+/// The shift report shown on close (drives the system-cash + discrepancy) and in
+/// a report preview. `expected_cash_minor` is the server's expected drawer cash
+/// PLUS still-queued cash sales (offline: opening cash + queued cash).
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct ShiftReportView {
+    pub expected_cash_minor: i64,
+    pub opening_cash_minor: i64,
+    pub total_payments_minor: i64,
+    pub net_payments_minor: i64,
+    pub voided_amount_minor: i64,
+    pub cash_movements_net_minor: i64,
+    pub payment_lines: Vec<ShiftReportPaymentLine>,
+    /// `false` = offline fallback (no server figures, just opening + queued).
+    pub from_server: bool,
+}
+
+/// Project the server report, adding still-queued cash sales to expected cash.
+pub(crate) fn report_view(report: &models::ShiftReportResponse, queued_cash: i64) -> ShiftReportView {
+    ShiftReportView {
+        expected_cash_minor: report.expected_cash + queued_cash,
+        opening_cash_minor: report.shift.opening_cash as i64,
+        total_payments_minor: report.total_payments,
+        net_payments_minor: report.net_payments,
+        voided_amount_minor: report.voided_amount,
+        cash_movements_net_minor: report.cash_movements_net,
+        payment_lines: report
+            .payment_summary
+            .iter()
+            .map(|p| ShiftReportPaymentLine {
+                method: p.payment_method.clone(),
+                is_cash: p.is_cash,
+                order_count: p.order_count,
+                total_minor: p.total,
+            })
+            .collect(),
+        from_server: true,
+    }
+}
+
+/// Offline fallback: expected = opening cash + still-queued cash sales.
+pub(crate) fn offline_report_view(opening_cash_minor: i64, queued_cash: i64) -> ShiftReportView {
+    ShiftReportView {
+        expected_cash_minor: opening_cash_minor + queued_cash,
+        opening_cash_minor,
+        total_payments_minor: 0,
+        net_payments_minor: 0,
+        voided_amount_minor: 0,
+        cash_movements_net_minor: 0,
+        payment_lines: vec![],
+        from_server: false,
+    }
+}
+
 pub(crate) fn view_from(shift: &models::Shift) -> ShiftView {
     ShiftView {
         id: shift.id.to_string(),
@@ -207,5 +269,30 @@ mod tests {
         let mut pf = models::ShiftPreFill::new(true, 0);
         pf.open_shift = Some(Some(Box::new(open_shift_model())));
         assert!(matches!(reconcile(&pf, false, false), ShiftReconcile::Adopt(_)));
+    }
+
+    #[test]
+    fn offline_report_view_is_opening_plus_queued() {
+        let v = offline_report_view(50000, 2280);
+        assert_eq!(v.expected_cash_minor, 52280);
+        assert_eq!(v.opening_cash_minor, 50000);
+        assert!(!v.from_server);
+        assert!(v.payment_lines.is_empty());
+    }
+
+    #[test]
+    fn report_view_adds_queued_cash_to_server_expected() {
+        let mut report = models::ShiftReportResponse::default();
+        report.expected_cash = 60000;
+        report.shift = Box::new(models::Shift { opening_cash: 50000, ..Default::default() });
+        report.total_payments = 15000;
+        report.payment_summary = vec![models::PaymentSummaryRow::new(true, 3, "Cash".into(), 12000)];
+        let v = report_view(&report, 2280);
+        assert_eq!(v.expected_cash_minor, 62280); // 60000 + 2280 queued
+        assert_eq!(v.opening_cash_minor, 50000);
+        assert_eq!(v.total_payments_minor, 15000);
+        assert_eq!(v.payment_lines.len(), 1);
+        assert_eq!(v.payment_lines[0].total_minor, 12000);
+        assert!(v.from_server);
     }
 }

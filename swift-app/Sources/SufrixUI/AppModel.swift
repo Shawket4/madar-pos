@@ -226,6 +226,13 @@ final class AppModel: ObservableObject {
     // ── close shift ───────────────────────────────────────────────────────────
     /// Drives the close-shift screen (presented over the order screen).
     @Published var showCloseShift = false
+    /// The current shift's report (expected cash + breakdown), loaded on close.
+    @Published private(set) var shiftReport: ShiftReportView?
+
+    /// Load the shift report (best-effort) for the close-shift system-cash row.
+    func loadShiftReport() async {
+        shiftReport = try? await core.shiftReport()
+    }
 
     /// Close the open shift with the counted cash + optional note. On success the
     /// core marks the shift closed, so the route flips back to open-shift.

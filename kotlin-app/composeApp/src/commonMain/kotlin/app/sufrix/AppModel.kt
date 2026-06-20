@@ -20,6 +20,7 @@ import app.sufrix.core.OutboxItemView
 import app.sufrix.core.PaymentMethodView
 import app.sufrix.core.ReceiptView
 import app.sufrix.core.SessionSnapshot
+import app.sufrix.core.ShiftReportView
 import app.sufrix.core.ShiftView
 import app.sufrix.core.SufrixCore
 import app.sufrix.core.TokenStore
@@ -268,6 +269,14 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     // ── close shift ────────────────────────────────────────────────────────────
     /** Drives the close-shift screen (shown over the order screen). */
     var showCloseShift by mutableStateOf(false)
+    /** The current shift's report (expected cash + breakdown), loaded on close. */
+    var shiftReport by mutableStateOf<ShiftReportView?>(null)
+        private set
+
+    /** Load the shift report (best-effort) for the close-shift system-cash row. */
+    suspend fun loadShiftReport() {
+        shiftReport = runCatching { core.shiftReport() }.getOrNull()
+    }
 
     /** Close the open shift with the counted cash + optional note. On success the
      *  core marks the shift closed, so the route flips back to open-shift. */

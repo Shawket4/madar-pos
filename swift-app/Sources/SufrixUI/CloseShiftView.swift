@@ -39,6 +39,7 @@ struct CloseShiftView: View {
                 #endif
             }
         }
+        .task { await app.loadShiftReport() }
     }
 
     private var header: some View {
@@ -73,9 +74,49 @@ struct CloseShiftView: View {
     private var cashCard: some View {
         Card {
             CardHeader(icon: "banknote", title: t("shift.counted_cash"))
+            if let r = app.shiftReport {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("shift.system_cash"))
+                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
+                        Text(t("shift.system_cash_explain"))
+                            .font(.ui(11)).foregroundStyle(theme.colors.textMuted)
+                    }
+                    Spacer(minLength: Space.sm)
+                    Text(Money.format(r.expectedCashMinor, currency))
+                        .font(.money(18, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                }
+                .padding(Space.md)
+                .background(theme.colors.surfaceAlt)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            }
             AmountField(amountMinor: $countedMinor, currencyCode: currency, autofocus: true)
+            if let r = app.shiftReport {
+                discrepancyBanner(declared: countedMinor, expected: r.expectedCashMinor)
+            }
             SufrixTextField(placeholder: t("shift.cash_note"), text: $note, icon: "note.text", disabled: app.isBusy)
         }
+    }
+
+    @ViewBuilder
+    private func discrepancyBanner(declared: Int64, expected: Int64) -> some View {
+        let diff = declared - expected
+        let color: Color = diff == 0 ? theme.colors.success : (diff > 0 ? theme.colors.warning : theme.colors.danger)
+        let icon = diff == 0 ? "checkmark.circle" : (diff > 0 ? "arrow.up.circle" : "arrow.down.circle")
+        let label = diff == 0
+            ? t("shift.drawer_matches")
+            : (diff > 0
+               ? "\(t("shift.drawer_over")) \(Money.format(diff, currency))"
+               : "\(t("shift.drawer_short")) \(Money.format(-diff, currency))")
+        HStack(spacing: Space.sm) {
+            Image(systemName: icon).font(.system(size: 15)).foregroundStyle(color)
+            Text(label).font(.ui(13, .semibold)).foregroundStyle(color)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Space.md)
+        .padding(.vertical, 10)
+        .background(color.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
     }
 
     /// "2026-06-20T12:00:00+00:00" → "2026-06-20 12:00".

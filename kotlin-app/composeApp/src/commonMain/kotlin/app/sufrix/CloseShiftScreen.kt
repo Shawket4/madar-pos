@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.sufrix.core.ShiftReportView
 import app.sufrix.core.ShiftView
 import app.sufrix.ui.AmountField
 import app.sufrix.ui.BtnVariant
@@ -54,6 +56,7 @@ fun CloseShiftScreen(model: AppModel) {
     var countedMinor by remember { mutableStateOf(0L) }
     var note by remember { mutableStateOf("") }
     val currency = model.session?.currencyCode ?: ""
+    LaunchedEffect(Unit) { model.loadShiftReport() }
 
     Column(Modifier.fillMaxSize().background(c.bg)) {
         // ── Header ────────────────────────────────────────────────────────────
@@ -85,7 +88,7 @@ fun CloseShiftScreen(model: AppModel) {
                 verticalArrangement = Arrangement.spacedBy(Space.lg),
             ) {
                 model.shift?.let { SummaryCard(it, currency) }
-                CashCard(countedMinor, { countedMinor = it }, note, { note = it }, currency, !model.isBusy)
+                CashCard(countedMinor, { countedMinor = it }, note, { note = it }, currency, !model.isBusy, model.shiftReport)
                 model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
                 SufrixButton(
                     t("order.close_shift"),
@@ -116,11 +119,48 @@ private fun CashCard(
     onNote: (String) -> Unit,
     currency: String,
     enabled: Boolean,
+    report: ShiftReportView?,
 ) {
+    val c = sufrixColors()
     Card {
         CardHeader("¤", t("shift.counted_cash"))
+        report?.let { r ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt).padding(Space.md),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(t("shift.system_cash"), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Text(t("shift.system_cash_explain"), color = c.textMuted, fontFamily = SufrixFont, fontSize = 11.sp)
+                }
+                Text(Money.format(r.expectedCashMinor, currency), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 18.sp)
+            }
+        }
         AmountField(amountMinor = counted, onAmountMinor = onCounted, currencyCode = currency, autofocus = true)
+        report?.let { DiscrepancyBanner(counted, it.expectedCashMinor, currency) }
         SufrixTextField(note, onNote, t("shift.cash_note"), enabled = enabled)
+    }
+}
+
+@Composable
+private fun DiscrepancyBanner(declared: Long, expected: Long, currency: String) {
+    val c = sufrixColors()
+    val diff = declared - expected
+    val color = if (diff == 0L) c.success else if (diff > 0) c.warning else c.danger
+    val glyph = if (diff == 0L) "✓" else if (diff > 0) "▲" else "▼"
+    val label = when {
+        diff == 0L -> t("shift.drawer_matches")
+        diff > 0 -> "${t("shift.drawer_over")} ${Money.format(diff, currency)}"
+        else -> "${t("shift.drawer_short")} ${Money.format(-diff, currency)}"
+    }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(color.copy(alpha = 0.12f))
+            .padding(horizontal = Space.md, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        Text(glyph, color = color, fontSize = 14.sp)
+        Text(label, color = color, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
     }
 }
 

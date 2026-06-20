@@ -208,6 +208,30 @@ fn parse_uuid(s: &str, field: &str) -> CoreResult<uuid::Uuid> {
     uuid::Uuid::parse_str(s).map_err(|_| CoreError::Validation { field: field.into(), message: "bad uuid".into() })
 }
 
+/// Total of still-queued cash sales (outbox `create_order` whose payment method
+/// is cash) — added to the shift report's expected cash so the close-shift
+/// guidance stays right before those orders sync.
+pub(crate) fn queued_cash_total(store: &Store) -> CoreResult<i64> {
+    let raw: Vec<models::OrgPaymentMethod> = match store.kv_get(menu::K_PAYMENT_METHODS)? {
+        Some(j) => serde_json::from_str(&j).unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let cash_names: std::collections::HashSet<String> =
+        raw.iter().filter(|p| p.is_cash).map(|p| p.name.clone()).collect();
+    let mut total = 0i64;
+    for item in store.list_active()? {
+        if item.op_type != "create_order" {
+            continue;
+        }
+        if let Ok(cmd) = serde_json::from_str::<CheckoutCommand>(&item.payload) {
+            if cash_names.contains(&cmd.request.payment_method) {
+                total += cmd.request.total_amount.flatten().unwrap_or(0) as i64;
+            }
+        }
+    }
+    Ok(total)
+}
+
 /// The raw cached payment method (carries the untranslated `name` + `is_cash`).
 fn raw_payment_method(store: &Store, id: &str) -> CoreResult<Option<models::OrgPaymentMethod>> {
     let list: Vec<models::OrgPaymentMethod> = match store.kv_get(menu::K_PAYMENT_METHODS)? {
@@ -326,5 +350,32 @@ mod tests {
         cart::add(&store, ITEM, "Latte", 1000).unwrap();
         let err = prep(&store, "00000000-0000-0000-0000-0000000000ee", 1000).unwrap_err();
         assert!(matches!(err, CoreError::Validation { .. }));
+    }
+
+    #[test]
+    fn queued_cash_total_sums_only_cash_orders() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store); // "Cash" is_cash=true, "Card" is_cash=false
+        let queue = |id: &str, method: &str, total: i32| {
+            let mut req = models::CreateOrderRequest::new(
+                uuid::Uuid::new_v4(), vec![], method.into(), uuid::Uuid::new_v4());
+            req.total_amount = Some(Some(total));
+            let cmd = CheckoutCommand { request: req };
+            store
+                .enqueue(&crate::store::NewOutboxOp {
+                    id: id.into(),
+                    op_type: "create_order".into(),
+                    idempotency_key: id.into(),
+                    payload: serde_json::to_string(&cmd).unwrap(),
+                    event_at: "2026-06-20T12:00:00+00:00".into(),
+                    depends_on_seq: None,
+                })
+                .unwrap();
+        };
+        assert_eq!(queued_cash_total(&store).unwrap(), 0);
+        queue("o1", "Cash", 2280);
+        queue("o2", "Card", 1500); // not cash → excluded
+        queue("o3", "Cash", 1000);
+        assert_eq!(queued_cash_total(&store).unwrap(), 3280);
     }
 }
