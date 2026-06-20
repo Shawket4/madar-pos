@@ -59,6 +59,12 @@ pub(crate) fn save(store: &Store, shift: &models::Shift) -> CoreResult<()> {
     store.kv_put(CURRENT_SHIFT_KEY, &serde_json::to_string(shift)?)
 }
 
+/// Drop the cached shift (closed/none on the server, or on sign-out). `current`
+/// reads "null" back as `None`.
+pub(crate) fn clear(store: &Store) -> CoreResult<()> {
+    store.kv_put(CURRENT_SHIFT_KEY, "null")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -73,7 +73,7 @@ final class AppModel: ObservableObject {
             session = try await core.signIn(req: LoginRequest(
                 mode: .pin, name: name, pin: pin, branchId: branchId,
                 email: nil, password: nil, orgId: nil))
-            loadShift()
+            await reconcileShift()
         } catch {
             errorMessage = humanMessage(error)
         }
@@ -89,6 +89,17 @@ final class AppModel: ObservableObject {
             shift = try await core.openShift(openingCashMinor: openingCashMinor)
         } catch {
             errorMessage = humanMessage(error)
+        }
+    }
+
+    /// Reconcile the shift with the server when online (catches an existing open
+    /// shift on login, and a dashboard force-close); use the local cache offline.
+    /// Drives OpenShift ↔ Order routing.
+    func reconcileShift() async {
+        if session?.online == true {
+            shift = (try? await core.refreshShift()) ?? nil
+        } else {
+            loadShift()
         }
     }
 

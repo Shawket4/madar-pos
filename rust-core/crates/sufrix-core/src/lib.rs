@@ -202,15 +202,18 @@ impl SufrixCore {
         Ok(snapshot)
     }
 
-    /// Sign out: drop the live session + token, clear the host vault. Preserves
-    /// the outbox unless `wipe_outbox` (offline shifts are real sales — only wipe
-    /// on an explicit destructive sign-out).
+    /// Sign out: clear the live session + token (the JWT is stateless — there is
+    /// no server-side logout endpoint, so clearing locally is the revocation) and
+    /// the host vault. Drops the cached shift so a re-login reconciles fresh from
+    /// the server. Does NOT force-close the open shift — it stays open on the
+    /// server for whoever resumes it. Preserves the outbox unless `wipe_outbox`.
     pub fn logout(&self, wipe_outbox: bool) -> Result<(), CoreError> {
         self.api.set_bearer(None);
         *self.session.write().unwrap_or_else(|e| e.into_inner()) = None;
         if let Some(ts) = self.token_store.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             ts.clear_blob();
         }
+        let _ = shift::clear(&self.store);
         if wipe_outbox {
             self.store.wipe_outbox()?;
         }
@@ -603,6 +606,39 @@ impl SufrixCore {
     /// Force a sync now — drains the outbox. Cancellable/idempotent.
     pub async fn sync_now(&self) -> Result<(), CoreError> {
         self.drain_outbox().await
+    }
+
+    /// Reconcile the device's shift with the server (online). Caches the server's
+    /// open shift, or CLEARS the local cache when the server reports none — e.g.
+    /// a dashboard force-close, or a shift opened on another device. The server
+    /// is the source of truth when online; call this on login and on app resume.
+    pub async fn refresh_shift(&self) -> Result<Option<shift::ShiftView>, CoreError> {
+        use sufrix_api::apis::shifts_api;
+        let branch_id = {
+            let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
+                message: "not signed in".into(),
+            })?;
+            s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
+                field: "branch_id".into(),
+                message: "session has no branch".into(),
+            })?
+        };
+        let prefill = shifts_api::get_current_shift(
+            &self.api.config(),
+            shifts_api::GetCurrentShiftParams { branch_id },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+
+        if prefill.has_open_shift {
+            if let Some(Some(server_shift)) = prefill.open_shift {
+                shift::save(&self.store, &server_shift)?;
+                return Ok(Some(shift::view_from(&server_shift)));
+            }
+        }
+        shift::clear(&self.store)?;
+        Ok(None)
     }
 }
 

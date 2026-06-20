@@ -30,6 +30,9 @@ struct OrderView: View {
             .frame(maxWidth: 380)
             .padding(Space.xxl)
         }
+        // Reconcile with the server on appear — catches a shift force-closed
+        // from the dashboard (routes back to open-shift if it's gone).
+        .task { await app.reconcileShift() }
     }
 }
 
