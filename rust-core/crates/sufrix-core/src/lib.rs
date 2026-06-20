@@ -249,6 +249,23 @@ impl SufrixCore {
         Ok((org, s.snapshot.branch_id.clone()))
     }
 
+    /// Whether the CURRENTLY CACHED shift's own open_shift command is still
+    /// queued — scoped to that shift's id. The outbox is device-global and
+    /// survives sign-out, so an unrelated teller's orphaned open_shift command
+    /// must NOT count: otherwise it would keep a force-closed shift alive for the
+    /// next teller on a shared till (the `id` of an open_shift op == the shift PK).
+    fn open_shift_command_pending(&self) -> Result<bool, CoreError> {
+        let local_id = match shift::current(&self.store)? {
+            Some(s) => s.id,
+            None => return Ok(false),
+        };
+        Ok(self
+            .store
+            .pending()?
+            .iter()
+            .any(|i| i.op_type == "open_shift" && i.id == local_id))
+    }
+
     /// Drain the durable outbox in FIFO order. Each op dispatches by `op_type`;
     /// a connectivity error stops the drain (items stay pending for next time),
     /// a 4xx marks the item dead. The single place outbox writes hit the network.
@@ -275,7 +292,16 @@ impl SufrixCore {
                             // Network down → stop; retry the whole queue later.
                             CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
                             // 4xx/terminal → dead-letter, keep draining the rest.
-                            other => self.store.mark_dead(item.seq, &other.to_string())?,
+                            other => {
+                                self.store.mark_dead(item.seq, &other.to_string())?;
+                                // The server REJECTED the open (e.g. 409 already
+                                // open). Drop the optimistic shift so the teller
+                                // isn't left selling against a shift that doesn't
+                                // exist server-side (checkout only checks is_open).
+                                if shift::current(&self.store)?.map(|s| s.id) == Some(item.id.clone()) {
+                                    let _ = shift::clear(&self.store);
+                                }
+                            }
                         },
                     }
                 }
@@ -759,7 +785,7 @@ impl SufrixCore {
         // open_shift command has actually reached it. While it's still queued,
         // the optimistic local shift stands — clearing it here is what bounced
         // the teller straight back to the open-shift screen.
-        let open_pending = self.store.pending()?.iter().any(|i| i.op_type == "open_shift");
+        let open_pending = self.open_shift_command_pending()?;
         match shift::reconcile(&prefill, open_pending) {
             shift::ShiftReconcile::Adopt(server_shift) => {
                 shift::save(&self.store, &server_shift)?;
@@ -890,8 +916,13 @@ mod lifecycle_tests {
     }
 
     fn seed_shift(core: &SufrixCore, teller: uuid::Uuid, status: &str) {
+        let _ = seed_shift_returning_id(core, teller, status);
+    }
+
+    fn seed_shift_returning_id(core: &SufrixCore, teller: uuid::Uuid, status: &str) -> String {
+        let id = uuid::Uuid::new_v4();
         let s = sufrix_api::models::Shift {
-            id: uuid::Uuid::new_v4(),
+            id,
             branch_id: uuid::Uuid::new_v4(),
             teller_id: teller,
             teller_name: "Sara".into(),
@@ -900,6 +931,36 @@ mod lifecycle_tests {
             ..Default::default()
         };
         shift::save(&core.store, &s).unwrap();
+        id.to_string()
+    }
+
+    fn enqueue_open_shift(core: &SufrixCore, id: &str) {
+        core.store
+            .enqueue(&store::NewOutboxOp {
+                id: id.into(),
+                op_type: "open_shift".into(),
+                idempotency_key: id.into(),
+                payload: "{}".into(),
+                event_at: "2026-06-20T12:00:00+00:00".into(),
+                depends_on_seq: None,
+            })
+            .unwrap();
+    }
+
+    /// Skeptic-1 regression: the open-shift pending guard must be scoped to the
+    /// cached shift's id, NOT device-global. A foreign teller's orphaned command
+    /// (left in the shared outbox after sign-out) must not keep a shift alive.
+    #[test]
+    fn open_pending_is_scoped_to_the_cached_shift_not_device_global() {
+        let core = SufrixCore::from_env().unwrap();
+        let shift_id = seed_shift_returning_id(&core, uuid::Uuid::new_v4(), "open");
+        assert!(!core.open_shift_command_pending().unwrap()); // nothing queued
+        // A DIFFERENT shift's orphaned open_shift command does NOT count.
+        enqueue_open_shift(&core, &uuid::Uuid::new_v4().to_string());
+        assert!(!core.open_shift_command_pending().unwrap());
+        // Our own cached shift's command DOES.
+        enqueue_open_shift(&core, &shift_id);
+        assert!(core.open_shift_command_pending().unwrap());
     }
 
     #[test]
