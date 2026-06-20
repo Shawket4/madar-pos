@@ -262,6 +262,38 @@ final class AppModel: ObservableObject {
         cartTotals = (try? core.cartTotals()) ?? .zero
     }
 
+    // ── item customization ──────────────────────────────────────────────────────
+    /// Non-nil = the customization sheet is open for this item.
+    @Published var detailItem: MenuItemView?
+    /// The cart line key being edited (nil = adding a new line).
+    @Published var detailEditKey: String?
+    /// The item's addons with charged prices resolved by the core (for the sheet).
+    @Published private(set) var itemAddons: [ItemAddonView] = []
+
+    /// Whether tapping `item` should open the customization sheet vs add directly.
+    func hasOptions(_ item: MenuItemView) -> Bool {
+        !item.sizes.isEmpty || !item.addonSlots.isEmpty || !item.optionalFields.isEmpty
+    }
+
+    func openItemDetail(_ item: MenuItemView, editKey: String? = nil) {
+        detailEditKey = editKey
+        itemAddons = (try? core.listItemAddons(itemId: item.id)) ?? []
+        detailItem = item
+    }
+    func closeItemDetail() { detailItem = nil; detailEditKey = nil }
+
+    /// Add (or, in edit mode, replace) a configured line. The core resolves the
+    /// charged prices from the catalog; we just pass the selection.
+    func addConfigured(itemId: String, sizeLabel: String?, addons: [AddonSelection],
+                       optionalIds: [String], qty: Int64, notes: String?) {
+        if let key = detailEditKey { _ = try? core.cartRemove(itemId: key) }
+        _ = try? core.cartAddConfigured(itemId: itemId, sizeLabel: sizeLabel, addons: addons,
+                                        optionalFieldIds: optionalIds, qty: qty, notes: notes)
+        loadCart()
+        refreshPending()
+        closeItemDetail()
+    }
+
     // ── device setup (manager) ──────────────────────────────────────────────────
 
     /// Step 1: a manager authenticates (online), then we load the org's branches

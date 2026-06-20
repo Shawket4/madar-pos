@@ -98,7 +98,7 @@ fun OrderScreen(model: AppModel) {
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxHeight()) {
-                        CatalogColumn(model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it }, model::addToCart)
+                        CatalogColumn(model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it }, { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) })
                     }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(c.border))
                     Box(Modifier.width(340.dp).fillMaxHeight()) {
@@ -107,7 +107,7 @@ fun OrderScreen(model: AppModel) {
                 }
             } else {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    CatalogColumn(model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it }, model::addToCart)
+                    CatalogColumn(model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it }, { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) })
                 }
                 CartBar(model, currency) { showCart = true }
             }
@@ -145,6 +145,9 @@ fun OrderScreen(model: AppModel) {
         if (model.showHistory) {
             OrderHistoryScreen(model)
         }
+
+        // Item customization sheet.
+        model.detailItem?.let { ItemDetailSheet(model, it) { model.closeItemDetail() } }
     }
 }
 
@@ -394,11 +397,11 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                 contentPadding = PaddingValues(Space.lg),
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
-                items(model.cartLines, key = { it.itemId }) { line ->
+                items(model.cartLines, key = { it.key }) { line ->
                     CartLineRow(
                         line, currency,
-                        onDec = { model.setCartQty(line.itemId, line.qty - 1) },
-                        onInc = { model.setCartQty(line.itemId, line.qty + 1) },
+                        onDec = { model.setCartQty(line.key, line.qty - 1) },
+                        onInc = { model.setCartQty(line.key, line.qty + 1) },
                     )
                 }
             }

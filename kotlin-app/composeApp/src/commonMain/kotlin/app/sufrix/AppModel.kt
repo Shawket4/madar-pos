@@ -7,8 +7,10 @@ import app.sufrix.core.AppRoute
 import app.sufrix.core.BranchView
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
+import app.sufrix.core.AddonSelection
 import app.sufrix.core.CategoryView
 import app.sufrix.core.CoreException
+import app.sufrix.core.ItemAddonView
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
 import app.sufrix.core.MenuItemView
@@ -294,6 +296,36 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     }
     private fun refreshCartTotals() {
         cartTotals = runCatching { core.cartTotals() }.getOrDefault(CartTotals(0L, 0L, 0L, 0L))
+    }
+
+    // ── item customization ───────────────────────────────────────────────────────
+    /** Non-null = the customization sheet is open for this item. */
+    var detailItem by mutableStateOf<MenuItemView?>(null)
+    /** The cart line key being edited (null = adding a new line). */
+    var detailEditKey by mutableStateOf<String?>(null)
+    /** The item's addons with charged prices resolved by the core (for the sheet). */
+    var itemAddons by mutableStateOf<List<ItemAddonView>>(emptyList())
+        private set
+
+    /** Whether tapping [item] should open the customization sheet vs add directly. */
+    fun hasOptions(item: MenuItemView): Boolean =
+        item.sizes.isNotEmpty() || item.addonSlots.isNotEmpty() || item.optionalFields.isNotEmpty()
+
+    fun openItemDetail(item: MenuItemView, editKey: String? = null) {
+        detailEditKey = editKey
+        itemAddons = runCatching { core.listItemAddons(item.id) }.getOrDefault(emptyList())
+        detailItem = item
+    }
+    fun closeItemDetail() { detailItem = null; detailEditKey = null }
+
+    /** Add (or, in edit mode, replace) a configured line. The core resolves the
+     *  charged prices from the catalog; we just pass the selection. */
+    fun addConfigured(itemId: String, sizeLabel: String?, addons: List<AddonSelection>, optionalIds: List<String>, qty: Long, notes: String?) {
+        detailEditKey?.let { runCatching { core.cartRemove(it) } }
+        runCatching { core.cartAddConfigured(itemId, sizeLabel, addons, optionalIds, qty, notes) }
+        loadCart()
+        refreshPending()
+        closeItemDetail()
     }
 
     // ── device setup (manager) ────────────────────────────────────────────────

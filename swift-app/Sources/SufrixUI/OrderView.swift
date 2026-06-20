@@ -95,6 +95,13 @@ struct OrderView: View {
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }
+            // Item customization.
+            .sheet(item: $app.detailItem) { item in
+                ItemDetailView(app: app, item: item, onClose: { app.closeItemDetail() })
+                    .frame(minWidth: 460, minHeight: 600)
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -109,7 +116,7 @@ struct OrderView: View {
                 .padding(.horizontal, Space.lg)
                 .padding(.bottom, Space.sm)
             ItemGridOrEmpty(items: visibleItems, currency: currency, searching: !search.isEmpty) { item in
-                app.addToCart(item)
+                if app.hasOptions(item) { app.openItemDetail(item) } else { app.addToCart(item) }
             }
         }
         .frame(maxWidth: .infinity)
@@ -417,11 +424,11 @@ private struct CartPanel: View {
             } else {
                 ScrollView {
                     VStack(spacing: Space.sm) {
-                        ForEach(app.cartLines, id: \.itemId) { line in
+                        ForEach(app.cartLines, id: \.key) { line in
                             CartLineRow(
                                 line: line, currency: currency,
-                                onDec: { app.setCartQty(line.itemId, line.qty - 1) },
-                                onInc: { app.setCartQty(line.itemId, line.qty + 1) }
+                                onDec: { app.setCartQty(line.key, line.qty - 1) },
+                                onInc: { app.setCartQty(line.key, line.qty + 1) }
                             )
                         }
                     }
