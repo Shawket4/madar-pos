@@ -23,6 +23,8 @@ pub mod pricing;
 
 /// Cart — client-only in-progress order state, priced via `pricing`.
 pub mod cart;
+/// Checkout — assemble an order from the cart + place it via the outbox.
+pub mod checkout;
 /// The coarse FFI error model the host reacts to (PLAN §7.6).
 pub mod error;
 /// Static UI-string localization — one source of truth for both hosts.
@@ -277,7 +279,25 @@ impl SufrixCore {
                         },
                     }
                 }
-                _ => {} // op types added with cart/checkout
+                "create_order" => {
+                    use sufrix_api::apis::orders_api;
+                    let cmd: checkout::CheckoutCommand = serde_json::from_str(&item.payload)?;
+                    let res = orders_api::create_order(
+                        &self.api.config(),
+                        orders_api::CreateOrderParams { create_order_request: cmd.request },
+                    )
+                    .await;
+                    match res {
+                        Ok(order) => {
+                            self.store.mark_acked(item.seq, Some(&order.id.to_string()))?;
+                        }
+                        Err(e) => match net::map_api_error(e) {
+                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
+                            other => self.store.mark_dead(item.seq, &other.to_string())?,
+                        },
+                    }
+                }
+                _ => {} // future op types
             }
         }
         Ok(())
@@ -645,6 +665,66 @@ impl SufrixCore {
 
         shift::current(&self.store)?
             .ok_or_else(|| CoreError::Internal { message: "shift not persisted".into() })
+    }
+
+    /// Place the current cart as an order: price it (client-authoritative),
+    /// queue an idempotent `create_order` command, clear the cart, and try to
+    /// send now. Works offline — the order stays queued and `queued_offline` is
+    /// `true` on the receipt until it syncs. Errors if there's no open shift,
+    /// the cart is empty, or the payment method is unknown.
+    pub async fn checkout(
+        &self,
+        payment_method_id: String,
+        amount_tendered_minor: i64,
+    ) -> Result<checkout::ReceiptView, CoreError> {
+        let (branch_id, tax_rate) = {
+            let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
+                message: "not signed in".into(),
+            })?;
+            let branch = s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
+                field: "branch_id".into(),
+                message: "session has no branch".into(),
+            })?;
+            (branch, s.snapshot.tax_rate)
+        };
+        let shift = shift::current(&self.store)?
+            .filter(|s| s.is_open)
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no open shift".into() })?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let prepared = checkout::prepare(
+            &self.store,
+            &self.config.locale,
+            &branch_id,
+            &shift.id,
+            &payment_method_id,
+            amount_tendered_minor,
+            tax_rate,
+            now,
+        )?;
+
+        // Queue the durable command (idempotent on the client order UUID).
+        self.store.enqueue(&store::NewOutboxOp {
+            id: prepared.order_id.to_string(),
+            op_type: "create_order".into(),
+            idempotency_key: prepared.order_id.to_string(),
+            payload: serde_json::to_string(&prepared.command)?,
+            event_at: prepared.event_at.clone(),
+            depends_on_seq: None,
+        })?;
+        // The sale is committed locally; the cart is now spent.
+        cart::clear(&self.store)?;
+
+        // Best-effort: send now if online (offline leaves it queued).
+        let _ = self.drain_outbox().await;
+
+        // If the order is no longer pending, the drain sent it.
+        let order_id = prepared.order_id.to_string();
+        let still_pending = self.store.pending()?.iter().any(|i| i.id == order_id);
+        let mut receipt = prepared.receipt;
+        receipt.queued_offline = still_pending;
+        Ok(receipt)
     }
 
     /// Force a sync now — drains the outbox. Cancellable/idempotent.
