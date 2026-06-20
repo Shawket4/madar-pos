@@ -508,6 +508,18 @@ impl SufrixCore {
     pub fn cart_clear(&self) -> Result<(), CoreError> {
         cart::clear(&self.store)
     }
+    /// Apply a discount (by id) to the cart — reflected in `cart_totals`.
+    pub fn cart_set_discount(&self, discount_id: String) -> Result<(), CoreError> {
+        cart::set_discount(&self.store, &discount_id)
+    }
+    /// Remove the cart discount.
+    pub fn cart_clear_discount(&self) -> Result<(), CoreError> {
+        cart::clear_discount(&self.store)
+    }
+    /// The selected discount id (for the tender UI), or `None`.
+    pub fn cart_discount_id(&self) -> Result<Option<String>, CoreError> {
+        cart::discount_id(&self.store)
+    }
     /// Priced cart summary at the session's org tax rate (0 when signed out),
     /// computed through the pricing engine.
     pub fn cart_totals(&self) -> Result<cart::CartTotals, CoreError> {

@@ -38,6 +38,10 @@ struct TenderView: View {
         }
     }
 
+    private func discountLabel(_ d: DiscountView) -> String {
+        d.dtype == "percentage" ? "\(d.name) \(d.value)%" : d.name
+    }
+
     private var tenderForm: some View {
         ScrollView {
             VStack(spacing: Space.xl) {
@@ -63,6 +67,24 @@ struct TenderView: View {
                     }
                 }
 
+                let activeDiscounts = app.discounts.filter { $0.isActive }
+                if !activeDiscounts.isEmpty {
+                    VStack(alignment: .leading, spacing: Space.sm) {
+                        Text(t("order.discount"))
+                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: Space.sm)], spacing: Space.sm) {
+                            MethodChip(label: t("order.no_discount"), active: app.cartDiscountId == nil) {
+                                app.setDiscount(nil)
+                            }
+                            ForEach(activeDiscounts, id: \.id) { d in
+                                MethodChip(label: discountLabel(d), active: app.cartDiscountId == d.id) {
+                                    app.setDiscount(d.id)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if isCash {
                     VStack(alignment: .leading, spacing: Space.sm) {
                         Text(t("order.cash_received"))
@@ -72,6 +94,14 @@ struct TenderView: View {
                 }
 
                 VStack(spacing: Space.sm) {
+                    if app.cartTotals.discountMinor > 0 {
+                        HStack {
+                            Text(t("order.discount")).font(.ui(14, .medium)).foregroundStyle(theme.colors.success)
+                            Spacer()
+                            Text("−\(Money.format(app.cartTotals.discountMinor, currency))")
+                                .font(.money(14, .semibold)).foregroundStyle(theme.colors.success)
+                        }
+                    }
                     SummaryRow(label: t("order.total"), value: Money.format(total, currency), emphasized: true)
                     if isCash {
                         SummaryRow(label: t("order.change"), value: Money.format(changeMinor, currency))

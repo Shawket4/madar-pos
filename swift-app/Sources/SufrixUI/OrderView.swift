@@ -535,6 +535,14 @@ private struct CartFooter: View {
     var body: some View {
         VStack(spacing: Space.sm) {
             TotalRow(label: t("order.subtotal"), value: Money.format(totals.subtotalMinor, currency))
+            if totals.discountMinor > 0 {
+                HStack {
+                    Text(t("order.discount")).font(.ui(14, .medium)).foregroundStyle(theme.colors.success)
+                    Spacer()
+                    Text("−\(Money.format(totals.discountMinor, currency))")
+                        .font(.money(14, .semibold)).foregroundStyle(theme.colors.success)
+                }
+            }
             TotalRow(label: t("order.tax"), value: Money.format(totals.taxMinor, currency))
             TotalRow(label: t("order.total"), value: Money.format(totals.totalMinor, currency), emphasized: true)
             SufrixButton(label: t("order.checkout"), icon: "creditcard") { onCheckout() }

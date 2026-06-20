@@ -101,7 +101,9 @@ pub(crate) fn prepare(
     let payment_label = display_label(store, locale, payment_method_id).unwrap_or_else(|| raw.name.clone());
 
     // Price through the engine (the money source of truth). Cash carries the
-    // tender + change; non-cash records neither.
+    // tender + change; non-cash records neither. The cart's discount applies
+    // before tax (the engine clamps it).
+    let (discount_kind, discount_value) = cart::discount(store)?;
     let tendered = if is_cash { Some(amount_tendered_minor) } else { None };
     let priced = pricing::price_cart(PriceCartInput {
         lines: lines
@@ -119,8 +121,8 @@ pub(crate) fn prepare(
                 bundle_components: vec![],
             })
             .collect(),
-        discount_kind: DiscountKind::None,
-        discount_value: 0,
+        discount_kind,
+        discount_value,
         tax_rate,
         amount_tendered: tendered,
         cash_tip: 0,
@@ -166,6 +168,20 @@ pub(crate) fn prepare(
     if is_cash {
         request.amount_tendered = Some(Some(amount_tendered_minor as i32));
         request.change_given = Some(Some(priced.change_given_minor as i32));
+    }
+    // Record the applied discount verbatim (the engine already clamped it).
+    if discount_kind != DiscountKind::None {
+        let dtype = match discount_kind {
+            DiscountKind::Percentage => "percentage",
+            DiscountKind::Fixed => "fixed",
+            DiscountKind::None => "",
+        };
+        request.discount_id = cart::discount_id(store)?
+            .and_then(|id| uuid::Uuid::parse_str(&id).ok())
+            .map(Some);
+        request.discount_type = Some(Some(dtype.into()));
+        request.discount_value = Some(Some(discount_value as i32));
+        request.discount_amount = Some(Some(priced.discount_minor as i32));
     }
 
     let receipt = ReceiptView {

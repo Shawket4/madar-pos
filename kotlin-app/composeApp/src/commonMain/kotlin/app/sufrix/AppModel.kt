@@ -10,6 +10,7 @@ import app.sufrix.core.CartTotals
 import app.sufrix.core.AddonSelection
 import app.sufrix.core.CategoryView
 import app.sufrix.core.CoreException
+import app.sufrix.core.DiscountView
 import app.sufrix.core.ItemAddonView
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
@@ -76,10 +77,16 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** The in-progress cart (client-only, kv-persisted in the core). */
     var cartLines by mutableStateOf<List<CartLineView>>(emptyList())
         private set
-    var cartTotals by mutableStateOf(CartTotals(0L, 0L, 0L, 0L))
+    var cartTotals by mutableStateOf(CartTotals(0L, 0L, 0L, 0L, 0L))
         private set
     /** Org payment methods (cached) — the tender picker source. */
     var paymentMethods by mutableStateOf<List<PaymentMethodView>>(emptyList())
+        private set
+    /** Org discounts (cached) — the tender discount picker source. */
+    var discounts by mutableStateOf<List<DiscountView>>(emptyList())
+        private set
+    /** The cart's selected discount id (null = none). */
+    var cartDiscountId by mutableStateOf<String?>(null)
         private set
     /** The last placed order's receipt (drives the confirmation screen). */
     var receipt by mutableStateOf<ReceiptView?>(null)
@@ -169,8 +176,16 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         categories = runCatching { core.listCategories() }.getOrDefault(emptyList())
         menuItems = runCatching { core.listMenuItems() }.getOrDefault(emptyList())
         paymentMethods = runCatching { core.listPaymentMethods() }.getOrDefault(emptyList())
+        discounts = runCatching { core.listDiscounts() }.getOrDefault(emptyList())
         loadCart()
         refreshPending()
+    }
+
+    /** Apply or clear the cart discount (re-reads totals so the UI updates). */
+    fun setDiscount(id: String?) {
+        if (id != null) runCatching { core.cartSetDiscount(id) } else runCatching { core.cartClearDiscount() }
+        cartDiscountId = runCatching { core.cartDiscountId() }.getOrNull()
+        refreshCartTotals()
     }
 
     // ── checkout ───────────────────────────────────────────────────────────────
@@ -285,6 +300,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
 
     private fun loadCart() {
         cartLines = runCatching { core.cartLines() }.getOrDefault(emptyList())
+        cartDiscountId = runCatching { core.cartDiscountId() }.getOrNull()
         refreshCartTotals()
     }
     /** Run a cart mutation that returns the new lines, then refresh totals. */
@@ -295,7 +311,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         }
     }
     private fun refreshCartTotals() {
-        cartTotals = runCatching { core.cartTotals() }.getOrDefault(CartTotals(0L, 0L, 0L, 0L))
+        cartTotals = runCatching { core.cartTotals() }.getOrDefault(CartTotals(0L, 0L, 0L, 0L, 0L))
     }
 
     // ── item customization ───────────────────────────────────────────────────────
@@ -379,7 +395,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         session = null
         shift = null
         cartLines = emptyList()
-        cartTotals = CartTotals(0L, 0L, 0L, 0L)
+        cartTotals = CartTotals(0L, 0L, 0L, 0L, 0L)
         receipt = null
         error = null
     }

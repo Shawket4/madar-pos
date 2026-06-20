@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.sufrix.core.DiscountView
 import app.sufrix.core.PaymentMethodView
 import app.sufrix.core.ReceiptView
 import app.sufrix.ui.AmountField
@@ -113,6 +114,17 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
             }
         }
 
+        val activeDiscounts = model.discounts.filter { it.isActive }
+        if (activeDiscounts.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text(t("order.discount"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                MethodChip(t("order.no_discount"), active = model.cartDiscountId == null) { model.setDiscount(null) }
+                activeDiscounts.forEach { d ->
+                    MethodChip(discountLabel(d), active = model.cartDiscountId == d.id) { model.setDiscount(d.id) }
+                }
+            }
+        }
+
         if (isCash) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text(t("order.cash_received"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -121,6 +133,13 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            if (model.cartTotals.discountMinor > 0) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(t("order.discount"), color = c.success, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    Box(Modifier.weight(1f))
+                    Text("−${Money.format(model.cartTotals.discountMinor, currency)}", color = c.success, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                }
+            }
             SummaryRow(t("order.total"), Money.format(total, currency), emphasized = true)
             if (isCash) SummaryRow(t("order.change"), Money.format(change, currency))
         }
@@ -197,6 +216,9 @@ private fun ReceiptConfirmation(receipt: ReceiptView, currency: String, onDone: 
         SufrixButton(t("order.new_order"), { onDone() })
     }
 }
+
+private fun discountLabel(d: DiscountView): String =
+    if (d.dtype == "percentage") "${d.name} ${d.value}%" else d.name
 
 @Composable
 private fun SummaryRow(label: String, value: String, emphasized: Boolean = false) {

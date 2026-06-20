@@ -39,6 +39,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var cartTotals: CartTotals = .zero
     /// Org payment methods (cached) — the tender picker source.
     @Published private(set) var paymentMethods: [PaymentMethodView] = []
+    /// Org discounts (cached) — the tender discount picker source.
+    @Published private(set) var discounts: [DiscountView] = []
+    /// The cart's selected discount id (nil = none).
+    @Published private(set) var cartDiscountId: String?
     /// The last placed order's receipt (drives the confirmation screen).
     @Published private(set) var receipt: ReceiptView?
     @Published private(set) var isPlacingOrder = false
@@ -133,8 +137,16 @@ final class AppModel: ObservableObject {
         categories = (try? core.listCategories()) ?? []
         menuItems = (try? core.listMenuItems()) ?? []
         paymentMethods = (try? core.listPaymentMethods()) ?? []
+        discounts = (try? core.listDiscounts()) ?? []
         loadCart()
         refreshPending()
+    }
+
+    /// Apply or clear the cart discount (re-reads totals so the UI updates).
+    func setDiscount(_ id: String?) {
+        if let id { _ = try? core.cartSetDiscount(discountId: id) } else { _ = try? core.cartClearDiscount() }
+        cartDiscountId = (try? core.cartDiscountId()) ?? nil
+        refreshCartTotals()
     }
 
     // ── checkout ────────────────────────────────────────────────────────────────
@@ -250,6 +262,7 @@ final class AppModel: ObservableObject {
 
     private func loadCart() {
         cartLines = (try? core.cartLines()) ?? []
+        cartDiscountId = (try? core.cartDiscountId()) ?? nil
         refreshCartTotals()
     }
     /// Run a cart mutation that returns the new lines, then refresh totals.

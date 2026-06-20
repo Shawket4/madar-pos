@@ -481,6 +481,13 @@ private fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> U
     ) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
         TotalRow(t("order.subtotal"), Money.format(totals.subtotalMinor, currency))
+        if (totals.discountMinor > 0) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("order.discount"), color = c.success, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                Box(Modifier.weight(1f))
+                Text("−${Money.format(totals.discountMinor, currency)}", color = c.success, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+        }
         TotalRow(t("order.tax"), Money.format(totals.taxMinor, currency))
         TotalRow(t("order.total"), Money.format(totals.totalMinor, currency), emphasized = true)
         SufrixButton(t("order.checkout"), { onCheckout() })

@@ -16,6 +16,6 @@ enum Money {
 extension CartTotals {
     /// An empty cart — the default before the first read.
     static var zero: CartTotals {
-        CartTotals(itemCount: 0, subtotalMinor: 0, taxMinor: 0, totalMinor: 0)
+        CartTotals(itemCount: 0, subtotalMinor: 0, discountMinor: 0, taxMinor: 0, totalMinor: 0)
     }
 }
