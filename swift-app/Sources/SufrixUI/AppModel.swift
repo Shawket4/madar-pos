@@ -31,6 +31,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var branches: [BranchView] = []
     /// The device's current shift (drives OpenShift ↔ Order routing).
     @Published private(set) var shift: ShiftView?
+    /// Branch-effective catalog (cached; reads always succeed offline).
+    @Published private(set) var categories: [CategoryView] = []
+    @Published private(set) var menuItems: [MenuItemView] = []
     /// Theme preference — defaults to light (the original navy palette).
     @Published var themeMode: ThemeMode {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: Self.themeKey) }
@@ -105,6 +108,17 @@ final class AppModel: ObservableObject {
 
     private func loadShift() {
         shift = (try? core.currentShift()) ?? nil
+    }
+
+    // ── catalog ─────────────────────────────────────────────────────────────────
+    /// Load the branch-effective catalog: pull a fresh copy when online (best
+    /// effort), then read the local mirror (always succeeds, even offline).
+    func loadCatalog() async {
+        if session?.online == true {
+            try? await core.refreshCatalog()
+        }
+        categories = (try? core.listCategories()) ?? []
+        menuItems = (try? core.listMenuItems()) ?? []
     }
 
     // ── device setup (manager) ──────────────────────────────────────────────────

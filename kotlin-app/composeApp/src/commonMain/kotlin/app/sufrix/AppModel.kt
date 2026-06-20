@@ -5,9 +5,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.sufrix.core.AppRoute
 import app.sufrix.core.BranchView
+import app.sufrix.core.CategoryView
 import app.sufrix.core.CoreException
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
+import app.sufrix.core.MenuItemView
 import app.sufrix.core.SessionSnapshot
 import app.sufrix.core.ShiftView
 import app.sufrix.core.SufrixCore
@@ -57,6 +59,11 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         private set
     /** The device's current shift (drives OpenShift ↔ Order routing). */
     var shift by mutableStateOf<ShiftView?>(null)
+        private set
+    /** Branch-effective catalog (cached; reads always succeed offline). */
+    var categories by mutableStateOf<List<CategoryView>>(emptyList())
+        private set
+    var menuItems by mutableStateOf<List<MenuItemView>>(emptyList())
         private set
 
     init {
@@ -128,6 +135,15 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
 
     fun loadShift() {
         shift = runCatching { core.currentShift() }.getOrNull()
+    }
+
+    // ── catalog ────────────────────────────────────────────────────────────────
+    /** Load the branch-effective catalog: pull a fresh copy when online (best
+     *  effort), then read the local mirror (always succeeds, even offline). */
+    suspend fun loadCatalog() {
+        if (session?.online == true) runCatching { core.refreshCatalog() }
+        categories = runCatching { core.listCategories() }.getOrDefault(emptyList())
+        menuItems = runCatching { core.listMenuItems() }.getOrDefault(emptyList())
     }
 
     // ── device setup (manager) ────────────────────────────────────────────────
