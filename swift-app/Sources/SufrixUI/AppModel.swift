@@ -153,6 +153,25 @@ final class AppModel: ObservableObject {
     /// Dismiss the receipt confirmation (back to the catalog).
     func dismissReceipt() { receipt = nil }
 
+    // ── close shift ───────────────────────────────────────────────────────────
+    /// Drives the close-shift screen (presented over the order screen).
+    @Published var showCloseShift = false
+
+    /// Close the open shift with the counted cash + optional note. On success the
+    /// core marks the shift closed, so the route flips back to open-shift.
+    func closeShift(closingCashMinor: Int64, note: String?) async {
+        isBusy = true; errorMessage = nil
+        defer { isBusy = false }
+        do {
+            try await core.closeShift(closingCashMinor: closingCashMinor,
+                                      cashNote: note?.isEmpty == true ? nil : note)
+            loadShift()          // now closed → app_route flips to open-shift
+            showCloseShift = false
+        } catch {
+            errorMessage = humanMessage(error)
+        }
+    }
+
     // ── cart ──────────────────────────────────────────────────────────────────
     /// Add one unit of `item`. Sync (the core just touches kv) so the tap feels
     /// instant; the core merges into the matching line.

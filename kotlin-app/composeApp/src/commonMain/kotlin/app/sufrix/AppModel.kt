@@ -188,6 +188,27 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Dismiss the receipt confirmation (back to the catalog). */
     fun dismissReceipt() { receipt = null }
 
+    // ── close shift ────────────────────────────────────────────────────────────
+    /** Drives the close-shift screen (shown over the order screen). */
+    var showCloseShift by mutableStateOf(false)
+
+    /** Close the open shift with the counted cash + optional note. On success the
+     *  core marks the shift closed, so the route flips back to open-shift. */
+    suspend fun closeShift(closingCashMinor: Long, note: String?) {
+        isBusy = true; error = null
+        try {
+            core.closeShift(closingCashMinor, note?.takeIf { it.isNotBlank() })
+            loadShift()           // now closed → route flips to open-shift
+            showCloseShift = false
+        } catch (e: CoreException) {
+            error = humanMessage(e)
+        } catch (e: Exception) {
+            error = e.message ?: core.tr("err.generic")
+        } finally {
+            isBusy = false
+        }
+    }
+
     // ── cart ───────────────────────────────────────────────────────────────────
     /** Add one unit of [item]. Sync (the core just touches kv) so the tap feels
      *  instant; the core merges into the matching line. */

@@ -66,6 +66,21 @@ struct OrderView: View {
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }
+            // Close-shift flow over the order screen.
+            #if os(iOS)
+            .fullScreenCover(isPresented: $app.showCloseShift) {
+                CloseShiftView(app: app)
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
+            }
+            #else
+            .sheet(isPresented: $app.showCloseShift) {
+                CloseShiftView(app: app)
+                    .frame(minWidth: 480, minHeight: 600)
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
+            }
+            #endif
         }
         .task {
             await app.reconcileShift()
@@ -103,14 +118,24 @@ private struct OrderTopBar: View {
             Spacer(minLength: 0)
             Button {
                 Haptics.selection()
-                app.signOut()
+                app.errorMessage = nil
+                app.showCloseShift = true
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                    Text(t("home.sign_out"))
+                    Image(systemName: "lock")
+                    Text(t("order.close_shift"))
                 }
                 .font(.ui(13, .semibold))
                 .foregroundStyle(theme.colors.textSecondary)
+            }
+            .buttonStyle(.pressable)
+            Button {
+                Haptics.selection()
+                app.signOut()
+            } label: {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.colors.textMuted)
             }
             .buttonStyle(.pressable)
         }

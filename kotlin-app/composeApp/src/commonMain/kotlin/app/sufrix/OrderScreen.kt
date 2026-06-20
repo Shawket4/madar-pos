@@ -130,6 +130,11 @@ fun OrderScreen(model: AppModel) {
         if (showTender) {
             TenderOverlay(model, currency) { showTender = false; model.dismissReceipt() }
         }
+
+        // Close-shift flow — full-screen over the order screen.
+        if (model.showCloseShift) {
+            CloseShiftScreen(model)
+        }
     }
 }
 
@@ -149,8 +154,20 @@ private fun OrderTopBar(model: AppModel) {
             model.shift?.let { StatusChip(it.tellerName, ChipTone.INFO) }
             Box(Modifier.weight(1f))
             Text(
-                t("home.sign_out"),
+                t("order.close_shift"),
                 color = c.textSecondary, fontFamily = SufrixFont,
+                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() }, indication = null,
+                ) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    model.error = null
+                    model.showCloseShift = true
+                },
+            )
+            Text(
+                t("home.sign_out"),
+                color = c.textMuted, fontFamily = SufrixFont,
                 fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
                 modifier = Modifier.pressScale(interaction).clickable(
                     interactionSource = interaction, indication = null,
