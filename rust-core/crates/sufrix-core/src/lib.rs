@@ -249,21 +249,24 @@ impl SufrixCore {
         Ok((org, s.snapshot.branch_id.clone()))
     }
 
-    /// Whether the CURRENTLY CACHED shift's own open_shift command is still
-    /// queued — scoped to that shift's id. The outbox is device-global and
-    /// survives sign-out, so an unrelated teller's orphaned open_shift command
-    /// must NOT count: otherwise it would keep a force-closed shift alive for the
-    /// next teller on a shared till (the `id` of an open_shift op == the shift PK).
-    fn open_shift_command_pending(&self) -> Result<bool, CoreError> {
-        let local_id = match shift::current(&self.store)? {
+    /// Whether a shift command of `op_type` for the CURRENTLY CACHED shift is
+    /// still queued — scoped to that shift's id. The outbox is device-global and
+    /// survives sign-out, so an unrelated teller's orphaned command must NOT
+    /// count (it would keep a force-closed shift alive for the next teller on a
+    /// shared till). open_shift ops are keyed by the shift PK; close_shift ops by
+    /// `{shift_id}:close` (so open + close for one shift don't collide in the
+    /// idempotent outbox).
+    fn shift_command_pending(&self, op_type: &str) -> Result<bool, CoreError> {
+        let sid = match shift::current(&self.store)? {
             Some(s) => s.id,
             None => return Ok(false),
         };
+        let close_id = format!("{sid}:close");
         Ok(self
             .store
             .pending()?
             .iter()
-            .any(|i| i.op_type == "open_shift" && i.id == local_id))
+            .any(|i| i.op_type == op_type && (i.id == sid || i.id == close_id)))
     }
 
     /// Drain the durable outbox in FIFO order. Each op dispatches by `op_type`;
@@ -302,6 +305,24 @@ impl SufrixCore {
                                     let _ = shift::clear(&self.store);
                                 }
                             }
+                        },
+                    }
+                }
+                "close_shift" => {
+                    let cmd: shift::CloseShiftCommand = serde_json::from_str(&item.payload)?;
+                    let res = shifts_api::close_shift(
+                        &self.api.config(),
+                        shifts_api::CloseShiftParams {
+                            shift_id: cmd.shift_id,
+                            close_shift_request: cmd.request,
+                        },
+                    )
+                    .await;
+                    match res {
+                        Ok(_) => self.store.mark_acked(item.seq, None)?,
+                        Err(e) => match net::map_api_error(e) {
+                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
+                            other => self.store.mark_dead(item.seq, &other.to_string())?,
                         },
                     }
                 }
@@ -693,6 +714,47 @@ impl SufrixCore {
             .ok_or_else(|| CoreError::Internal { message: "shift not persisted".into() })
     }
 
+    /// Close the current open shift: count the closing drawer cash + an optional
+    /// note. Marks the shift closed locally (routing flips to open-shift now) and
+    /// queues an idempotent `close_shift` command; works offline. Errors if there
+    /// is no open shift.
+    pub async fn close_shift(
+        &self,
+        closing_cash_minor: i64,
+        cash_note: Option<String>,
+    ) -> Result<(), CoreError> {
+        let shift = shift::current(&self.store)?
+            .filter(|s| s.is_open)
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no open shift".into() })?;
+
+        let closed_at = chrono::Utc::now().fixed_offset();
+        let mut request = sufrix_api::models::CloseShiftRequest::new(closing_cash_minor as i32);
+        request.cash_note = Some(cash_note);
+        request.closed_at = Some(Some(closed_at));
+
+        // Optimistic: mark closed locally so routing flips to open-shift now,
+        // and drop the in-progress cart (a closed shift sells nothing).
+        shift::close_local(&self.store)?;
+        cart::clear(&self.store)?;
+
+        // Queue the durable command. Keyed by `{shift_id}:close` so it doesn't
+        // collide with the still-pending open_shift command (id == shift PK).
+        let cmd = shift::CloseShiftCommand { shift_id: shift.id.clone(), request };
+        self.store.enqueue(&store::NewOutboxOp {
+            id: format!("{}:close", shift.id),
+            op_type: "close_shift".into(),
+            idempotency_key: format!("{}:close", shift.id),
+            payload: serde_json::to_string(&cmd)?,
+            event_at: closed_at.to_rfc3339(),
+            depends_on_seq: None,
+        })?;
+
+        // Best-effort: the FIFO drain runs the open + orders before the close,
+        // so the close never races ahead of them.
+        let _ = self.drain_outbox().await;
+        Ok(())
+    }
+
     /// Place the current cart as an order: price it (client-authoritative),
     /// queue an idempotent `create_order` command, clear the cart, and try to
     /// send now. Works offline — the order stays queued and `queued_offline` is
@@ -785,8 +847,9 @@ impl SufrixCore {
         // open_shift command has actually reached it. While it's still queued,
         // the optimistic local shift stands — clearing it here is what bounced
         // the teller straight back to the open-shift screen.
-        let open_pending = self.open_shift_command_pending()?;
-        match shift::reconcile(&prefill, open_pending) {
+        let open_pending = self.shift_command_pending("open_shift")?;
+        let close_pending = self.shift_command_pending("close_shift")?;
+        match shift::reconcile(&prefill, open_pending, close_pending) {
             shift::ShiftReconcile::Adopt(server_shift) => {
                 shift::save(&self.store, &server_shift)?;
                 Ok(Some(shift::view_from(&server_shift)))
@@ -954,13 +1017,76 @@ mod lifecycle_tests {
     fn open_pending_is_scoped_to_the_cached_shift_not_device_global() {
         let core = SufrixCore::from_env().unwrap();
         let shift_id = seed_shift_returning_id(&core, uuid::Uuid::new_v4(), "open");
-        assert!(!core.open_shift_command_pending().unwrap()); // nothing queued
+        assert!(!core.shift_command_pending("open_shift").unwrap()); // nothing queued
         // A DIFFERENT shift's orphaned open_shift command does NOT count.
         enqueue_open_shift(&core, &uuid::Uuid::new_v4().to_string());
-        assert!(!core.open_shift_command_pending().unwrap());
+        assert!(!core.shift_command_pending("open_shift").unwrap());
         // Our own cached shift's command DOES.
         enqueue_open_shift(&core, &shift_id);
-        assert!(core.open_shift_command_pending().unwrap());
+        assert!(core.shift_command_pending("open_shift").unwrap());
+    }
+
+    /// End-to-end offline: open a shift, sell nothing, then close it. The shift
+    /// flips to closed locally (route → open-shift) and the close command queues
+    /// behind the open (FIFO); the cart is dropped.
+    #[tokio::test]
+    async fn closing_a_shift_offline_routes_back_to_open_shift() {
+        use argon2::password_hash::SaltString;
+        use argon2::{Argon2, PasswordHasher};
+
+        let core = SufrixCore::new(SufrixConfig {
+            base_url: "http://127.0.0.1:1".into(),
+            environment: "dev".into(),
+            db_path: String::new(),
+            locale: "en".into(),
+        })
+        .unwrap();
+        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
+        core.store
+            .kv_put(
+                session::BUNDLE_KEY,
+                &serde_json::json!({
+                    "org_id": "00000000-0000-0000-0000-0000000000aa",
+                    "generated_at": "2026-06-19T10:00:00Z",
+                    "tellers": [{ "user_id": "00000000-0000-0000-0000-0000000000bb",
+                        "name": "Sara", "role": "teller", "is_active": true, "offline_pin_hash": phc }]
+                })
+                .to_string(),
+            )
+            .unwrap();
+        core.store
+            .kv_put(session::ORG_CONFIG_KEY, r#"{"org_id":"00000000-0000-0000-0000-0000000000aa","currency_code":"EGP","tax_rate":0.14}"#)
+            .unwrap();
+        core.sign_in(session::LoginRequest {
+            mode: session::LoginMode::Pin,
+            name: Some("Sara".into()),
+            pin: Some("1234".into()),
+            branch_id: Some("00000000-0000-0000-0000-000000000001".into()),
+            email: None,
+            password: None,
+            org_id: None,
+        })
+        .await
+        .unwrap();
+
+        core.open_shift(50000).await.unwrap();
+        core.cart_add("item-1".into(), "Latte".into(), 1000).unwrap();
+        assert_eq!(core.app_route(true, false), AppRoute::Order);
+
+        core.close_shift(48000, Some("short by 20".into())).await.unwrap();
+        // Routed back to open-shift, cart dropped, and both commands queued.
+        assert_eq!(core.app_route(true, false), AppRoute::OpenShift);
+        assert!(core.cart_lines().unwrap().is_empty());
+        assert_eq!(core.pending_outbox_count().unwrap(), 2); // open + close
+        assert!(core.shift_command_pending("close_shift").unwrap());
+    }
+
+    #[tokio::test]
+    async fn close_shift_without_an_open_shift_is_rejected() {
+        let core = SufrixCore::from_env().unwrap();
+        let err = core.close_shift(1000, None).await;
+        assert!(matches!(err, Err(CoreError::Validation { .. })));
     }
 
     #[test]

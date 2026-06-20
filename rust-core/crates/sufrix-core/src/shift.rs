@@ -32,6 +32,13 @@ pub(crate) struct OpenShiftCommand {
     pub request: models::OpenShiftRequest,
 }
 
+/// Outbox payload for a close-shift command — carries the path `shift_id`.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct CloseShiftCommand {
+    pub shift_id: String,
+    pub request: models::CloseShiftRequest,
+}
+
 pub(crate) fn view_from(shift: &models::Shift) -> ShiftView {
     ShiftView {
         id: shift.id.to_string(),
@@ -65,6 +72,20 @@ pub(crate) fn clear(store: &Store) -> CoreResult<()> {
     store.kv_put(CURRENT_SHIFT_KEY, "null")
 }
 
+/// Mark the cached shift closed optimistically (status → "closed") so routing
+/// flips to open-shift the instant the teller closes; the close command syncs
+/// via the outbox. No-op if there's no cached shift.
+pub(crate) fn close_local(store: &Store) -> CoreResult<()> {
+    match store.kv_get(CURRENT_SHIFT_KEY)? {
+        Some(json) if json != "null" => {
+            let mut shift: models::Shift = serde_json::from_str(&json)?;
+            shift.status = "closed".into();
+            save(store, &shift)
+        }
+        _ => Ok(()),
+    }
+}
+
 /// What to do with the local shift after the server's prefill comes back.
 #[derive(Debug)]
 pub(crate) enum ShiftReconcile {
@@ -79,12 +100,23 @@ pub(crate) enum ShiftReconcile {
 }
 
 /// Decide how to reconcile the local shift with the server's prefill. PURE so
-/// the open-shift "bounce" bug stays covered by tests: the server saying "no
-/// open shift" is only authoritative once our own open_shift command has
-/// actually reached it — until then (`open_pending`) the optimistic shift stands.
-pub(crate) fn reconcile(prefill: &models::ShiftPreFill, open_pending: bool) -> ShiftReconcile {
+/// the shift "bounce" bugs stay covered by tests:
+/// - the server's "no open shift" is authoritative only once our own open_shift
+///   command has reached it — until then (`open_pending`) the optimistic shift
+///   stands (forward bounce);
+/// - the server's "still open" is stale while our close_shift command is queued
+///   (`close_pending`) — keep the locally-closed shift so routing stays on
+///   open-shift (reverse bounce).
+pub(crate) fn reconcile(
+    prefill: &models::ShiftPreFill,
+    open_pending: bool,
+    close_pending: bool,
+) -> ShiftReconcile {
     if prefill.has_open_shift {
         if let Some(Some(server_shift)) = &prefill.open_shift {
+            if close_pending {
+                return ShiftReconcile::KeepLocal;
+            }
             return ShiftReconcile::Adopt(server_shift.clone());
         }
     }
@@ -128,25 +160,25 @@ mod tests {
     fn reconcile_adopts_server_open_shift() {
         let mut pf = models::ShiftPreFill::new(true, 0);
         pf.open_shift = Some(Some(Box::new(open_shift_model())));
-        // The server's open shift wins regardless of any pending local command.
-        assert!(matches!(reconcile(&pf, false), ShiftReconcile::Adopt(_)));
-        assert!(matches!(reconcile(&pf, true), ShiftReconcile::Adopt(_)));
+        // The server's open shift wins regardless of any pending open command.
+        assert!(matches!(reconcile(&pf, false, false), ShiftReconcile::Adopt(_)));
+        assert!(matches!(reconcile(&pf, true, false), ShiftReconcile::Adopt(_)));
     }
 
     #[test]
     fn reconcile_keeps_local_while_open_command_pending() {
         // Server says no open shift, but our open_shift is still queued: the
         // server just hasn't seen it yet → keep the optimistic local shift.
-        // (This is the open-shift "bounce" regression.)
+        // (The forward open-shift "bounce" regression.)
         let pf = models::ShiftPreFill::new(false, 0);
-        assert!(matches!(reconcile(&pf, true), ShiftReconcile::KeepLocal));
+        assert!(matches!(reconcile(&pf, true, false), ShiftReconcile::KeepLocal));
     }
 
     #[test]
     fn reconcile_clears_when_server_authoritatively_has_none() {
         // Server says none AND nothing is pending → a real force-close: clear.
         let pf = models::ShiftPreFill::new(false, 0);
-        assert!(matches!(reconcile(&pf, false), ShiftReconcile::Clear));
+        assert!(matches!(reconcile(&pf, false, false), ShiftReconcile::Clear));
     }
 
     #[test]
@@ -154,7 +186,26 @@ mod tests {
         // has_open_shift true but no payload: treat like "none" — keep local
         // while pending, clear only when authoritative.
         let pf = models::ShiftPreFill::new(true, 0);
-        assert!(matches!(reconcile(&pf, true), ShiftReconcile::KeepLocal));
-        assert!(matches!(reconcile(&pf, false), ShiftReconcile::Clear));
+        assert!(matches!(reconcile(&pf, true, false), ShiftReconcile::KeepLocal));
+        assert!(matches!(reconcile(&pf, false, false), ShiftReconcile::Clear));
+    }
+
+    #[test]
+    fn reconcile_keeps_local_when_close_is_pending_despite_server_open() {
+        // The REVERSE bounce: we closed locally, the close is queued, but the
+        // server still reports the shift open. Don't re-adopt it — keep the
+        // locally-closed shift so routing stays on open-shift.
+        let mut pf = models::ShiftPreFill::new(true, 0);
+        pf.open_shift = Some(Some(Box::new(open_shift_model())));
+        assert!(matches!(reconcile(&pf, false, true), ShiftReconcile::KeepLocal));
+    }
+
+    #[test]
+    fn reconcile_adopts_again_once_close_has_synced() {
+        // Close acked (no longer pending) but the server somehow still open →
+        // adopt the server truth (e.g. the close was rejected server-side).
+        let mut pf = models::ShiftPreFill::new(true, 0);
+        pf.open_shift = Some(Some(Box::new(open_shift_model())));
+        assert!(matches!(reconcile(&pf, false, false), ShiftReconcile::Adopt(_)));
     }
 }
