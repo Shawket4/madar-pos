@@ -50,6 +50,16 @@ final class AppModel: ObservableObject {
     @Published var themeMode: ThemeMode {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: Self.themeKey) }
     }
+    /// Active UI locale (en/ar). Changing it re-resolves strings + RTL in the core
+    /// and triggers a re-render (this is @Published).
+    @Published var locale: String {
+        didSet {
+            core.setLocale(locale: locale)
+            UserDefaults.standard.set(locale, forKey: Self.localeKey)
+        }
+    }
+    /// Drives the settings screen (presented over the order screen).
+    @Published var showSettings = false
 
     init() {
         Self.registerFonts()
@@ -61,6 +71,10 @@ final class AppModel: ObservableObject {
         branchId = UserDefaults.standard.string(forKey: Self.branchKey) ?? ""
         branchName = UserDefaults.standard.string(forKey: Self.branchNameKey) ?? ""
         themeMode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: Self.themeKey) ?? "") ?? .light
+        // Apply the saved locale to the core before any string resolves.
+        let savedLocale = UserDefaults.standard.string(forKey: Self.localeKey)
+        if let savedLocale { core.setLocale(locale: savedLocale) }
+        locale = savedLocale ?? core.locale()
 
         core.setTokenStore(store: vault)
         if let blob = vault.loadBlob() {
@@ -404,6 +418,7 @@ final class AppModel: ObservableObject {
     private static let branchKey = "sufrix.branch_id"
     private static let branchNameKey = "sufrix.branch_name"
     private static let themeKey = "sufrix.theme"
+    private static let localeKey = "sufrix.locale"
 
     /// App-private SQLite path under Application Support.
     private static func databasePath() -> String {

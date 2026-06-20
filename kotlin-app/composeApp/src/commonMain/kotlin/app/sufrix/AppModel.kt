@@ -36,6 +36,7 @@ interface HostVault : TokenStore {
     var branchId: String
     var branchName: String
     var themeMode: String
+    var locale: String
 }
 
 /** Device-setup is two steps: a manager authenticates, then picks the branch. */
@@ -67,6 +68,11 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         runCatching { ThemeMode.valueOf(vault.themeMode) }.getOrDefault(ThemeMode.LIGHT)
     )
         private set
+    /** Active UI locale (en/ar) — changing it re-resolves strings + RTL. */
+    var locale by mutableStateOf(vault.locale.ifBlank { core.locale() })
+        private set
+    /** Drives the settings screen (shown over the order screen). */
+    var showSettings by mutableStateOf(false)
     /** The device's current shift (drives OpenShift ↔ Order routing). */
     var shift by mutableStateOf<ShiftView?>(null)
         private set
@@ -98,7 +104,16 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     init {
         core.setTokenStore(vault)
         vault.loadBlob()?.let { session = core.restoreSession(it) }
+        // Apply the saved locale to the core before any string resolves.
+        vault.locale.takeIf { it.isNotBlank() }?.let { core.setLocale(it) }
         loadShift()
+    }
+
+    /** Change the UI locale (en/ar); re-resolves strings + RTL, persists. */
+    fun setLocale(value: String) {
+        core.setLocale(value)
+        locale = value
+        vault.locale = value
     }
 
     val isSignedIn: Boolean get() = session != null

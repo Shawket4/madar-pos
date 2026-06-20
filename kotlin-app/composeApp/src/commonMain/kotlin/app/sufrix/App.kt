@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -20,15 +21,19 @@ import app.sufrix.ui.sufrixColors
 @Composable
 fun App(model: AppModel) {
     SufrixTheme(mode = model.themeMode) {
-        CompositionLocalProvider(
-            LocalLocalize provides { key -> model.t(key) },
-            LocalLayoutDirection provides if (model.isRTL) LayoutDirection.Rtl else LayoutDirection.Ltr,
-        ) {
-            Box(Modifier.fillMaxSize().background(sufrixColors().bg)) {
-                when (model.route) {
-                    AppRoute.DEVICE_SETUP, AppRoute.LOGIN -> LoginScreen(model)
-                    AppRoute.OPEN_SHIFT -> OpenShiftScreen(model)
-                    AppRoute.ORDER -> OrderScreen(model)
+        // Re-key on the active locale so a runtime language switch recomposes the
+        // whole subtree — re-resolving every t() string and the RTL direction.
+        key(model.locale) {
+            CompositionLocalProvider(
+                LocalLocalize provides { key -> model.t(key) },
+                LocalLayoutDirection provides if (model.isRTL) LayoutDirection.Rtl else LayoutDirection.Ltr,
+            ) {
+                Box(Modifier.fillMaxSize().background(sufrixColors().bg)) {
+                    when (model.route) {
+                        AppRoute.DEVICE_SETUP, AppRoute.LOGIN -> LoginScreen(model)
+                        AppRoute.OPEN_SHIFT -> OpenShiftScreen(model)
+                        AppRoute.ORDER -> OrderScreen(model)
+                    }
                 }
             }
         }

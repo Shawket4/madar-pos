@@ -146,6 +146,11 @@ fun OrderScreen(model: AppModel) {
             OrderHistoryScreen(model)
         }
 
+        // Settings — full-screen over the order screen.
+        if (model.showSettings) {
+            SettingsScreen(model)
+        }
+
         // Item customization sheet.
         model.detailItem?.let { ItemDetailSheet(model, it) { model.closeItemDetail() } }
     }
@@ -185,6 +190,16 @@ private fun OrderTopBar(model: AppModel) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     model.loadOutbox()
                     model.showSync = true
+                },
+            )
+            Text(
+                "⚙", color = c.textMuted, fontSize = 18.sp,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() }, indication = null,
+                ) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    model.refreshPending()
+                    model.showSettings = true
                 },
             )
             Text(

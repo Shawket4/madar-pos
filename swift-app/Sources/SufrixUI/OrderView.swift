@@ -102,6 +102,13 @@ struct OrderView: View {
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }
+            // Settings.
+            .sheet(isPresented: $app.showSettings) {
+                SettingsView(app: app, onClose: { app.showSettings = false })
+                    .frame(minWidth: 440, minHeight: 560)
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -157,6 +164,16 @@ private struct OrderTopBar: View {
                 }
                 .font(.ui(13, .semibold))
                 .foregroundStyle(app.pendingCount > 0 ? theme.colors.warning : theme.colors.textMuted)
+            }
+            .buttonStyle(.pressable)
+            Button {
+                Haptics.selection()
+                app.refreshPending()
+                app.showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.colors.textMuted)
             }
             .buttonStyle(.pressable)
             Button {

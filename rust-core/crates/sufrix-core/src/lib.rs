@@ -91,6 +91,9 @@ pub enum AppRoute {
 pub struct SufrixCore {
     config: SufrixConfig,
     store: store::Store,
+    /// Active UI locale (en/ar) — runtime-changeable via `set_locale`; seeds from
+    /// `config.locale`. Drives `tr`/`is_rtl` + catalog `*_translations` resolution.
+    locale: RwLock<String>,
     /// HTTP client to the backend (holds the live bearer token).
     api: net::ApiClient,
     /// The live session (`None` = signed out). Set by login / offline unlock /
@@ -109,9 +112,11 @@ impl SufrixCore {
     pub fn new(config: SufrixConfig) -> Result<Arc<Self>, error::CoreError> {
         let store = store::Store::open(&config.db_path)?;
         let api = net::ApiClient::new(config.base_url.clone())?;
+        let locale = RwLock::new(config.locale.clone());
         Ok(Arc::new(Self {
             config,
             store,
+            locale,
             api,
             session: RwLock::new(None),
             token_store: Mutex::new(None),
@@ -235,6 +240,11 @@ impl SufrixCore {
             ts.save_blob(state.to_blob());
         }
         *self.session.write().unwrap_or_else(|e| e.into_inner()) = Some(state);
+    }
+
+    /// The active runtime locale (defaults to `config.locale`).
+    fn current_locale(&self) -> String {
+        self.locale.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// `(org_id, branch_id)` from the live session — needed for branch-effective
@@ -406,15 +416,21 @@ impl SufrixCore {
     /// Localized UI string for `key` in the device locale (en/ar; falls back to
     /// en, then the key). The single source of truth for both hosts.
     pub fn tr(&self, key: String) -> String {
-        i18n::tr(&self.config.locale, &key)
+        i18n::tr(&self.current_locale(), &key)
     }
     /// The active locale (BCP-47).
     pub fn locale(&self) -> String {
-        self.config.locale.clone()
+        self.current_locale()
+    }
+    /// Change the active UI locale at runtime (e.g. "en" / "ar"). Strings,
+    /// RTL, and catalog `*_translations` all re-resolve on the next read; the
+    /// host persists the choice and re-renders.
+    pub fn set_locale(&self, locale: String) {
+        *self.locale.write().unwrap_or_else(|e| e.into_inner()) = locale;
     }
     /// Whether the locale is right-to-left (host flips layout direction).
     pub fn is_rtl(&self) -> bool {
-        i18n::is_rtl(&self.config.locale)
+        i18n::is_rtl(&self.current_locale())
     }
 }
 
@@ -422,22 +438,22 @@ impl SufrixCore {
 #[uniffi::export]
 impl SufrixCore {
     pub fn list_menu_items(&self) -> Result<Vec<menu::MenuItemView>, CoreError> {
-        menu::menu_items(&self.store, &self.config.locale)
+        menu::menu_items(&self.store, &self.current_locale())
     }
     pub fn list_categories(&self) -> Result<Vec<menu::CategoryView>, CoreError> {
-        menu::categories(&self.store, &self.config.locale)
+        menu::categories(&self.store, &self.current_locale())
     }
     pub fn list_addon_catalog(&self) -> Result<Vec<menu::AddonItemView>, CoreError> {
-        menu::addons(&self.store, &self.config.locale)
+        menu::addons(&self.store, &self.current_locale())
     }
     pub fn available_bundles(&self) -> Result<Vec<menu::BundleView>, CoreError> {
-        menu::bundles(&self.store, &self.config.locale)
+        menu::bundles(&self.store, &self.current_locale())
     }
     pub fn list_payment_methods(&self) -> Result<Vec<menu::PaymentMethodView>, CoreError> {
-        menu::payment_methods(&self.store, &self.config.locale)
+        menu::payment_methods(&self.store, &self.current_locale())
     }
     pub fn list_discounts(&self) -> Result<Vec<menu::DiscountView>, CoreError> {
-        menu::discounts(&self.store, &self.config.locale)
+        menu::discounts(&self.store, &self.current_locale())
     }
 }
 
@@ -472,24 +488,24 @@ impl SufrixCore {
         qty: i64,
         notes: Option<String>,
     ) -> Result<Vec<cart::CartLineView>, CoreError> {
-        let items = menu::menu_items(&self.store, &self.config.locale)?;
+        let items = menu::menu_items(&self.store, &self.current_locale())?;
         let item = items
             .iter()
             .find(|i| i.id == item_id)
             .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
-        let addon_catalog = menu::addons(&self.store, &self.config.locale)?;
+        let addon_catalog = menu::addons(&self.store, &self.current_locale())?;
         let line = cart::resolve_line(item, &addon_catalog, size_label, &addons, &optional_field_ids, qty, notes);
         cart::add_resolved(&self.store, line)
     }
     /// Active addons offered for an item, with their CHARGED price resolved (swap
     /// delta / full) — the customization sheet groups these by `addon_type`.
     pub fn list_item_addons(&self, item_id: String) -> Result<Vec<cart::ItemAddonView>, CoreError> {
-        let items = menu::menu_items(&self.store, &self.config.locale)?;
+        let items = menu::menu_items(&self.store, &self.current_locale())?;
         let item = items
             .iter()
             .find(|i| i.id == item_id)
             .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
-        let addon_catalog = menu::addons(&self.store, &self.config.locale)?;
+        let addon_catalog = menu::addons(&self.store, &self.current_locale())?;
         Ok(cart::item_addons(item, &addon_catalog))
     }
     /// Set a line's absolute quantity (by its key); `qty <= 0` removes the line.
@@ -913,7 +929,7 @@ impl SufrixCore {
         let now = chrono::Utc::now().to_rfc3339();
         let prepared = checkout::prepare(
             &self.store,
-            &self.config.locale,
+            &self.current_locale(),
             &branch_id,
             &shift.id,
             &payment_method_id,
@@ -1111,6 +1127,18 @@ mod tests {
     #[test]
     fn surface_version_is_pinned() {
         assert_eq!(ffi_surface_version(), 0);
+    }
+
+    #[test]
+    fn set_locale_changes_strings_and_rtl_at_runtime() {
+        let core = SufrixCore::from_env().unwrap();
+        core.set_locale("en".into());
+        assert_eq!(core.tr("login.sign_in".into()), "Sign in");
+        assert!(!core.is_rtl());
+        core.set_locale("ar".into());
+        assert_eq!(core.tr("login.sign_in".into()), "تسجيل الدخول");
+        assert!(core.is_rtl());
+        assert_eq!(core.locale(), "ar");
     }
 
     /// sign_in falls back to an offline unlock when the network is unreachable
