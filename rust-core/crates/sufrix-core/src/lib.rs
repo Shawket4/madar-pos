@@ -859,3 +859,175 @@ mod tests {
         assert!(core.sign_in(bad).await.is_err());
     }
 }
+
+/// Routing-lifecycle tests — the class of bug behind the open-shift "bounce".
+/// These poke the private session/store (same-crate) to drive `app_route`
+/// through every transition without a network.
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    fn teller_session(user_id: &str, branch: Option<&str>) -> session::SessionState {
+        session::SessionState {
+            snapshot: session::SessionSnapshot {
+                user_id: user_id.into(),
+                display_name: "Sara".into(),
+                role: "teller".into(),
+                org_id: Some("org-1".into()),
+                branch_id: branch.map(Into::into),
+                currency_code: "EGP".into(),
+                tax_rate: 0.14,
+                online: true,
+                permissions_loaded: true,
+            },
+            permissions: vec![],
+            token: None,
+        }
+    }
+
+    fn set_session(core: &SufrixCore, state: Option<session::SessionState>) {
+        *core.session.write().unwrap_or_else(|e| e.into_inner()) = state;
+    }
+
+    fn seed_shift(core: &SufrixCore, teller: uuid::Uuid, status: &str) {
+        let s = sufrix_api::models::Shift {
+            id: uuid::Uuid::new_v4(),
+            branch_id: uuid::Uuid::new_v4(),
+            teller_id: teller,
+            teller_name: "Sara".into(),
+            opening_cash: 50000,
+            status: status.into(),
+            ..Default::default()
+        };
+        shift::save(&core.store, &s).unwrap();
+    }
+
+    #[test]
+    fn route_device_setup_until_branch_bound() {
+        let core = SufrixCore::from_env().unwrap();
+        assert_eq!(core.app_route(false, false), AppRoute::DeviceSetup); // unconfigured
+        assert_eq!(core.app_route(true, true), AppRoute::DeviceSetup); // reconfiguring
+    }
+
+    #[test]
+    fn route_login_when_configured_but_signed_out() {
+        let core = SufrixCore::from_env().unwrap();
+        assert_eq!(core.app_route(true, false), AppRoute::Login);
+    }
+
+    #[test]
+    fn route_open_shift_when_signed_in_without_a_shift() {
+        let core = SufrixCore::from_env().unwrap();
+        set_session(&core, Some(teller_session(&uuid::Uuid::new_v4().to_string(), Some("b"))));
+        assert_eq!(core.app_route(true, false), AppRoute::OpenShift);
+    }
+
+    #[test]
+    fn route_order_when_own_shift_is_open() {
+        // The regression: a teller's own open shift routes to Order and STAYS.
+        let core = SufrixCore::from_env().unwrap();
+        let teller = uuid::Uuid::new_v4();
+        set_session(&core, Some(teller_session(&teller.to_string(), Some("b"))));
+        seed_shift(&core, teller, "open");
+        assert_eq!(core.app_route(true, false), AppRoute::Order);
+    }
+
+    #[test]
+    fn route_open_shift_for_a_foreign_tellers_shift() {
+        // A stale shift left by a DIFFERENT teller must not route the new one in.
+        let core = SufrixCore::from_env().unwrap();
+        let me = uuid::Uuid::new_v4();
+        set_session(&core, Some(teller_session(&me.to_string(), Some("b"))));
+        seed_shift(&core, uuid::Uuid::new_v4(), "open");
+        assert_eq!(core.app_route(true, false), AppRoute::OpenShift);
+    }
+
+    #[test]
+    fn route_open_shift_when_the_shift_is_closed() {
+        let core = SufrixCore::from_env().unwrap();
+        let teller = uuid::Uuid::new_v4();
+        set_session(&core, Some(teller_session(&teller.to_string(), Some("b"))));
+        seed_shift(&core, teller, "closed");
+        assert_eq!(core.app_route(true, false), AppRoute::OpenShift);
+    }
+
+    /// End-to-end offline: sign in offline, open a shift (the open_shift command
+    /// can't reach the server, so it stays queued), and assert the route lands —
+    /// and STAYS — on Order. This is the open-shift "bounce" reproduced E2E.
+    #[tokio::test]
+    async fn opening_a_shift_offline_routes_to_order_and_stays() {
+        use argon2::password_hash::SaltString;
+        use argon2::{Argon2, PasswordHasher};
+
+        let core = SufrixCore::new(SufrixConfig {
+            base_url: "http://127.0.0.1:1".into(), // nothing listening → offline
+            environment: "dev".into(),
+            db_path: String::new(),
+            locale: "en".into(),
+        })
+        .unwrap();
+
+        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
+        let bundle = serde_json::json!({
+            "org_id": "00000000-0000-0000-0000-0000000000aa",
+            "generated_at": "2026-06-19T10:00:00Z",
+            "tellers": [{
+                "user_id": "00000000-0000-0000-0000-0000000000bb",
+                "name": "Sara", "role": "teller", "is_active": true,
+                "offline_pin_hash": phc,
+            }]
+        });
+        core.store.kv_put(session::BUNDLE_KEY, &bundle.to_string()).unwrap();
+        core.store
+            .kv_put(session::ORG_CONFIG_KEY, r#"{"org_id":"00000000-0000-0000-0000-0000000000aa","currency_code":"EGP","tax_rate":0.14}"#)
+            .unwrap();
+
+        let branch = "00000000-0000-0000-0000-000000000001";
+        let snap = core
+            .sign_in(session::LoginRequest {
+                mode: session::LoginMode::Pin,
+                name: Some("Sara".into()),
+                pin: Some("1234".into()),
+                branch_id: Some(branch.into()),
+                email: None,
+                password: None,
+                org_id: None,
+            })
+            .await
+            .expect("offline sign-in");
+        assert!(!snap.online);
+        // Signed in, no shift yet → open-shift.
+        assert_eq!(core.app_route(true, false), AppRoute::OpenShift);
+
+        let shift = core.open_shift(50000).await.expect("open shift offline");
+        assert!(shift.is_open);
+        // The command is queued (couldn't reach the server)…
+        assert_eq!(core.pending_outbox_count().unwrap(), 1);
+        // …and the route is Order — and stays there (the bounce is gone).
+        assert_eq!(core.app_route(true, false), AppRoute::Order);
+        assert_eq!(core.app_route(true, false), AppRoute::Order);
+    }
+
+    #[test]
+    fn cart_totals_use_the_session_tax_rate() {
+        let core = SufrixCore::from_env().unwrap();
+        set_session(&core, Some(teller_session(&uuid::Uuid::new_v4().to_string(), Some("b"))));
+        core.cart_add("item-1".into(), "Latte".into(), 1000).unwrap();
+        core.cart_add("item-1".into(), "Latte".into(), 1000).unwrap(); // qty 2
+        let t = core.cart_totals().unwrap();
+        assert_eq!(t.item_count, 2);
+        assert_eq!(t.subtotal_minor, 2000);
+        assert_eq!(t.tax_minor, 280); // 0.14 * 2000
+        assert_eq!(t.total_minor, 2280);
+    }
+
+    #[test]
+    fn cart_totals_are_tax_free_when_signed_out() {
+        let core = SufrixCore::from_env().unwrap();
+        core.cart_add("i".into(), "X".into(), 1000).unwrap();
+        let t = core.cart_totals().unwrap();
+        assert_eq!(t.tax_minor, 0);
+        assert_eq!(t.total_minor, 1000);
+    }
+}
