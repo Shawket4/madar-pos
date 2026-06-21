@@ -141,3 +141,34 @@ async fn offline_then_replay_lands_exactly_once() {
         "order must not appear twice in history ({matches} candidate rows)"
     );
 }
+
+/// A cash movement is OFFLINE-FIRST: recording it queues + drains through the
+/// outbox (idempotent on client_ref) and shows up in the cash list — proving the
+/// drawer op no longer requires a connection.
+#[tokio::test]
+#[ignore]
+async fn cash_movement_is_offline_first_and_idempotent() {
+    let core = signed_in_core().await;
+    ensure_open_shift(&core).await;
+    core.sync_now().await.ok();
+
+    let before = core.list_cash_movements().await.map(|v| v.len()).unwrap_or(0);
+    // Record a pay-in; the FFI queues + best-effort drains.
+    let mv = core.record_cash_movement(2_500, "rebuild test pay-in".into()).await.expect("record");
+    assert_eq!(mv.amount_minor, 2_500);
+
+    // Re-drain twice (replays of the same client_ref must not double-apply).
+    core.sync_now().await.expect("drain");
+    core.sync_now().await.expect("drain");
+
+    let status = core.sync_status().expect("status");
+    assert_eq!(status.failed, 0, "cash movement must not dead-letter");
+
+    let after = core.list_cash_movements().await.expect("list");
+    assert!(
+        after.iter().any(|m| m.note == "rebuild test pay-in" && m.amount_minor == 2_500),
+        "the recorded movement should appear in the cash list"
+    );
+    // Exactly one new movement (client_ref dedup held across the replays).
+    assert_eq!(after.len(), before + 1, "client_ref must dedup — no duplicate movement");
+}
