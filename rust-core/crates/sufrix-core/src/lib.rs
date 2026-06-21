@@ -1038,6 +1038,58 @@ impl SufrixCore {
         Ok(shift::offline_report_view(shift.opening_cash_minor, queued_cash))
     }
 
+    /// Record a cash-drawer movement against the open shift — pay-IN when
+    /// `amount_minor > 0`, pay-OUT when `< 0`. ONLINE-ONLY (Flutter parity: cash
+    /// movements are never queued, so the drawer total stays authoritative).
+    pub async fn record_cash_movement(
+        &self,
+        amount_minor: i64,
+        note: String,
+    ) -> Result<shift::CashMovementView, CoreError> {
+        use sufrix_api::apis::shifts_api;
+        let shift = shift::current(&self.store)?
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no shift".into() })?;
+        if !self.current_session().map(|s| s.online).unwrap_or(false) {
+            return Err(CoreError::Offline { detail: "cash movements need a connection".into() });
+        }
+        let req = sufrix_api::models::CashMovementRequest::new(amount_minor as i32, note);
+        let cm = shifts_api::add_cash_movement(
+            &self.api.config(),
+            shifts_api::AddCashMovementParams { shift_id: shift.id.clone(), cash_movement_request: req },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(shift::cash_movement_view(&cm))
+    }
+
+    /// Cash movements recorded against the open shift (online read).
+    pub async fn list_cash_movements(&self) -> Result<Vec<shift::CashMovementView>, CoreError> {
+        use sufrix_api::apis::shifts_api;
+        let shift = shift::current(&self.store)?
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no shift".into() })?;
+        let list = shifts_api::list_cash_movements(
+            &self.api.config(),
+            shifts_api::ListCashMovementsParams { shift_id: shift.id.clone() },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(list.iter().map(shift::cash_movement_view).collect())
+    }
+
+    /// Past shifts for this branch, newest first (the history screen; online read).
+    pub async fn list_shifts(&self) -> Result<Vec<shift::ShiftSummaryView>, CoreError> {
+        use sufrix_api::apis::shifts_api;
+        let (_, branch_id) = self.org_branch()?;
+        let branch = branch_id.unwrap_or_else(|| "00000000-0000-0000-0000-000000000000".into());
+        let paginated = shifts_api::list_shifts(
+            &self.api.config(),
+            shifts_api::ListShiftsParams { branch_id: branch, page: None, per_page: None },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(paginated.data.iter().map(shift::shift_summary_view).collect())
+    }
+
     /// Place the current cart as an order: price it (client-authoritative),
     /// queue an idempotent `create_order` command, clear the cart, and try to
     /// send now. Works offline — the order stays queued and `queued_offline` is

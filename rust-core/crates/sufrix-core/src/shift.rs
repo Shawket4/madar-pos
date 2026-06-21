@@ -44,6 +44,57 @@ pub(crate) struct CloseShiftCommand {
     pub request: models::CloseShiftRequest,
 }
 
+/// A cash-drawer movement (pay-in / pay-out). `amount_minor` is signed:
+/// positive = cash in, negative = cash out.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct CashMovementView {
+    pub id: String,
+    pub amount_minor: i64,
+    pub note: String,
+    pub moved_by_name: String,
+    pub created_at: String,
+}
+
+pub(crate) fn cash_movement_view(m: &models::CashMovement) -> CashMovementView {
+    CashMovementView {
+        id: m.id.to_string(),
+        amount_minor: m.amount as i64,
+        note: m.note.clone(),
+        moved_by_name: m.moved_by_name.clone(),
+        created_at: m.created_at.to_rfc3339(),
+    }
+}
+
+/// A past shift, projected for the history list.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct ShiftSummaryView {
+    pub id: String,
+    pub branch_name: Option<String>,
+    pub opened_at: String,
+    pub closed_at: Option<String>,
+    pub opening_cash_minor: i64,
+    pub closing_declared_minor: Option<i64>,
+    pub closing_system_minor: Option<i64>,
+    pub discrepancy_minor: Option<i64>,
+    pub status: String,
+    pub is_open: bool,
+}
+
+pub(crate) fn shift_summary_view(s: &models::Shift) -> ShiftSummaryView {
+    ShiftSummaryView {
+        id: s.id.to_string(),
+        branch_name: s.branch_name.clone().flatten(),
+        opened_at: s.opened_at.to_rfc3339(),
+        closed_at: s.closed_at.clone().flatten().map(|d| d.to_rfc3339()),
+        opening_cash_minor: s.opening_cash as i64,
+        closing_declared_minor: s.closing_cash_declared.flatten().map(|v| v as i64),
+        closing_system_minor: s.closing_cash_system.flatten().map(|v| v as i64),
+        discrepancy_minor: s.cash_discrepancy.flatten().map(|v| v as i64),
+        status: s.status.clone(),
+        is_open: s.status == "open",
+    }
+}
+
 /// One payment-method line in the shift report.
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
 pub struct ShiftReportPaymentLine {
