@@ -39,9 +39,15 @@ pub struct MenuItemView {
     pub is_active: bool,
     /// The item's default-milk addon (swap families charge only the delta over it).
     pub default_milk_addon_id: Option<String>,
+    /// Per-item addon allowlist (ids). Non-empty ⇒ the sheet shows only these by
+    /// default, with a "show all" escape hatch (mirrors the dashboard). Empty =
+    /// no restriction (show the type's full set).
+    pub allowed_addon_ids: Vec<String>,
     pub sizes: Vec<ItemSizeView>,
     pub addon_slots: Vec<AddonSlotView>,
     pub optional_fields: Vec<OptionalFieldView>,
+    /// The item's recipe lines (per size) — shown in the customization sheet.
+    pub recipes: Vec<RecipeLineView>,
 }
 
 #[derive(uniffi::Record, Clone, Debug)]
@@ -70,6 +76,16 @@ pub struct OptionalFieldView {
     pub name: String,
     pub price_minor: i64,
     pub is_active: bool,
+}
+
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct RecipeLineView {
+    pub ingredient_name: String,
+    /// Quantity used (major units of the ingredient's unit, e.g. 18.0 g).
+    pub quantity: f64,
+    pub unit: String,
+    /// `None` = applies to all sizes; otherwise the size this line is for.
+    pub size_label: Option<String>,
 }
 
 #[derive(uniffi::Record, Clone, Debug)]
@@ -159,11 +175,29 @@ struct FullItem {
     #[serde(default)]
     default_milk_addon_id: Option<String>,
     #[serde(default)]
+    allowed_addon_ids: Vec<String>,
+    #[serde(default)]
     sizes: Vec<FullSize>,
     #[serde(default)]
     addon_slots: Vec<FullSlot>,
     #[serde(default)]
     optional_fields: Vec<FullOptional>,
+    #[serde(default)]
+    recipes: Vec<FullRecipe>,
+}
+
+#[derive(Deserialize)]
+struct FullRecipe {
+    #[serde(default)]
+    ingredient_name: String,
+    #[serde(default)]
+    ingredient_unit: String,
+    #[serde(default)]
+    size_label: Option<String>,
+    // numeric(12,3) → BigDecimal → JSON STRING ("18.000"). Captured as a Value so
+    // the string-vs-number encoding can't break the parse; projected to f64 below.
+    #[serde(default)]
+    quantity_used: Value,
 }
 
 #[derive(Deserialize)]
@@ -212,6 +246,17 @@ pub(crate) fn menu_items(store: &Store, locale: &str) -> CoreResult<Vec<MenuItem
             image_url: i.image_url.clone(),
             is_active: i.is_active,
             default_milk_addon_id: i.default_milk_addon_id.clone(),
+            allowed_addon_ids: i.allowed_addon_ids.clone(),
+            recipes: i
+                .recipes
+                .iter()
+                .map(|r| RecipeLineView {
+                    ingredient_name: r.ingredient_name.clone(),
+                    quantity: value_to_f64(&r.quantity_used),
+                    unit: r.ingredient_unit.clone(),
+                    size_label: r.size_label.clone().filter(|s| !s.is_empty()),
+                })
+                .collect(),
             sizes: i
                 .sizes
                 .iter()
@@ -370,6 +415,11 @@ fn flat<T: Clone>(opt: &Option<Option<T>>) -> Option<T> {
     opt.clone().flatten()
 }
 
+/// A JSON number OR a BigDecimal-as-string ("18.000") → f64 (0.0 on failure).
+fn value_to_f64(v: &Value) -> f64 {
+    v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,7 +499,7 @@ mod tests {
               "name_translations": {"en": "Latte"},
               "description_translations": {},
               "addon_slots": [],
-              "allowed_addon_ids": [],
+              "allowed_addon_ids": ["00000000-0000-0000-0000-0000000000d1"],
               "optional_fields": [{
                   "id": "00000000-0000-0000-0000-0000000000f1",
                   "created_at": "2026-06-19T10:00:00Z",
@@ -477,6 +527,14 @@ mod tests {
         assert_eq!(items[0].optional_fields.len(), 1);
         assert_eq!(items[0].optional_fields[0].name, "Extra shot");
         assert_eq!(items[0].optional_fields[0].price_minor, 1500);
+        // Recipes now parse despite the BigDecimal-as-string quantity_used.
+        assert_eq!(items[0].recipes.len(), 1);
+        assert_eq!(items[0].recipes[0].ingredient_name, "Beans");
+        assert_eq!(items[0].recipes[0].quantity, 18.0);
+        assert_eq!(items[0].recipes[0].unit, "g");
+        assert_eq!(items[0].recipes[0].size_label.as_deref(), Some("Large"));
+        // Per-item addon allowlist surfaces for the "show item's options" default.
+        assert_eq!(items[0].allowed_addon_ids, vec!["00000000-0000-0000-0000-0000000000d1"]);
     }
 
     #[test]

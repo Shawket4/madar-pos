@@ -472,9 +472,11 @@ mod tests {
             image_url: None,
             is_active: true,
             default_milk_addon_id: Some("oat".into()), // base milk = oat @1500
+            allowed_addon_ids: vec![],
             sizes: vec![menu::ItemSizeView { id: "lg".into(), label: "Large".into(), price_minor: 6000, is_active: true }],
             addon_slots: vec![],
             optional_fields: vec![menu::OptionalFieldView { id: "van".into(), name: "Vanilla".into(), price_minor: 300, is_active: true }],
+            recipes: vec![],
         }
     }
 
