@@ -365,6 +365,8 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         val bytes = core.renderReceipt(r, branchName, session?.currencyCode ?: "", 32u)
         printState = try {
             core.sendToPrinter(host, port, bytes)
+            // Pop the till on a cash sale (the original print, not a reprint).
+            if (r.isCash) runCatching { core.sendToPrinter(host, port, core.cashDrawerKick()) }
             PrintState.PRINTED
         } catch (e: Exception) {
             PrintState.FAILED

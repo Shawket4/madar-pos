@@ -707,6 +707,13 @@ impl SufrixCore {
         receipt::escpos(&receipt, &ctx)
     }
 
+    /// ESC/POS cash-drawer kick bytes — send via `send_to_printer` right after a
+    /// CASH sale's receipt so the till pops. Caller gates on `receipt.is_cash`
+    /// (and skips it on reprints).
+    pub fn cash_drawer_kick(&self) -> Vec<u8> {
+        receipt::drawer_kick_bytes()
+    }
+
     /// Render the shift report (Z-report) to ESC/POS bytes — same printer path
     /// as `render_receipt`; pair with `send_to_printer`.
     pub fn render_shift_report(

@@ -320,6 +320,13 @@ const ESC: u8 = 0x1B;
 const GS: u8 = 0x1D;
 const LF: u8 = 0x0A;
 
+/// ESC/POS cash-drawer kick: `ESC p m t1 t2` pulses connector pin 2 (the
+/// standard drawer line). Sent right after a CASH sale prints so the till pops.
+/// Star and Epson both honour this; m=0 = pin 2, t1/t2 = on/off pulse widths.
+pub fn drawer_kick_bytes() -> Vec<u8> {
+    vec![ESC, b'p', 0x00, 0x19, 0xFA]
+}
+
 /// Encode visible lines to ESC/POS: init, then per-line justify/emphasize/size,
 /// then feed + a partial cut. Deterministic — golden-tested.
 pub fn encode(lines: &[Line]) -> Vec<u8> {
@@ -653,6 +660,12 @@ mod tests {
         assert!(text.iter().any(|t| t.starts_with("Delivery Fee") && t.ends_with("20.00 EGP")));
         // Delivery orders print customer in the block, not the footer (no dup).
         assert_eq!(text.iter().filter(|t| t.starts_with("Customer")).count(), 1);
+    }
+
+    #[test]
+    fn drawer_kick_is_the_escpos_pulse_command() {
+        // ESC p 0 25 250 — the standard pin-2 drawer pulse.
+        assert_eq!(drawer_kick_bytes(), vec![0x1B, b'p', 0x00, 0x19, 0xFA]);
     }
 
     #[test]

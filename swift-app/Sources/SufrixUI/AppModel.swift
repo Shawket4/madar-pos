@@ -315,6 +315,10 @@ final class AppModel: ObservableObject {
         )
         do {
             try await core.sendToPrinter(host: host, port: port, bytes: bytes)
+            // Pop the till on a cash sale (the original print, not a reprint).
+            if receipt.isCash {
+                try? await core.sendToPrinter(host: host, port: port, bytes: core.cashDrawerKick())
+            }
             printState = .printed
         } catch {
             printState = .failed
