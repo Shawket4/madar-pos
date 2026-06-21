@@ -53,6 +53,31 @@ pub struct OrderSummaryView {
     pub queued: bool,
 }
 
+/// Live shift totals for the action-bar stats pill: sales total + order count,
+/// voided orders excluded (a voided sale is no revenue and not a fulfilled
+/// order). Mirrors the Flutter pill, which sums `orderHistoryProvider` the same way.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct ShiftStatsView {
+    pub sales_minor: i64,
+    pub order_count: i64,
+}
+
+/// Derive the stats pill from the orders the host already holds (synced +
+/// queued, from `list_shift_orders`). Pure — no store/network — so the host can
+/// recompute it cheaply whenever the order list changes.
+pub fn shift_stats(orders: &[OrderSummaryView]) -> ShiftStatsView {
+    let mut sales_minor = 0i64;
+    let mut order_count = 0i64;
+    for o in orders {
+        if o.status == "voided" {
+            continue;
+        }
+        order_count += 1;
+        sales_minor += o.total_minor;
+    }
+    ShiftStatsView { sales_minor, order_count }
+}
+
 /// Project a synced server order.
 pub(crate) fn from_server(o: &models::Order) -> OrderSummaryView {
     OrderSummaryView {
@@ -115,6 +140,35 @@ mod tests {
 
     const SHIFT: &str = "00000000-0000-0000-0000-0000000000c0";
     const OTHER: &str = "00000000-0000-0000-0000-0000000000c9";
+
+    fn summary(total: i64, status: &str) -> OrderSummaryView {
+        OrderSummaryView {
+            id: "o".into(),
+            order_number: None,
+            subtotal_minor: total,
+            tax_minor: 0,
+            total_minor: total,
+            payment_label: "Cash".into(),
+            status: status.into(),
+            created_at: "2026-06-21T10:00:00Z".into(),
+            queued: status == "queued",
+        }
+    }
+
+    #[test]
+    fn shift_stats_sums_nonvoided_and_excludes_voided() {
+        let orders = vec![
+            summary(5000, "completed"),
+            summary(3000, "queued"),
+            summary(9999, "voided"), // excluded from both count + total
+            summary(2000, "failed"), // an unsynced sale still counts
+        ];
+        let s = shift_stats(&orders);
+        assert_eq!(s.order_count, 3);
+        assert_eq!(s.sales_minor, 10000);
+        // Empty list → zeros (no open-shift activity yet).
+        assert_eq!(shift_stats(&[]), ShiftStatsView { sales_minor: 0, order_count: 0 });
+    }
 
     fn queue_order(store: &Store, id: &str, shift: &str, total: i32) {
         let mut req = models::CreateOrderRequest::new(

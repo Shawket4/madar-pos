@@ -631,6 +631,16 @@ pub struct OutboxItemView {
     pub event_at: String,
 }
 
+/// One-shot sync health for the action-bar chip + offline banner. `pending` is
+/// the in-flight/queued set, `failed` the stuck (dead) set, `online` the
+/// session's connectivity. The host maps these to the chip label/tone.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct SyncStatusView {
+    pub pending: u32,
+    pub failed: u32,
+    pub online: bool,
+}
+
 // ── sync center (outbox visibility + retry/discard) ──────────────────────────
 #[uniffi::export]
 impl SufrixCore {
@@ -656,6 +666,23 @@ impl SufrixCore {
     /// if a dead command with that id was removed.
     pub fn discard_outbox_item(&self, id: String) -> Result<bool, CoreError> {
         self.store.discard_dead(&id)
+    }
+
+    /// Sync health for the action-bar chip + offline banner (counts + online),
+    /// in one cheap local read. Always succeeds offline.
+    pub fn sync_status(&self) -> Result<SyncStatusView, CoreError> {
+        Ok(SyncStatusView {
+            pending: self.store.pending_count()?,
+            failed: self.store.dead_count()?,
+            online: self.current_session().map(|s| s.online).unwrap_or(false),
+        })
+    }
+
+    /// Live shift stats (sales total + order count) for the action-bar pill,
+    /// derived from the orders the host already loaded via `list_shift_orders`
+    /// (synced + queued), voided excluded. Pure — no extra network.
+    pub fn shift_stats(&self, orders: Vec<orders::OrderSummaryView>) -> orders::ShiftStatsView {
+        orders::shift_stats(&orders)
     }
 }
 

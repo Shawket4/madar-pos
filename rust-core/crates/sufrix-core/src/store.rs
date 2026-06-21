@@ -193,6 +193,14 @@ impl Store {
         Ok(n as u32)
     }
 
+    /// Count of dead (exhausted/rejected) outbox rows — the "needs attention"
+    /// signal for the sync chip. Acked rows are gone, so this is only the stuck set.
+    pub fn dead_count(&self) -> CoreResult<u32> {
+        let n: i64 = self.lock().query_row(
+            "SELECT COUNT(*) FROM outbox WHERE status = 'dead'", [], |r| r.get(0))?;
+        Ok(n as u32)
+    }
+
     /// Every un-acked outbox row (pending/inflight/dead) in FIFO order — the
     /// sync-center read. Acked + superseded rows are hidden (nothing to act on).
     pub fn list_active(&self) -> CoreResult<Vec<OutboxItem>> {
