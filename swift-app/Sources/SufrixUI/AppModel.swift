@@ -364,6 +364,28 @@ final class AppModel: ObservableObject {
         shiftOrderCount = Int(stats.orderCount)
     }
 
+    /// The expanded history row's fetched detail (lines + modifiers).
+    @Published private(set) var orderDetail: OrderDetailView?
+
+    /// Fetch a synced order's line detail for the expanded row.
+    func loadOrderDetail(_ id: String) async {
+        orderDetail = (try? await core.orderDetail(orderId: id))
+    }
+    /// Reprint a synced order's receipt to the configured printer.
+    func reprintOrder(_ id: String) async {
+        let (host, port) = Self.parsePrinter(printerHost)
+        guard !host.isEmpty else { printState = .noPrinter; return }
+        printState = .printing
+        do {
+            let bytes = try await core.renderOrderReceipt(
+                orderId: id, storeName: branchName, currency: session?.currencyCode ?? "", width: 32)
+            try await core.sendToPrinter(host: host, port: port, bytes: bytes)
+            printState = .printed
+        } catch {
+            printState = .failed
+        }
+    }
+
     /// Void a synced order (queues offline). Reloads history on success so the
     /// row flips to Voided. Returns whether it succeeded (the sheet dismisses).
     func voidOrder(orderId: String, reason: String, note: String?) async -> Bool {

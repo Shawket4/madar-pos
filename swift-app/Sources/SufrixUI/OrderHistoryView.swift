@@ -65,6 +65,11 @@ struct OrderHistoryView: View {
             }
         }
         .task { await app.loadHistory() }
+        .task(id: expandedId) {
+            if let id = expandedId, let o = filtered.first(where: { $0.id == id }), !o.queued {
+                await app.loadOrderDetail(id)
+            }
+        }
         .sheet(item: $voidTarget) { order in
             VoidSheet(app: app, order: order, onDone: { voidTarget = nil })
                 .frame(minWidth: 440, minHeight: 520)
@@ -148,11 +153,30 @@ struct OrderHistoryView: View {
 
             if expandedId == item.id {
                 Rectangle().fill(theme.colors.border).frame(height: 1)
+                if let d = app.orderDetail, d.id == item.id {
+                    ForEach(Array(d.lines.enumerated()), id: \.offset) { _, line in
+                        lineRow(line)
+                    }
+                    Rectangle().fill(theme.colors.borderLight).frame(height: 1)
+                }
                 detailRow(t("order.subtotal"), Money.format(item.subtotalMinor, currency))
                 detailRow(t("order.tax"), Money.format(item.taxMinor, currency))
-                HStack {
+                HStack(spacing: Space.md) {
                     Text(item.paymentLabel).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
                     Spacer()
+                    if !item.queued && item.status != "voided" {
+                        Button {
+                            Haptics.selection()
+                            Task { await app.reprintOrder(item.id) }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "printer")
+                                Text(t("receipt.print"))
+                            }
+                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.accent)
+                        }
+                        .buttonStyle(.pressable)
+                    }
                     if canVoid {
                         Button {
                             Haptics.selection()
@@ -183,6 +207,20 @@ struct OrderHistoryView: View {
             Text(label).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
             Spacer()
             Text(value).font(.money(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
+        }
+    }
+
+    private func lineRow(_ line: OrderDetailLineView) -> some View {
+        let mods = ([line.sizeLabel].compactMap { $0 } + line.addons + line.optionals)
+        return HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(line.qty)× \(line.name)").font(.ui(12, .medium)).foregroundStyle(theme.colors.textPrimary)
+                if !mods.isEmpty {
+                    Text(mods.joined(separator: " · ")).font(.ui(10)).foregroundStyle(theme.colors.textMuted).lineLimit(2)
+                }
+            }
+            Spacer(minLength: Space.sm)
+            Text(Money.format(line.lineTotalMinor, currency)).font(.money(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
         }
     }
 
