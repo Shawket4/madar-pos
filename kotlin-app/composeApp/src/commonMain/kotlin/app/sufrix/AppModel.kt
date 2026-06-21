@@ -52,6 +52,7 @@ interface HostVault : TokenStore {
     var themeMode: String
     var locale: String
     var printerHost: String
+    var printerBrand: String
 }
 
 /** Receipt-printing progress for the confirmation screen's Print button. */
@@ -96,6 +97,12 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Network printer address ("host" or "host:port"; default port 9100). Empty
      *  = no printer configured. Set in Settings, persisted in the host vault. */
     var printerHost by mutableStateOf(vault.printerHost)
+        private set
+    /** Printer command dialect — Epson (ESC/POS) vs Star (Star Line Mode); the two
+     *  are not byte-compatible. Set in Settings, persisted in the host vault. */
+    var printerBrand by mutableStateOf(
+        if (vault.printerBrand == "star") PrinterBrand.STAR else PrinterBrand.EPSON
+    )
         private set
     /** Print progress for the receipt confirmation's Print button. */
     var printState by mutableStateOf(PrintState.IDLE)
@@ -356,6 +363,12 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         vault.printerHost = value
     }
 
+    /** Set the printer dialect (Settings); persisted in the host vault. */
+    fun setPrinterBrand(value: PrinterBrand) {
+        printerBrand = value
+        vault.printerBrand = if (value == PrinterBrand.STAR) "star" else "epson"
+    }
+
     /** Render the current receipt in the core and stream it to the configured
      *  network printer (best-effort; unverifiable without hardware). All the
      *  layout/bytes live in the core — this only moves them onto the wire. */
@@ -364,11 +377,11 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         val (host, port) = parsePrinter(printerHost)
         if (host.isBlank()) { printState = PrintState.NO_PRINTER; return }
         printState = PrintState.PRINTING
-        val bytes = core.renderReceipt(r, branchName, session?.currencyCode ?: "", 32u)
+        val bytes = core.renderReceipt(r, branchName, session?.currencyCode ?: "", 32u, printerBrand)
         printState = try {
             core.sendToPrinter(host, port, bytes)
             // Pop the till on a cash sale (the original print, not a reprint).
-            if (r.isCash) runCatching { core.sendToPrinter(host, port, core.cashDrawerKick()) }
+            if (r.isCash) runCatching { core.sendToPrinter(host, port, core.cashDrawerKick(printerBrand)) }
             PrintState.PRINTED
         } catch (e: Exception) {
             PrintState.FAILED
@@ -381,7 +394,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         val (host, port) = parsePrinter(printerHost)
         if (host.isBlank()) { printState = PrintState.NO_PRINTER; return }
         printState = PrintState.PRINTING
-        val bytes = core.renderShiftReport(report, branchName, session?.currencyCode ?: "", 32u)
+        val bytes = core.renderShiftReport(report, branchName, session?.currencyCode ?: "", 32u, printerBrand)
         printState = try {
             core.sendToPrinter(host, port, bytes)
             PrintState.PRINTED
@@ -476,7 +489,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         val (host, port) = parsePrinter(printerHost)
         if (host.isBlank()) { printState = PrintState.NO_PRINTER; return }
         printState = PrintState.PRINTING
-        val bytes = core.renderOrderReceipt(id, branchName, session?.currencyCode ?: "", 32u)
+        val bytes = core.renderOrderReceipt(id, branchName, session?.currencyCode ?: "", 32u, printerBrand)
         printState = try {
             core.sendToPrinter(host, port, bytes)
             PrintState.PRINTED

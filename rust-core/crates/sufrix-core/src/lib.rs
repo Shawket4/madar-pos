@@ -705,6 +705,7 @@ impl SufrixCore {
         store_name: String,
         currency: String,
         width: u32,
+        brand: receipt::PrinterBrand,
     ) -> Vec<u8> {
         let loc = self.current_locale();
         let tr = |k: &str| i18n::tr(&loc, k);
@@ -737,14 +738,14 @@ impl SufrixCore {
                 thank_you: tr("receipt.thank_you"),
             },
         };
-        receipt::escpos(&receipt, &ctx)
+        receipt::escpos(&receipt, &ctx, brand)
     }
 
-    /// ESC/POS cash-drawer kick bytes — send via `send_to_printer` right after a
-    /// CASH sale's receipt so the till pops. Caller gates on `receipt.is_cash`
-    /// (and skips it on reprints).
-    pub fn cash_drawer_kick(&self) -> Vec<u8> {
-        receipt::drawer_kick_bytes()
+    /// Cash-drawer kick bytes for the chosen printer dialect — send via
+    /// `send_to_printer` right after a CASH sale's receipt so the till pops.
+    /// Caller gates on `receipt.is_cash` (and skips it on reprints).
+    pub fn cash_drawer_kick(&self, brand: receipt::PrinterBrand) -> Vec<u8> {
+        receipt::drawer_kick_for(brand)
     }
 
     /// Render the shift report (Z-report) to ESC/POS bytes — same printer path
@@ -755,6 +756,7 @@ impl SufrixCore {
         store_name: String,
         currency: String,
         width: u32,
+        brand: receipt::PrinterBrand,
     ) -> Vec<u8> {
         let loc = self.current_locale();
         let tr = |k: &str| i18n::tr(&loc, k);
@@ -769,7 +771,7 @@ impl SufrixCore {
             voided: tr("history.voided"),
             by_method: tr("shift.by_method"),
         };
-        receipt::escpos_shift_report(&report, &store_name, &currency, width, &labels)
+        receipt::escpos_shift_report(&report, &store_name, &currency, width, &labels, brand)
     }
 }
 
@@ -1691,13 +1693,14 @@ impl SufrixCore {
         store_name: String,
         currency: String,
         width: u32,
+        brand: receipt::PrinterBrand,
     ) -> Result<Vec<u8>, CoreError> {
         use sufrix_api::apis::orders_api;
         let o = orders_api::get_order(&self.api.config(), orders_api::GetOrderParams { order_id })
             .await
             .map_err(net::map_api_error)?;
         let receipt = orders::order_to_receipt(&o, &self.current_locale());
-        Ok(self.render_receipt(receipt, store_name, currency, width))
+        Ok(self.render_receipt(receipt, store_name, currency, width, brand))
     }
 
     /// Project a synced order into a ReceiptView (no bytes) — for an on-screen

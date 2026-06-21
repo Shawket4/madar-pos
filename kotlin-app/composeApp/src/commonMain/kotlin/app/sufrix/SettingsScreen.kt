@@ -101,6 +101,16 @@ fun SettingsScreen(model: AppModel) {
                 }
                 Card(t("settings.printer")) {
                     SufrixTextField(model.printerHost, { model.setPrinterHost(it) }, t("settings.printer_hint"))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        Chip(Modifier.weight(1f), t("settings.printer_epson"),
+                            model.printerBrand == app.sufrix.core.PrinterBrand.EPSON) {
+                            model.setPrinterBrand(app.sufrix.core.PrinterBrand.EPSON)
+                        }
+                        Chip(Modifier.weight(1f), t("settings.printer_star"),
+                            model.printerBrand == app.sufrix.core.PrinterBrand.STAR) {
+                            model.setPrinterBrand(app.sufrix.core.PrinterBrand.STAR)
+                        }
+                    }
                 }
                 Card(t("settings.device")) {
                     Row(

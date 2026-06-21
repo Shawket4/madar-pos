@@ -128,6 +128,10 @@ struct SettingsView: View {
     private var printerCard: some View {
         card(t("settings.printer")) {
             SufrixTextField(placeholder: t("settings.printer_hint"), text: $app.printerHost, icon: "printer")
+            HStack(spacing: Space.sm) {
+                chip(t("settings.printer_epson"), app.printerBrand == .epson) { app.printerBrand = .epson }
+                chip(t("settings.printer_star"), app.printerBrand == .star) { app.printerBrand = .star }
+            }
         }
     }
 

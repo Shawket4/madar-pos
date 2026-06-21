@@ -31,6 +31,7 @@ internal class FileVault(dir: File) : HostVault {
     private val themeFile = File(dir, "theme.txt")
     private val localeFile = File(dir, "locale.txt")
     private val printerFile = File(dir, "printer.txt")
+    private val printerBrandFile = File(dir, "printer_brand.txt")
 
     override fun saveBlob(blob: ByteArray) { blobFile.writeBytes(blob) }
     override fun clearBlob() { blobFile.delete() }
@@ -51,4 +52,7 @@ internal class FileVault(dir: File) : HostVault {
     override var printerHost: String
         get() = if (printerFile.exists()) printerFile.readText() else ""
         set(value) { printerFile.writeText(value) }
+    override var printerBrand: String
+        get() = if (printerBrandFile.exists()) printerBrandFile.readText() else ""
+        set(value) { printerBrandFile.writeText(value) }
 }

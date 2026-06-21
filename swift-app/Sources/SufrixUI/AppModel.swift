@@ -116,6 +116,11 @@ final class AppModel: ObservableObject {
     @Published var printerHost: String {
         didSet { UserDefaults.standard.set(printerHost, forKey: Self.printerKey) }
     }
+    /// Printer command dialect — Epson (ESC/POS) vs Star (Star Line Mode). The two
+    /// are not byte-compatible; the teller picks their hardware in Settings.
+    @Published var printerBrand: PrinterBrand {
+        didSet { UserDefaults.standard.set(printerBrand == .star ? "star" : "epson", forKey: Self.printerBrandKey) }
+    }
     /// Print progress for the receipt confirmation's Print button.
     @Published private(set) var printState: PrintState = .idle
 
@@ -130,6 +135,7 @@ final class AppModel: ObservableObject {
         branchName = UserDefaults.standard.string(forKey: Self.branchNameKey) ?? ""
         themeMode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: Self.themeKey) ?? "") ?? .light
         printerHost = UserDefaults.standard.string(forKey: Self.printerKey) ?? ""
+        printerBrand = (UserDefaults.standard.string(forKey: Self.printerBrandKey) == "star") ? .star : .epson
         // Apply the saved locale to the core before any string resolves.
         let savedLocale = UserDefaults.standard.string(forKey: Self.localeKey)
         if let savedLocale { core.setLocale(locale: savedLocale) }
@@ -311,13 +317,14 @@ final class AppModel: ObservableObject {
             receipt: receipt,
             storeName: branchName,
             currency: session?.currencyCode ?? "",
-            width: 32
+            width: 32,
+            brand: printerBrand
         )
         do {
             try await core.sendToPrinter(host: host, port: port, bytes: bytes)
             // Pop the till on a cash sale (the original print, not a reprint).
             if receipt.isCash {
-                try? await core.sendToPrinter(host: host, port: port, bytes: core.cashDrawerKick())
+                try? await core.sendToPrinter(host: host, port: port, bytes: core.cashDrawerKick(brand: printerBrand))
             }
             printState = .printed
         } catch {
@@ -335,7 +342,8 @@ final class AppModel: ObservableObject {
             report: report,
             storeName: branchName,
             currency: session?.currencyCode ?? "",
-            width: 32
+            width: 32,
+            brand: printerBrand
         )
         do {
             try await core.sendToPrinter(host: host, port: port, bytes: bytes)
@@ -435,7 +443,7 @@ final class AppModel: ObservableObject {
         printState = .printing
         do {
             let bytes = try await core.renderOrderReceipt(
-                orderId: id, storeName: branchName, currency: session?.currencyCode ?? "", width: 32)
+                orderId: id, storeName: branchName, currency: session?.currencyCode ?? "", width: 32, brand: printerBrand)
             try await core.sendToPrinter(host: host, port: port, bytes: bytes)
             printState = .printed
         } catch {
@@ -457,11 +465,11 @@ final class AppModel: ObservableObject {
             showToast(t("receipt.no_printer"), icon: "exclamationmark.triangle", tone: .warning); return
         }
         let bytes = core.renderReceipt(
-            receipt: receipt, storeName: branchName, currency: session?.currencyCode ?? "", width: 32)
+            receipt: receipt, storeName: branchName, currency: session?.currencyCode ?? "", width: 32, brand: printerBrand)
         do {
             try await core.sendToPrinter(host: host, port: port, bytes: bytes)
             if receipt.isCash {
-                try? await core.sendToPrinter(host: host, port: port, bytes: core.cashDrawerKick())
+                try? await core.sendToPrinter(host: host, port: port, bytes: core.cashDrawerKick(brand: printerBrand))
             }
             showToast(t("receipt.printed"), icon: "checkmark.circle", tone: .success)
         } catch {
@@ -718,7 +726,7 @@ final class AppModel: ObservableObject {
         do {
             let report = try await core.shiftReportFor(shiftId: shiftId)
             let bytes = core.renderShiftReport(
-                report: report, storeName: branchName, currency: session?.currencyCode ?? "", width: 32)
+                report: report, storeName: branchName, currency: session?.currencyCode ?? "", width: 32, brand: printerBrand)
             try await core.sendToPrinter(host: host, port: port, bytes: bytes)
             showToast(t("receipt.printed"), icon: "checkmark.circle", tone: .success)
         } catch {
@@ -894,6 +902,7 @@ final class AppModel: ObservableObject {
     private static let themeKey = "sufrix.theme"
     private static let localeKey = "sufrix.locale"
     private static let printerKey = "sufrix.printer"
+    private static let printerBrandKey = "sufrix.printer_brand"
 
     /// App-private SQLite path under Application Support.
     private static func databasePath() -> String {

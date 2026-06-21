@@ -3,6 +3,7 @@ package app.sufrix
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import app.sufrix.core.SufrixCore
 import app.sufrix.core.defaultConfig
 import java.io.File
@@ -14,6 +15,9 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Draw behind the (now transparent) system bars; App's root applies the
+        // matching systemBars insets so content sits in the safe area.
+        enableEdgeToEdge()
         val cfg = defaultConfig().copy(
             dbPath = File(filesDir, "sufrix.sqlite").absolutePath,
             locale = Locale.getDefault().toLanguageTag(),
@@ -36,6 +40,7 @@ internal class FileVault(dir: File) : HostVault {
     private val themeFile = File(dir, "theme.txt")
     private val localeFile = File(dir, "locale.txt")
     private val printerFile = File(dir, "printer.txt")
+    private val printerBrandFile = File(dir, "printer_brand.txt")
 
     override fun saveBlob(blob: ByteArray) { blobFile.writeBytes(blob) }
     override fun clearBlob() { blobFile.delete() }
@@ -56,4 +61,7 @@ internal class FileVault(dir: File) : HostVault {
     override var printerHost: String
         get() = if (printerFile.exists()) printerFile.readText() else ""
         set(value) { printerFile.writeText(value) }
+    override var printerBrand: String
+        get() = if (printerBrandFile.exists()) printerBrandFile.readText() else ""
+        set(value) { printerBrandFile.writeText(value) }
 }

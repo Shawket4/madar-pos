@@ -27,6 +27,15 @@ pub enum Size {
     Double,
 }
 
+/// Which thermal-printer command dialect to emit. Epson (ESC/POS) and Star
+/// (Star Line Mode) are NOT byte-compatible — different alignment, character
+/// size, cut and drawer-kick commands. The host picks this in Settings.
+#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PrinterBrand {
+    Epson,
+    Star,
+}
+
 /// One printed line: visible text plus how to render it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Line {
@@ -83,8 +92,8 @@ pub struct ReceiptLabels {
 }
 
 /// Render a receipt to ESC/POS bytes ready to stream to a printer.
-pub fn escpos(receipt: &ReceiptView, ctx: &EscPosCtx) -> Vec<u8> {
-    encode(&layout(receipt, ctx))
+pub fn escpos(receipt: &ReceiptView, ctx: &EscPosCtx, brand: PrinterBrand) -> Vec<u8> {
+    encode_for(brand, &layout(receipt, ctx))
 }
 
 /// Build the visible line list — pure, no bytes. Golden-tested. Reproduces the
@@ -255,8 +264,9 @@ pub fn escpos_shift_report(
     currency: &str,
     width: u32,
     labels: &ShiftReportLabels,
+    brand: PrinterBrand,
 ) -> Vec<u8> {
-    encode(&layout_shift_report(report, store, currency, width, labels))
+    encode_for(brand, &layout_shift_report(report, store, currency, width, labels))
 }
 
 /// Build the Z-report's visible lines — pure, no bytes. Golden-tested.
@@ -355,6 +365,63 @@ pub fn encode(lines: &[Line]) -> Vec<u8> {
     b.extend_from_slice(&[LF, LF, LF]);
     b.extend_from_slice(&[GS, b'V', 66, 0]); // GS V 66 n — partial cut, feed n
     b
+}
+
+/// Dispatch to the right printer dialect.
+pub fn encode_for(brand: PrinterBrand, lines: &[Line]) -> Vec<u8> {
+    match brand {
+        PrinterBrand::Epson => encode(lines),
+        PrinterBrand::Star => encode_star(lines),
+    }
+}
+
+/// Cash-drawer kick for the chosen dialect.
+pub fn drawer_kick_for(brand: PrinterBrand) -> Vec<u8> {
+    match brand {
+        PrinterBrand::Epson => drawer_kick_bytes(),
+        PrinterBrand::Star => drawer_kick_star(),
+    }
+}
+
+/// Encode visible lines to **Star Line Mode** — Star's command set is NOT
+/// ESC/POS: alignment is `ESC GS a n` (not `ESC a`), character size is
+/// `ESC i h w` (not `GS !`), bold is `ESC E`/`ESC F` (a separate cancel code,
+/// not `ESC E n`), and the cut is `ESC d 3` (not `GS V`). `ESC @` init is shared.
+/// Deterministic — golden-tested. (Per Star's "Star Line Mode Command
+/// Specifications"; values match the StarPRNT / node-thermal-printer STAR set.)
+pub fn encode_star(lines: &[Line]) -> Vec<u8> {
+    let mut b: Vec<u8> = Vec::new();
+    b.extend_from_slice(&[ESC, b'@']); // ESC @ — initialize
+    for line in lines {
+        let a = match line.align {
+            Align::Left => 0,
+            Align::Center => 1,
+            Align::Right => 2,
+        };
+        b.extend_from_slice(&[ESC, GS, b'a', a]); // ESC GS a n — Star justification
+        // Star uses two codes: ESC E enables emphasis, ESC F cancels it.
+        b.extend_from_slice(&[ESC, if line.bold { b'E' } else { b'F' }]);
+        let (h, w) = match line.size {
+            Size::Normal => (0u8, 0u8),
+            Size::Double => (1u8, 1u8),
+        };
+        b.extend_from_slice(&[ESC, b'i', h, w]); // ESC i h w — Star character expansion
+        b.extend_from_slice(line.text.as_bytes());
+        b.push(LF);
+    }
+    // Reset to a sane state, feed, partial cut.
+    b.extend_from_slice(&[ESC, GS, b'a', 0]);
+    b.extend_from_slice(&[ESC, b'F']);
+    b.extend_from_slice(&[ESC, b'i', 0, 0]);
+    b.extend_from_slice(&[LF, LF, LF]);
+    b.extend_from_slice(&[ESC, b'd', 3]); // ESC d 3 — Star partial cut
+    b
+}
+
+/// Star Line Mode cash-drawer kick: `ESC BEL n t` pulses the drawer line
+/// (on/off times in ~2ms units). Distinct from Epson's `ESC p`.
+pub fn drawer_kick_star() -> Vec<u8> {
+    vec![ESC, 0x07, 0x0A, 0x0A] // ESC BEL 10 10
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -810,10 +877,11 @@ mod tests {
 
     #[test]
     fn escpos_equals_encode_of_layout() {
-        // The convenience wrapper is exactly encode(layout(..)).
+        // The convenience wrapper is exactly encode(layout(..)) for the brand.
         let r = cash_receipt();
         let c = ctx();
-        assert_eq!(escpos(&r, &c), encode(&layout(&r, &c)));
+        assert_eq!(escpos(&r, &c, PrinterBrand::Epson), encode(&layout(&r, &c)));
+        assert_eq!(escpos(&r, &c, PrinterBrand::Star), encode_star(&layout(&r, &c)));
     }
 
     // ── drawer kick exact bytes (decimal-form assertion) ─────────────────────
@@ -822,6 +890,51 @@ mod tests {
     fn drawer_kick_decimal_form_is_esc_p_0_25_250() {
         // ESC=27, 'p'=112, m=0, on=25, off=250.
         assert_eq!(drawer_kick_bytes(), vec![27, 112, 0, 25, 250]);
+    }
+
+    // ── Star Line Mode encoder (distinct command set from ESC/POS) ───────────
+
+    #[test]
+    fn star_encode_frames_with_init_and_star_partial_cut() {
+        let bytes = encode_star(&[Line::centered("HI")]);
+        // ESC @ init at the head; ESC d 3 (Star partial cut) at the tail — and
+        // NOT the ESC/POS GS V cut.
+        assert_eq!(&bytes[0..2], &[0x1B, b'@']);
+        assert_eq!(&bytes[bytes.len() - 3..], &[0x1B, b'd', 3]);
+        assert!(!bytes.windows(2).any(|w| w == [GS, b'V']));
+    }
+
+    #[test]
+    fn star_uses_star_alignment_size_and_bold_codes() {
+        let bytes = encode_star(&[Line { text: "BIG".into(), align: Align::Right, bold: true, size: Size::Double }]);
+        // ESC GS a 2 (Star right-justify), ESC i 1 1 (double), ESC E (emphasize on).
+        assert!(bytes.windows(4).any(|w| w == [ESC, GS, b'a', 2]));
+        assert!(bytes.windows(4).any(|w| w == [ESC, b'i', 1, 1]));
+        assert!(bytes.windows(2).any(|w| w == [ESC, b'E']));
+        // It must NOT emit the ESC/POS alignment/size codes.
+        assert!(!bytes.windows(3).any(|w| w == [ESC, b'a', 2]));
+        assert!(!bytes.windows(2).any(|w| w == [GS, b'!']));
+    }
+
+    #[test]
+    fn star_non_bold_emits_cancel_emphasis() {
+        let bytes = encode_star(&[Line::plain("x")]);
+        assert!(bytes.windows(2).any(|w| w == [ESC, b'F'])); // ESC F — cancel emphasis
+    }
+
+    #[test]
+    fn star_drawer_kick_is_esc_bel_pulse() {
+        assert_eq!(drawer_kick_star(), vec![0x1B, 0x07, 0x0A, 0x0A]);
+    }
+
+    #[test]
+    fn encode_for_dispatches_by_brand() {
+        let l = [Line::centered("Z")];
+        assert_eq!(encode_for(PrinterBrand::Epson, &l), encode(&l));
+        assert_eq!(encode_for(PrinterBrand::Star, &l), encode_star(&l));
+        assert_ne!(encode_for(PrinterBrand::Epson, &l), encode_for(PrinterBrand::Star, &l));
+        assert_eq!(drawer_kick_for(PrinterBrand::Epson), drawer_kick_bytes());
+        assert_eq!(drawer_kick_for(PrinterBrand::Star), drawer_kick_star());
     }
 
     // ── layout: conditional subtotal / tax / delivery-fee gating ──────────────
