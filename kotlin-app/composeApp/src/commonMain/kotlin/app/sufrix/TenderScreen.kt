@@ -42,6 +42,7 @@ import app.sufrix.ui.Space
 import app.sufrix.ui.StatusChip
 import app.sufrix.ui.BtnVariant
 import app.sufrix.ui.SufrixButton
+import app.sufrix.ui.SufrixTextField
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixMark
 import app.sufrix.ui.pressScale
@@ -85,6 +86,9 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf<String?>(null) }
     var tendered by remember { mutableStateOf(0L) }
+    var tip by remember { mutableStateOf(0L) }
+    var customerName by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         if (selected == null) {
@@ -95,8 +99,10 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
     val method: PaymentMethodView? = model.paymentMethods.firstOrNull { it.id == selected }
     val isCash = method?.isCash ?: false
     val total = model.cartTotals.totalMinor
-    val change = (tendered - total).coerceAtLeast(0L)
-    val canPlace = selected != null && !model.isPlacingOrder && (!isCash || tendered >= total)
+    // A tip on a cash order comes out of the same drawer → due with the bill.
+    val dueCash = total + (if (isCash) tip else 0L)
+    val change = (tendered - dueCash).coerceAtLeast(0L)
+    val canPlace = selected != null && !model.isPlacingOrder && (!isCash || tendered >= dueCash)
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.xl),
@@ -126,6 +132,17 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
             }
         }
 
+        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Text(t("order.customer"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            SufrixTextField(customerName, { customerName = it }, t("order.customer_hint"))
+            SufrixTextField(notes, { notes = it }, t("order.notes_hint"))
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Text(t("order.tip"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            AmountField(amountMinor = tip, onAmountMinor = { tip = it }, currencyCode = currency)
+        }
+
         if (isCash) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text(t("order.cash_received"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -142,6 +159,7 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
                 }
             }
             SummaryRow(t("order.total"), Money.format(total, currency), emphasized = true)
+            if (tip > 0) SummaryRow(t("order.tip"), Money.format(tip, currency))
             if (isCash) SummaryRow(t("order.change"), Money.format(change, currency))
         }
 
@@ -151,7 +169,14 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
             t("order.place_order"),
             {
                 val id = selected ?: return@SufrixButton
-                scope.launch { model.placeOrder(id, if (isCash) tendered else 0L) }
+                scope.launch {
+                    model.placeOrder(
+                        id, if (isCash) tendered else 0L,
+                        tipMinor = tip,
+                        customerName = customerName.ifBlank { null },
+                        notes = notes.ifBlank { null },
+                    )
+                }
             },
             loading = model.isPlacingOrder,
             enabled = canPlace,
@@ -212,6 +237,7 @@ private fun ReceiptConfirmation(model: AppModel, receipt: ReceiptView, currency:
             }
             SummaryRow(t("order.tax"), Money.format(receipt.taxMinor, currency))
             SummaryRow(t("order.total"), Money.format(receipt.totalMinor, currency), emphasized = true)
+            if (receipt.tipMinor > 0) SummaryRow(t("order.tip"), Money.format(receipt.tipMinor, currency))
             if (receipt.isCash) {
                 SummaryRow(t("order.cash_received"), Money.format(receipt.amountTenderedMinor, currency))
                 SummaryRow(t("order.change"), Money.format(receipt.changeMinor, currency))

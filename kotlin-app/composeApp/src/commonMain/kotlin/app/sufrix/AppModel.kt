@@ -7,6 +7,8 @@ import app.sufrix.core.AppRoute
 import app.sufrix.core.BranchView
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
+import app.sufrix.core.CheckoutInput
+import app.sufrix.core.CheckoutSplit
 import app.sufrix.core.AddonSelection
 import app.sufrix.core.CategoryView
 import app.sufrix.core.CoreException
@@ -247,10 +249,19 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     // ── checkout ───────────────────────────────────────────────────────────────
     /** Place the cart as an order via the core (online or queued offline). On
      *  success the core has emptied the cart; reload it and surface the receipt. */
-    suspend fun placeOrder(paymentMethodId: String, amountTenderedMinor: Long) {
+    suspend fun placeOrder(
+        paymentMethodId: String,
+        amountTenderedMinor: Long,
+        tipMinor: Long = 0L,
+        tipPaymentMethodId: String? = null,
+        customerName: String? = null,
+        notes: String? = null,
+        splits: List<CheckoutSplit> = emptyList(),
+    ) {
         isPlacingOrder = true; error = null
         try {
-            receipt = core.checkout(paymentMethodId, amountTenderedMinor)
+            val input = CheckoutInput(paymentMethodId, amountTenderedMinor, tipMinor, tipPaymentMethodId, customerName, notes, splits)
+            receipt = core.checkout(input)
             printState = PrintState.IDLE
             loadCart()
             refreshPending()

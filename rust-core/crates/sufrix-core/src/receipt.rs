@@ -235,6 +235,7 @@ mod tests {
             discount_minor: 0,
             tax_minor: 1750,
             total_minor: 14250,
+            tip_minor: 0,
             amount_tendered_minor: 15000,
             change_minor: 750,
             is_cash: true,

@@ -12,14 +12,20 @@ struct TenderView: View {
 
     @State private var selectedMethod: String?
     @State private var tenderedMinor: Int64 = 0
+    @State private var tipMinor: Int64 = 0
+    @State private var customerName = ""
+    @State private var notes = ""
 
     private var currency: String { app.session?.currencyCode ?? "" }
     private var method: PaymentMethodView? { app.paymentMethods.first { $0.id == selectedMethod } }
     private var isCash: Bool { method?.isCash ?? false }
     private var total: Int64 { app.cartTotals.totalMinor }
-    private var changeMinor: Int64 { max(0, tenderedMinor - total) }
+    /// A tip paid on a cash order comes out of the same drawer → due with the bill.
+    private var tipCash: Int64 { isCash ? tipMinor : 0 }
+    private var dueCash: Int64 { total + tipCash }
+    private var changeMinor: Int64 { max(0, tenderedMinor - dueCash) }
     private var canPlace: Bool {
-        selectedMethod != nil && !app.isPlacingOrder && (!isCash || tenderedMinor >= total)
+        selectedMethod != nil && !app.isPlacingOrder && (!isCash || tenderedMinor >= dueCash)
     }
 
     var body: some View {
@@ -85,6 +91,17 @@ struct TenderView: View {
                     }
                 }
 
+                VStack(alignment: .leading, spacing: Space.sm) {
+                    Text(t("order.customer")).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
+                    SufrixTextField(placeholder: t("order.customer_hint"), text: $customerName, icon: "person")
+                    SufrixTextField(placeholder: t("order.notes_hint"), text: $notes, icon: "text.bubble")
+                }
+
+                VStack(alignment: .leading, spacing: Space.sm) {
+                    Text(t("order.tip")).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
+                    AmountField(amountMinor: $tipMinor, currencyCode: currency)
+                }
+
                 if isCash {
                     VStack(alignment: .leading, spacing: Space.sm) {
                         Text(t("order.cash_received"))
@@ -103,6 +120,9 @@ struct TenderView: View {
                         }
                     }
                     SummaryRow(label: t("order.total"), value: Money.format(total, currency), emphasized: true)
+                    if tipMinor > 0 {
+                        SummaryRow(label: t("order.tip"), value: Money.format(tipMinor, currency))
+                    }
                     if isCash {
                         SummaryRow(label: t("order.change"), value: Money.format(changeMinor, currency))
                     }
@@ -114,7 +134,15 @@ struct TenderView: View {
 
                 SufrixButton(label: t("order.place_order"), icon: "checkmark", loading: app.isPlacingOrder) {
                     guard let id = selectedMethod else { return }
-                    Task { await app.placeOrder(paymentMethodId: id, amountTenderedMinor: isCash ? tenderedMinor : 0) }
+                    Task {
+                        await app.placeOrder(
+                            paymentMethodId: id,
+                            amountTenderedMinor: isCash ? tenderedMinor : 0,
+                            tipMinor: tipMinor,
+                            customerName: customerName.isEmpty ? nil : customerName,
+                            notes: notes.isEmpty ? nil : notes
+                        )
+                    }
                 }
                 .opacity(canPlace ? 1 : 0.5)
                 .allowsHitTesting(canPlace)
@@ -195,6 +223,9 @@ private struct ReceiptConfirmation: View {
                     }
                     SummaryRow(label: t("order.tax"), value: Money.format(receipt.taxMinor, currency))
                     SummaryRow(label: t("order.total"), value: Money.format(receipt.totalMinor, currency), emphasized: true)
+                    if receipt.tipMinor > 0 {
+                        SummaryRow(label: t("order.tip"), value: Money.format(receipt.tipMinor, currency))
+                    }
                     if receipt.isCash {
                         SummaryRow(label: t("order.cash_received"), value: Money.format(receipt.amountTenderedMinor, currency))
                         SummaryRow(label: t("order.change"), value: Money.format(receipt.changeMinor, currency))

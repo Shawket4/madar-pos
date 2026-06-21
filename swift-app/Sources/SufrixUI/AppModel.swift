@@ -204,11 +204,28 @@ final class AppModel: ObservableObject {
     // ── checkout ────────────────────────────────────────────────────────────────
     /// Place the cart as an order via the core (online or queued offline). On
     /// success the core has emptied the cart; we reload it and surface the receipt.
-    func placeOrder(paymentMethodId: String, amountTenderedMinor: Int64) async {
+    func placeOrder(
+        paymentMethodId: String,
+        amountTenderedMinor: Int64,
+        tipMinor: Int64 = 0,
+        tipPaymentMethodId: String? = nil,
+        customerName: String? = nil,
+        notes: String? = nil,
+        splits: [CheckoutSplit] = []
+    ) async {
         isPlacingOrder = true; errorMessage = nil
         defer { isPlacingOrder = false }
         do {
-            receipt = try await core.checkout(paymentMethodId: paymentMethodId, amountTenderedMinor: amountTenderedMinor)
+            let input = CheckoutInput(
+                paymentMethodId: paymentMethodId,
+                amountTenderedMinor: amountTenderedMinor,
+                tipMinor: tipMinor,
+                tipPaymentMethodId: tipPaymentMethodId,
+                customerName: customerName,
+                notes: notes,
+                splits: splits
+            )
+            receipt = try await core.checkout(input: input)
             printState = .idle
             loadCart()
             refreshPending()

@@ -50,6 +50,8 @@ pub struct ReceiptView {
     pub discount_minor: i64,
     pub tax_minor: i64,
     pub total_minor: i64,
+    /// Gratuity added on top of the total (0 when none).
+    pub tip_minor: i64,
     pub amount_tendered_minor: i64,
     pub change_minor: i64,
     pub is_cash: bool,
@@ -57,6 +59,30 @@ pub struct ReceiptView {
     /// sent to the server. The host hints "saved — will sync" vs "sent".
     pub queued_offline: bool,
     pub created_at: String,
+}
+
+/// One leg of a split payment (a method + the amount paid on it).
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct CheckoutSplit {
+    pub payment_method_id: String,
+    pub amount_minor: i64,
+}
+
+/// Everything the tender screen collects for a checkout.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct CheckoutInput {
+    /// The (primary) payment method id.
+    pub payment_method_id: String,
+    /// Cash handed over (for change); 0 / ignored for non-cash.
+    pub amount_tendered_minor: i64,
+    /// Gratuity on top of the total (0 = none).
+    pub tip_minor: i64,
+    /// Which method the tip is paid on (defaults to the order method).
+    pub tip_payment_method_id: Option<String>,
+    pub customer_name: Option<String>,
+    pub notes: Option<String>,
+    /// Per-method split legs (empty = single payment).
+    pub splits: Vec<CheckoutSplit>,
 }
 
 /// Everything the FFI needs to commit a checkout: the queued command + the
@@ -73,17 +99,17 @@ pub(crate) struct Prepared {
 /// Assemble an order from the current cart. Store reads only (no network).
 /// Errors if the cart is empty, the payment method is unknown, or the
 /// branch/shift ids are malformed.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare(
     store: &Store,
     locale: &str,
     branch_id: &str,
     shift_id: &str,
-    payment_method_id: &str,
-    amount_tendered_minor: i64,
+    input: &CheckoutInput,
     tax_rate: f64,
     now_rfc3339: String,
 ) -> CoreResult<Prepared> {
+    let payment_method_id = &input.payment_method_id;
+    let amount_tendered_minor = input.amount_tendered_minor;
     let lines = cart::lines(store)?;
     if lines.is_empty() {
         return Err(CoreError::Validation { field: "cart".into(), message: "cart is empty".into() });
@@ -101,6 +127,15 @@ pub(crate) fn prepare(
     let payment_method = raw.name.clone();
     let is_cash = raw.is_cash;
     let payment_label = display_label(store, locale, payment_method_id).unwrap_or_else(|| raw.name.clone());
+
+    // A tip reduces change only when it's paid IN CASH (default = the order
+    // method). A card tip leaves the cash drawer untouched.
+    let tip_minor = input.tip_minor.max(0);
+    let tip_is_cash = match &input.tip_payment_method_id {
+        Some(id) => raw_payment_method(store, id)?.map(|p| p.is_cash).unwrap_or(is_cash),
+        None => is_cash,
+    };
+    let cash_tip = if tip_is_cash { tip_minor } else { 0 };
 
     // Price through the engine (the money source of truth). Cash carries the
     // tender + change; non-cash records neither. The cart's discount applies
@@ -127,7 +162,7 @@ pub(crate) fn prepare(
         discount_value,
         tax_rate,
         amount_tendered: tendered,
-        cash_tip: 0,
+        cash_tip,
     });
 
     let order_id = uuid::Uuid::new_v4();
@@ -162,7 +197,7 @@ pub(crate) fn prepare(
         })
         .collect();
 
-    let mut request = models::CreateOrderRequest::new(branch_uuid, items, payment_method, shift_uuid);
+    let mut request = models::CreateOrderRequest::new(branch_uuid, items, payment_method.clone(), shift_uuid);
     request.subtotal = Some(Some(priced.subtotal_minor as i32));
     request.tax_amount = Some(Some(priced.tax_minor as i32));
     request.total_amount = Some(Some(priced.total_minor as i32));
@@ -170,6 +205,33 @@ pub(crate) fn prepare(
     if is_cash {
         request.amount_tendered = Some(Some(amount_tendered_minor as i32));
         request.change_given = Some(Some(priced.change_given_minor as i32));
+    }
+    // Tip, customer, notes (the backend prices the tip separately from the total).
+    if tip_minor > 0 {
+        request.tip_amount = Some(Some(tip_minor as i32));
+        let tip_method = input
+            .tip_payment_method_id
+            .as_ref()
+            .and_then(|id| raw_payment_method(store, id).ok().flatten())
+            .map(|p| p.name)
+            .unwrap_or_else(|| payment_method.clone());
+        request.tip_payment_method = Some(Some(tip_method));
+    }
+    request.customer_name = input.customer_name.clone().filter(|s| !s.trim().is_empty()).map(Some);
+    request.notes = input.notes.clone().filter(|s| !s.trim().is_empty()).map(Some);
+    // Split payments: resolve each leg's method to its raw name.
+    if !input.splits.is_empty() {
+        let legs: Vec<models::PaymentSplitInput> = input
+            .splits
+            .iter()
+            .filter_map(|s| {
+                let name = raw_payment_method(store, &s.payment_method_id).ok().flatten()?.name;
+                Some(models::PaymentSplitInput { amount: s.amount_minor as i32, method: name, reference: None })
+            })
+            .collect();
+        if !legs.is_empty() {
+            request.payment_splits = Some(Some(legs));
+        }
     }
     // Record the applied discount verbatim (the engine already clamped it).
     if discount_kind != DiscountKind::None {
@@ -197,6 +259,7 @@ pub(crate) fn prepare(
         discount_minor: priced.discount_minor,
         tax_minor: priced.tax_minor,
         total_minor: priced.total_minor,
+        tip_minor,
         amount_tendered_minor: if is_cash { amount_tendered_minor } else { 0 },
         change_minor: priced.change_given_minor,
         is_cash,
@@ -275,8 +338,40 @@ mod tests {
             .unwrap();
     }
 
+    fn mk_input(method: &str, tendered: i64) -> CheckoutInput {
+        CheckoutInput {
+            payment_method_id: method.into(),
+            amount_tendered_minor: tendered,
+            tip_minor: 0,
+            tip_payment_method_id: None,
+            customer_name: None,
+            notes: None,
+            splits: vec![],
+        }
+    }
+
     fn prep(store: &Store, method: &str, tendered: i64) -> CoreResult<Prepared> {
-        prepare(store, "en", BRANCH, SHIFT, method, tendered, 0.14, "2026-06-20T12:00:00+00:00".into())
+        prepare(store, "en", BRANCH, SHIFT, &mk_input(method, tendered), 0.14, "2026-06-20T12:00:00+00:00".into())
+    }
+
+    #[test]
+    fn cash_tip_reduces_change_and_records_tip_customer_notes() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        // total = 1000 + 14% tax = 1140; tendered 1500; cash tip 200 → change 160.
+        let mut input = mk_input(CASH, 1500);
+        input.tip_minor = 200;
+        input.customer_name = Some("Sara".into());
+        input.notes = Some("no sugar".into());
+        let p = prepare(&store, "en", BRANCH, SHIFT, &input, 0.14, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        assert_eq!(p.receipt.tip_minor, 200);
+        assert_eq!(p.receipt.change_minor, 160); // 1500 - 1140 - 200
+        let r = &p.command.request;
+        assert_eq!(r.tip_amount, Some(Some(200)));
+        assert_eq!(r.tip_payment_method, Some(Some("Cash".into()))); // defaults to order method
+        assert_eq!(r.customer_name, Some(Some("Sara".into())));
+        assert_eq!(r.notes, Some(Some("no sugar".into())));
     }
 
     #[test]
@@ -333,7 +428,7 @@ mod tests {
         seed_methods(&store);
         cart::add(&store, ITEM, "Latte", 1000).unwrap();
 
-        let p = prepare(&store, "ar", BRANCH, SHIFT, CASH, 2000, 0.0, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        let p = prepare(&store, "ar", BRANCH, SHIFT, &mk_input(CASH, 2000), 0.0, "2026-06-20T12:00:00+00:00".into()).unwrap();
         assert_eq!(p.command.request.payment_method, "Cash"); // raw name on the wire
         assert_eq!(p.receipt.payment_label, "نقدي"); // localized on the receipt
     }

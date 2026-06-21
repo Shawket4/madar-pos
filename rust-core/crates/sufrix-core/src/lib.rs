@@ -972,8 +972,7 @@ impl SufrixCore {
     /// the cart is empty, or the payment method is unknown.
     pub async fn checkout(
         &self,
-        payment_method_id: String,
-        amount_tendered_minor: i64,
+        input: checkout::CheckoutInput,
     ) -> Result<checkout::ReceiptView, CoreError> {
         let (branch_id, tax_rate) = {
             let g = self.session.read().unwrap_or_else(|e| e.into_inner());
@@ -996,8 +995,7 @@ impl SufrixCore {
             &self.current_locale(),
             &branch_id,
             &shift.id,
-            &payment_method_id,
-            amount_tendered_minor,
+            &input,
             tax_rate,
             now,
         )?;
