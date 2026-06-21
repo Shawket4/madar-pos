@@ -80,6 +80,8 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         private set
     /** Drives the settings screen (shown over the order screen). */
     var showSettings by mutableStateOf(false)
+    /** Drives the "More" overflow drawer (secondary nav-hub actions). */
+    var showMore by mutableStateOf(false)
     /** Network printer address ("host" or "host:port"; default port 9100). Empty
      *  = no printer configured. Set in Settings, persisted in the host vault. */
     var printerHost by mutableStateOf(vault.printerHost)
@@ -266,6 +268,8 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
             printState = PrintState.IDLE
             loadCart()
             refreshPending()
+            // Refresh the stats pill (the receipt already shows via reactive state).
+            loadHistory()
         } catch (e: CoreException) {
             error = humanMessage(e)
         } catch (e: Exception) {
@@ -323,9 +327,20 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Queued/in-flight command count — the sync chip badge. */
     var pendingCount by mutableStateOf(0)
         private set
+    /** Dead/stuck command count — the "needs attention" chip + danger badge. */
+    var syncFailed by mutableStateOf(0)
+        private set
+    /** Session connectivity — drives the offline banner + sync chip state. */
+    var isOnline by mutableStateOf(true)
+        private set
 
+    /** Refresh the sync chrome signals (chip counts + online) in one local read. */
     fun refreshPending() {
-        pendingCount = runCatching { core.pendingOutboxCount().toInt() }.getOrDefault(0)
+        runCatching { core.syncStatus() }.getOrNull()?.let {
+            pendingCount = it.pending.toInt()
+            syncFailed = it.failed.toInt()
+            isOnline = it.online
+        }
     }
     fun loadOutbox() {
         outbox = runCatching { core.listOutbox() }.getOrDefault(emptyList())
@@ -346,11 +361,20 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         private set
     var isLoadingHistory by mutableStateOf(false)
         private set
+    /** Live shift totals for the action-bar pill, derived from `history`. */
+    var shiftSalesMinor by mutableStateOf(0L)
+        private set
+    var shiftOrderCount by mutableStateOf(0)
+        private set
 
-    /** Load the current shift's orders (synced + queued). Best-effort. */
+    /** Load the current shift's orders (synced + queued). Best-effort. Also
+     *  refreshes the stats pill from the same list (voided excluded, in core). */
     suspend fun loadHistory() {
         isLoadingHistory = true
         history = runCatching { core.listShiftOrders() }.getOrDefault(emptyList())
+        val stats = core.shiftStats(history)
+        shiftSalesMinor = stats.salesMinor
+        shiftOrderCount = stats.orderCount.toInt()
         isLoadingHistory = false
     }
 

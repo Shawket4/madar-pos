@@ -36,6 +36,11 @@ struct OrderView: View {
                 theme.colors.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     OrderTopBar(app: app)
+                    if !app.isOnline {
+                        NoticeBanner(icon: "wifi.slash", text: t("chrome.offline_banner"), tone: .warning)
+                            .padding(.horizontal, Space.lg)
+                            .padding(.top, Space.sm)
+                    }
                     if let error = app.errorMessage {
                         NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
                             .padding(.horizontal, Space.lg)
@@ -116,10 +121,18 @@ struct OrderView: View {
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }
+            // More — overflow nav hub (close shift, sign out, …).
+            .sheet(isPresented: $app.showMore) {
+                MoreDrawer(app: app)
+                    .environment(\.theme, theme)
+                    .environment(\.localize, t)
+            }
         }
         .task {
             await app.reconcileShift()
             await app.loadCatalog()
+            app.refreshPending()
+            await app.loadHistory()
         }
     }
 
@@ -161,72 +174,20 @@ private struct OrderTopBar: View {
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
 
+    private var currency: String { app.session?.currencyCode ?? "" }
+
     var body: some View {
-        HStack(spacing: Space.md) {
+        HStack(spacing: Space.sm) {
             SufrixMark(size: 32)
             if let s = app.shift {
                 StatusChip(label: s.tellerName, icon: "person.fill", tone: .info)
             }
+            if app.shift?.isOpen == true { ShiftStatsPill(app: app, currency: currency) }
             Spacer(minLength: 0)
-            Button {
-                Haptics.selection()
-                app.showHistory = true
-            } label: {
-                Image(systemName: "list.bullet.rectangle")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(theme.colors.textMuted)
-            }
-            .buttonStyle(.pressable)
-            Button {
-                Haptics.selection()
-                app.loadOutbox()
-                app.showSync = true
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: app.pendingCount > 0 ? "arrow.triangle.2.circlepath" : "checkmark.icloud")
-                    if app.pendingCount > 0 { Text("\(app.pendingCount)") }
-                }
-                .font(.ui(13, .semibold))
-                .foregroundStyle(app.pendingCount > 0 ? theme.colors.warning : theme.colors.textMuted)
-            }
-            .buttonStyle(.pressable)
-            Button {
-                Haptics.selection()
-                app.refreshPending()
-                app.showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(theme.colors.textMuted)
-            }
-            .buttonStyle(.pressable)
-            Button {
-                Haptics.selection()
-                app.errorMessage = nil
-                app.showCloseShift = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "lock")
-                    Text(t("order.close_shift"))
-                }
-                .font(.ui(13, .semibold))
-                .foregroundStyle(theme.colors.textSecondary)
-            }
-            .buttonStyle(.pressable)
-            Button {
-                Haptics.selection()
-                // You can't sign out mid-shift — close the drawer first.
-                if app.hasOpenShift {
-                    app.flagError(t("settings.sign_out_shift_open"))
-                } else {
-                    app.signOut()
-                }
-            } label: {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(theme.colors.textMuted)
-            }
-            .buttonStyle(.pressable)
+            SyncChip(app: app)
+            barButton(icon: "list.bullet.rectangle") { app.showHistory = true }
+            barButton(icon: "gearshape") { app.refreshPending(); app.showSettings = true }
+            barButton(icon: "ellipsis") { app.refreshPending(); app.showMore = true }
         }
         .padding(.horizontal, Space.lg)
         .padding(.vertical, Space.md)
@@ -234,6 +195,182 @@ private struct OrderTopBar: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(theme.colors.border).frame(height: 1)
         }
+    }
+
+    private func barButton(icon: String, action: @escaping () -> Void) -> some View {
+        Button { Haptics.selection(); action() } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(theme.colors.textMuted)
+                .frame(width: 34, height: 34)
+                .background(theme.colors.surfaceAlt)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                    .strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+    }
+}
+
+/// Live shift totals — "EGP X · N orders" (voided excluded, summed in core).
+private struct ShiftStatsPill: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let currency: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(Money.format(app.shiftSalesMinor, currency))
+                .font(.money(11, .bold)).foregroundStyle(theme.colors.textPrimary)
+            Text("·").foregroundStyle(theme.colors.textMuted)
+            Text("\(app.shiftOrderCount) \(t("chrome.orders"))")
+                .font(.ui(11, .semibold)).foregroundStyle(theme.colors.textSecondary)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(theme.colors.surfaceAlt)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(theme.colors.borderLight, lineWidth: 1))
+    }
+}
+
+/// Sync status chip — offline / queued / stuck / syncing, hidden when idle and
+/// fully synced. Taps to the sync center. Mirrors Flutter's SyncStatusChip.
+private struct SyncChip: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    private enum State { case offline, stuck, syncing, idle }
+    private var state: State {
+        if !app.isOnline { return .offline }
+        if app.syncFailed > 0 { return .stuck }
+        if app.pendingCount > 0 { return .syncing }
+        return .idle
+    }
+
+    var body: some View {
+        if state != .idle {
+            Button {
+                Haptics.selection()
+                app.loadOutbox()
+                app.showSync = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+                    Text(label).font(.ui(11, .semibold))
+                }
+                .foregroundStyle(tone)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(toneBg)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.pressable)
+        }
+    }
+
+    private var label: String {
+        switch state {
+        case .offline: return app.pendingCount > 0
+            ? "\(t("chrome.offline")) · \(app.pendingCount) \(t("chrome.queued"))"
+            : t("chrome.offline")
+        case .stuck: return "\(t("chrome.needs_attention")) (\(app.syncFailed))"
+        case .syncing: return "\(t("chrome.syncing")) (\(app.pendingCount))"
+        case .idle: return ""
+        }
+    }
+    private var icon: String {
+        switch state {
+        case .offline: return "wifi.slash"
+        case .stuck: return "exclamationmark.triangle"
+        case .syncing: return "arrow.triangle.2.circlepath"
+        case .idle: return "checkmark"
+        }
+    }
+    private var tone: Color {
+        switch state {
+        case .offline, .syncing: return theme.colors.warning
+        case .stuck: return theme.colors.danger
+        case .idle: return theme.colors.textMuted
+        }
+    }
+    private var toneBg: Color {
+        switch state {
+        case .offline, .syncing: return theme.colors.warningBg
+        case .stuck: return theme.colors.dangerBg
+        case .idle: return theme.colors.surfaceAlt
+        }
+    }
+}
+
+/// The "More" overflow drawer — secondary nav-hub actions that don't fit the
+/// bar. Mirrors Flutter's ActionDrawer (a shift-status header + action rows).
+private struct MoreDrawer: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Capsule().fill(theme.colors.border).frame(width: 36, height: 4)
+                .padding(.top, Space.sm).padding(.bottom, Space.md)
+            if let s = app.shift {
+                HStack(spacing: Space.sm) {
+                    Circle().fill(app.isOnline ? theme.colors.success : theme.colors.warning)
+                        .frame(width: 8, height: 8)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(s.tellerName).font(.ui(14, .bold)).foregroundStyle(theme.colors.textPrimary)
+                        Text(app.isOnline ? t("chrome.online") : t("chrome.offline"))
+                            .font(.ui(11)).foregroundStyle(theme.colors.textSecondary)
+                    }
+                    Spacer()
+                }
+                .padding(Space.md)
+                .background(theme.colors.surfaceAlt)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+                .padding(.horizontal, Space.lg)
+            }
+            VStack(spacing: Space.sm) {
+                row(icon: "lock", label: t("order.close_shift"), tone: theme.colors.danger) {
+                    app.showMore = false; app.errorMessage = nil; app.showCloseShift = true
+                }
+                row(icon: "gearshape", label: t("settings.title"), tone: theme.colors.textPrimary) {
+                    app.showMore = false; app.refreshPending(); app.showSettings = true
+                }
+                row(icon: "rectangle.portrait.and.arrow.right", label: t("settings.sign_out"), tone: theme.colors.textPrimary) {
+                    // You can't sign out mid-shift — close the drawer first.
+                    if app.hasOpenShift {
+                        app.flagError(t("settings.sign_out_shift_open"))
+                    } else {
+                        app.showMore = false; app.signOut()
+                    }
+                }
+            }
+            .padding(Space.lg)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: 460)
+        .frame(maxWidth: .infinity)
+        .background(theme.colors.bg)
+    }
+
+    private func row(icon: String, label: String, tone: Color, action: @escaping () -> Void) -> some View {
+        Button { Haptics.selection(); action() } label: {
+            HStack(spacing: Space.md) {
+                Image(systemName: icon).font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(tone).frame(width: 28)
+                Text(label).font(.ui(15, .semibold)).foregroundStyle(tone)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.colors.textMuted)
+            }
+            .padding(.horizontal, Space.md).padding(.vertical, 14)
+            .background(theme.colors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                .strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
     }
 }
 

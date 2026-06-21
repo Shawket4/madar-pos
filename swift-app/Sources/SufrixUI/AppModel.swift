@@ -66,6 +66,8 @@ final class AppModel: ObservableObject {
     }
     /// Drives the settings screen (presented over the order screen).
     @Published var showSettings = false
+    /// Drives the "More" overflow drawer (secondary nav-hub actions).
+    @Published var showMore = false
     /// Network printer address ("host" or "host:port"; default port 9100). Empty
     /// = no printer configured. Set in Settings, persisted in UserDefaults.
     @Published var printerHost: String {
@@ -229,6 +231,9 @@ final class AppModel: ObservableObject {
             printState = .idle
             loadCart()
             refreshPending()
+            // Refresh the stats pill in the background (non-blocking) so the
+            // new sale shows without delaying the receipt confirmation.
+            Task { await loadHistory() }
         } catch {
             errorMessage = humanMessage(error)
         }
@@ -279,10 +284,18 @@ final class AppModel: ObservableObject {
     @Published private(set) var outbox: [OutboxItemView] = []
     /// Queued/in-flight command count — the sync chip badge.
     @Published private(set) var pendingCount: Int = 0
+    /// Dead/stuck command count — the "needs attention" chip + danger badge.
+    @Published private(set) var syncFailed: Int = 0
+    /// Session connectivity — drives the offline banner + sync chip state.
+    @Published private(set) var isOnline: Bool = true
 
-    /// Refresh just the pending count (the action-bar sync chip).
+    /// Refresh the sync chrome signals (chip counts + online) in one local read.
     func refreshPending() {
-        pendingCount = Int((try? core.pendingOutboxCount()) ?? 0)
+        if let s = try? core.syncStatus() {
+            pendingCount = Int(s.pending)
+            syncFailed = Int(s.failed)
+            isOnline = s.online
+        }
     }
     /// Load the full outbox (for the sync sheet) + the count.
     func loadOutbox() {
@@ -304,12 +317,19 @@ final class AppModel: ObservableObject {
     @Published var showHistory = false
     @Published private(set) var history: [OrderSummaryView] = []
     @Published private(set) var isLoadingHistory = false
+    /// Live shift totals for the action-bar pill, derived from `history`.
+    @Published private(set) var shiftSalesMinor: Int64 = 0
+    @Published private(set) var shiftOrderCount: Int = 0
 
-    /// Load the current shift's orders (synced + queued). Best-effort.
+    /// Load the current shift's orders (synced + queued). Best-effort. Also
+    /// refreshes the stats pill from the same list (voided excluded, in core).
     func loadHistory() async {
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         history = (try? await core.listShiftOrders()) ?? []
+        let stats = core.shiftStats(orders: history)
+        shiftSalesMinor = stats.salesMinor
+        shiftOrderCount = Int(stats.orderCount)
     }
 
     /// Void a synced order (queues offline). Reloads history on success so the

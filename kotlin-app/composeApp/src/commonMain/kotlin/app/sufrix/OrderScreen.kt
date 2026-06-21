@@ -92,6 +92,8 @@ fun OrderScreen(model: AppModel) {
     LaunchedEffect(Unit) {
         model.reconcileShift()
         model.loadCatalog()
+        model.refreshPending()
+        model.loadHistory()
     }
 
     val visible = model.menuItems
@@ -103,6 +105,11 @@ fun OrderScreen(model: AppModel) {
         val wide = maxWidth >= 760.dp
         Column(Modifier.fillMaxSize()) {
             OrderTopBar(model)
+            if (!model.isOnline) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
+                    NoticeBanner(t("chrome.offline_banner"), ChipTone.WARNING)
+                }
+            }
             model.error?.let {
                 Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
                     NoticeBanner(it, ChipTone.DANGER)
@@ -178,6 +185,78 @@ fun OrderScreen(model: AppModel) {
 
         // Item customization sheet.
         model.detailItem?.let { ItemDetailSheet(model, it) { model.closeItemDetail() } }
+
+        // "More" overflow drawer — scrim (tap to dismiss) + bottom-sheet panel.
+        if (model.showMore) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { model.showMore = false })
+            MoreDrawer(model, Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+/** The "More" overflow drawer — secondary nav-hub actions that don't fit the
+ *  bar (close shift, settings, sign out). Mirrors Flutter's ActionDrawer. */
+@Composable
+private fun MoreDrawer(model: AppModel, modifier: Modifier = Modifier) {
+    val c = sufrixColors()
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = Radii.lg, topEnd = Radii.lg)).background(c.bg)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+            .padding(bottom = Space.lg),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.padding(top = Space.sm, bottom = Space.md).size(width = 36.dp, height = 4.dp)
+            .clip(CircleShape).background(c.border))
+        model.shift?.let { s ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.lg).clip(RoundedCornerShape(Radii.md))
+                    .background(c.surfaceAlt).padding(Space.md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (model.isOnline) c.success else c.warning))
+                Column {
+                    Text(s.tellerName, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(if (model.isOnline) t("chrome.online") else t("chrome.offline"),
+                        color = c.textSecondary, fontFamily = SufrixFont, fontSize = 11.sp)
+                }
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            MoreRow("🔒", t("order.close_shift"), c.danger) {
+                model.showMore = false; model.error = null; model.showCloseShift = true
+            }
+            MoreRow("⚙", t("settings.title"), c.textPrimary) {
+                model.showMore = false; model.refreshPending(); model.showSettings = true
+            }
+            MoreRow("⎋", t("home.sign_out"), c.textPrimary) {
+                // You can't sign out mid-shift — close the drawer first.
+                if (model.hasOpenShift) model.flagError(model.t("settings.sign_out_shift_open"))
+                else { model.showMore = false; model.signOut() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreRow(glyph: String, label: String, tone: Color, onClick: () -> Unit) {
+    val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
+            .border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            }
+            .padding(horizontal = Space.md, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
+    ) {
+        Text(glyph, color = tone, fontSize = 15.sp)
+        Text(label, color = tone, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Box(Modifier.weight(1f))
+        Text("›", color = c.textMuted, fontSize = 15.sp)
     }
 }
 
@@ -185,78 +264,91 @@ fun OrderScreen(model: AppModel) {
 @Composable
 private fun OrderTopBar(model: AppModel) {
     val c = sufrixColors()
-    val haptic = LocalHapticFeedback.current
-    val interaction = remember { MutableInteractionSource() }
+    val currency = model.session?.currencyCode ?: ""
     Column(Modifier.fillMaxWidth().background(c.surface)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             SufrixMark(size = 32.dp)
             model.shift?.let { StatusChip(it.tellerName, ChipTone.INFO) }
+            if (model.shift?.isOpen == true) ShiftStatsPill(model, currency)
             Box(Modifier.weight(1f))
-            Text(
-                "≣", color = c.textMuted, fontSize = 19.sp,
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() }, indication = null,
-                ) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    model.showHistory = true
-                },
-            )
-            Text(
-                if (model.pendingCount > 0) "⟳ ${model.pendingCount}" else "✓",
-                color = if (model.pendingCount > 0) c.warning else c.textMuted,
-                fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() }, indication = null,
-                ) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    model.loadOutbox()
-                    model.showSync = true
-                },
-            )
-            Text(
-                "⚙", color = c.textMuted, fontSize = 18.sp,
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() }, indication = null,
-                ) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    model.refreshPending()
-                    model.showSettings = true
-                },
-            )
-            Text(
-                t("order.close_shift"),
-                color = c.textSecondary, fontFamily = SufrixFont,
-                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() }, indication = null,
-                ) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    model.error = null
-                    model.showCloseShift = true
-                },
-            )
-            Text(
-                t("home.sign_out"),
-                color = c.textMuted, fontFamily = SufrixFont,
-                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                modifier = Modifier.pressScale(interaction).clickable(
-                    interactionSource = interaction, indication = null,
-                ) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    // You can't sign out mid-shift — close the drawer first.
-                    if (model.hasOpenShift) {
-                        model.flagError(model.t("settings.sign_out_shift_open"))
-                    } else {
-                        model.signOut()
-                    }
-                },
-            )
+            SyncChip(model)
+            BarButton("≣") { model.showHistory = true }
+            BarButton("⚙") { model.refreshPending(); model.showSettings = true }
+            BarButton("⋯") { model.refreshPending(); model.showMore = true }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+    }
+}
+
+/** A squircle icon-glyph button for the action bar (matches the chip radius). */
+@Composable
+private fun BarButton(glyph: String, onClick: () -> Unit) {
+    val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
+    Box(
+        Modifier.size(34.dp).clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
+            .border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(glyph, color = c.textMuted, fontSize = 16.sp)
+    }
+}
+
+/** Live shift totals — "EGP X · N orders" (voided excluded, summed in core). */
+@Composable
+private fun ShiftStatsPill(model: AppModel, currency: String) {
+    val c = sufrixColors()
+    Row(
+        Modifier.clip(CircleShape).background(c.surfaceAlt).border(1.dp, c.borderLight, CircleShape)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(Money.format(model.shiftSalesMinor, currency), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Text("·", color = c.textMuted, fontSize = 11.sp)
+        Text("${model.shiftOrderCount} ${t("chrome.orders")}", color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+    }
+}
+
+/** Sync status chip — offline / stuck / syncing, hidden when idle + fully
+ *  synced. Taps to the sync center. Mirrors Flutter's SyncStatusChip. */
+@Composable
+private fun SyncChip(model: AppModel) {
+    val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
+    val state = when {
+        !model.isOnline -> "offline"
+        model.syncFailed > 0 -> "stuck"
+        model.pendingCount > 0 -> "syncing"
+        else -> "idle"
+    }
+    if (state == "idle") return
+    val label = when (state) {
+        "offline" -> if (model.pendingCount > 0) "${t("chrome.offline")} · ${model.pendingCount} ${t("chrome.queued")}" else t("chrome.offline")
+        "stuck" -> "${t("chrome.needs_attention")} (${model.syncFailed})"
+        else -> "${t("chrome.syncing")} (${model.pendingCount})"
+    }
+    val glyph = if (state == "syncing") "⟳" else "⚠"
+    val fg = if (state == "stuck") c.danger else c.warning
+    val bg = if (state == "stuck") c.dangerBg else c.warningBg
+    Row(
+        Modifier.clip(CircleShape).background(bg)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); model.loadOutbox(); model.showSync = true
+            }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(glyph, color = fg, fontSize = 12.sp)
+        Text(label, color = fg, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
     }
 }
 
