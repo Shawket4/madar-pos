@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -38,7 +42,10 @@ import androidx.compose.ui.unit.sp
 import app.sufrix.core.AddonSelection
 import app.sufrix.core.ItemAddonView
 import app.sufrix.core.MenuItemView
+import app.sufrix.ui.ChipTone
 import app.sufrix.ui.Money
+import app.sufrix.ui.StatusChip
+import app.sufrix.ui.pressScale
 import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
 import app.sufrix.ui.SufrixFont
@@ -58,6 +65,7 @@ private data class Group(
 // Item customization — size, addons (per slot + global types), optional fields.
 // Prices come pre-resolved from the core (list_item_addons); this only displays
 // and sums. Full-screen over the order screen. Mirror of the SwiftUI ItemDetailView.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     val c = sufrixColors()
@@ -232,13 +240,12 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
             if (fields.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     SectionTitle(t("order.optionals"))
-                    Card {
-                        fields.forEachIndexed { i, f ->
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        fields.forEach { f ->
                             val on = f.id in optionals
-                            CheckRow(f.name, if (f.priceMinor > 0) "+${Money.format(f.priceMinor, currency)}" else null, on) {
+                            AddonOptionChip(f.name, f.priceMinor, on, multi = true, currency) {
                                 optionals = if (on) optionals - f.id else optionals + f.id
                             }
-                            if (i < fields.size - 1) Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
                         }
                     }
                 }
@@ -295,6 +302,7 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AddonGroupCard(
     g: Group,
@@ -307,54 +315,103 @@ private fun AddonGroupCard(
     onInc: (String) -> Unit,
     onDec: (String) -> Unit,
 ) {
-    val c = sufrixColors()
+    val count = if (g.isMulti) selectedMulti.size else (if (selectedSingle != null) 1 else 0)
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             SectionTitle(g.title)
-            if (g.isRequired) Text("•", color = c.danger, fontSize = 14.sp)
+            if (g.isRequired) StatusChip(t("order.required"), ChipTone.DANGER)
+            if (g.isMulti && g.maxSel != null) StatusChip("≤${g.maxSel}", ChipTone.NEUTRAL)
+            Box(Modifier.weight(1f))
+            if (count > 0) StatusChip("$count", ChipTone.ACCENT)
         }
-        Card {
-            g.addons.forEachIndexed { i, a ->
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            g.addons.forEach { a ->
                 val selected = if (g.isMulti) selectedMulti.containsKey(a.addonItemId) else selectedSingle == a.addonItemId
-                Row(
-                    Modifier.fillMaxWidth().clickable {
+                val price = charged(a.addonItemId)
+                if (g.isMulti && selected) {
+                    AddonQtyChip(a.name, price, selectedMulti[a.addonItemId] ?: 1, currency, { onDec(a.addonItemId) }, { onInc(a.addonItemId) })
+                } else {
+                    AddonOptionChip(a.name, price, selected, g.isMulti, currency) {
                         if (g.isMulti) onToggleMulti(a.addonItemId) else onToggleSingle(a.addonItemId)
-                    }.padding(vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.md),
-                ) {
-                    Text(
-                        if (g.isMulti) (if (selected) "◼" else "◻") else (if (selected) "●" else "○"),
-                        color = if (selected) c.accent else c.textMuted, fontSize = 16.sp,
-                    )
-                    Text(a.name, color = c.textPrimary, fontFamily = SufrixFont, fontSize = 14.sp)
-                    Box(Modifier.weight(1f))
-                    val price = charged(a.addonItemId)
-                    if (price > 0) Text("+${Money.format(price, currency)}", color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    if (g.isMulti && selected) {
-                        Spacer(Modifier.size(Space.sm))
-                        MiniStepper(selectedMulti[a.addonItemId] ?: 1, onDec = { onDec(a.addonItemId) }, onInc = { onInc(a.addonItemId) })
                     }
                 }
-                if (i < g.addons.size - 1) Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
             }
         }
     }
 }
 
+/** A selectable addon chip (Flutter OptionChip): accent fill when selected. */
 @Composable
-private fun CheckRow(name: String, price: String?, on: Boolean, onToggle: () -> Unit) {
+private fun AddonOptionChip(name: String, price: Long, selected: Boolean, multi: Boolean, currency: String, onClick: () -> Unit) {
+    val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.pressScale(interaction).clip(RoundedCornerShape(Radii.xs))
+            .background(if (selected) c.accent else c.surfaceAlt)
+            .border(1.dp, if (selected) Color.Transparent else c.border, RoundedCornerShape(Radii.xs))
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            }
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (multi && !selected) {
+            Text("＋", color = c.textPrimary.copy(alpha = 0.6f), fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        }
+        Text(name, color = if (selected) c.textOnAccent else c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        if (price > 0) PricePill(price, selected, currency)
+    }
+}
+
+/** A selected multi-select chip with an inline qty stepper (Flutter QtyChip). */
+@Composable
+private fun AddonQtyChip(name: String, price: Long, qty: Int, currency: String, onDec: () -> Unit, onInc: () -> Unit) {
     val c = sufrixColors()
     Row(
-        Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 11.dp),
+        Modifier.clip(RoundedCornerShape(Radii.xs)).background(c.accent).padding(horizontal = 4.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.md),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(if (on) "◼" else "◻", color = if (on) c.accent else c.textMuted, fontSize = 16.sp)
-        Text(name, color = c.textPrimary, fontFamily = SufrixFont, fontSize = 14.sp)
-        Box(Modifier.weight(1f))
-        price?.let { Text(it, color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
+        ChipStep("−", onDec)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(name, color = c.textOnAccent, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            if (price > 0) {
+                Text("+${Money.format(price * qty, currency)}", color = c.textOnAccent.copy(alpha = 0.85f), fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+            }
+        }
+        Text(
+            "$qty", color = c.textOnAccent, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 11.sp,
+            modifier = Modifier.clip(CircleShape).background(c.textOnAccent.copy(alpha = 0.22f)).padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+        ChipStep("+", onInc)
     }
+}
+
+@Composable
+private fun ChipStep(glyph: String, onClick: () -> Unit) {
+    val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
+    Box(
+        Modifier.size(width = 24.dp, height = 30.dp).clickable {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(glyph, color = c.textOnAccent, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+    }
+}
+
+/** The little "+price" pill inside a chip. */
+@Composable
+private fun PricePill(price: Long, on: Boolean, currency: String) {
+    val c = sufrixColors()
+    Text(
+        "+${Money.format(price, currency)}", color = if (on) c.textOnAccent else c.accent,
+        fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+        modifier = Modifier.clip(CircleShape).background(if (on) c.textOnAccent.copy(alpha = 0.2f) else c.accentBg).padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 /** Recipe quantity: whole numbers without a decimal, else the shortest form. */

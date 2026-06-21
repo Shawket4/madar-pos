@@ -534,7 +534,7 @@ private struct CartLineRow: View {
 }
 
 /// A minimal wrapping (flow) layout — pills/chips that wrap to the next line.
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 4
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

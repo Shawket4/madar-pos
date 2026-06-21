@@ -293,88 +293,127 @@ struct ItemDetailView: View {
 
     private func groupCard(_ g: Group) -> some View {
         VStack(alignment: .leading, spacing: Space.sm) {
-            HStack(spacing: Space.sm) {
+            HStack(spacing: Space.xs) {
                 sectionTitle(g.title)
-                if g.isRequired {
-                    Text("•").foregroundStyle(theme.colors.danger)
-                }
+                if g.isRequired { StatusChip(label: t("order.required"), tone: .danger) }
+                if g.isMulti, let mx = g.maxSel { StatusChip(label: "≤\(mx)", tone: .neutral) }
+                Spacer(minLength: 0)
+                let count = selectedCount(g)
+                if count > 0 { StatusChip(label: "\(count)", tone: .accent) }
             }
-            VStack(spacing: 0) {
-                ForEach(Array(g.addons.enumerated()), id: \.element.addonItemId) { idx, a in
-                    addonRow(g, a)
-                    if idx < g.addons.count - 1 { Rectangle().fill(theme.colors.borderLight).frame(height: 1) }
-                }
+            FlowLayout(spacing: Space.sm) {
+                ForEach(g.addons, id: \.addonItemId) { a in addonChip(g, a) }
             }
-            .padding(.horizontal, Space.md)
-            .background(theme.colors.surface)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                    .strokeBorder(theme.colors.border, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
     }
 
-    private func addonRow(_ g: Group, _ a: ItemAddonView) -> some View {
+    @ViewBuilder private func addonChip(_ g: Group, _ a: ItemAddonView) -> some View {
         let selected = g.isMulti ? (multi[g.id]?[a.addonItemId] != nil) : (single[g.id] == a.addonItemId)
-        let qtyVal = multi[g.id]?[a.addonItemId] ?? 1
-        return HStack(spacing: Space.md) {
-            Image(systemName: g.isMulti
-                  ? (selected ? "checkmark.square.fill" : "square")
-                  : (selected ? "largecircle.fill.circle" : "circle"))
-                .foregroundStyle(selected ? theme.colors.accent : theme.colors.textMuted)
-            Text(a.name).font(.ui(14)).foregroundStyle(theme.colors.textPrimary)
-            Spacer(minLength: Space.sm)
-            if a.chargedPriceMinor > 0 {
-                Text("+\(Money.format(a.chargedPriceMinor, currency))")
-                    .font(.money(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
-            }
-            if g.isMulti && selected {
-                miniStepper(qtyVal, dec: { decMulti(g, a.addonItemId) }, inc: { incMulti(g, a.addonItemId) })
-            }
+        if g.isMulti, selected {
+            qtyChip(g, a, qty: multi[g.id]?[a.addonItemId] ?? 1)
+        } else {
+            optionChip(g, a, selected: selected)
         }
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
-        .onTapGesture {
+    }
+
+    /// A selectable addon chip (Flutter OptionChip): accent fill when selected.
+    private func optionChip(_ g: Group, _ a: ItemAddonView, selected: Bool) -> some View {
+        Button {
             Haptics.selection()
             if g.isMulti { toggleMulti(g, a.addonItemId) } else { toggleSingle(g, a.addonItemId) }
+        } label: {
+            HStack(spacing: 6) {
+                if g.isMulti, !selected {
+                    Image(systemName: "plus").font(.system(size: 10, weight: .bold)).opacity(0.6)
+                }
+                Text(a.name).font(.ui(13, .semibold))
+                if a.chargedPriceMinor > 0 { pricePill(a.chargedPriceMinor, on: selected) }
+            }
+            .foregroundStyle(selected ? theme.colors.textOnAccent : theme.colors.textPrimary)
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(selected ? theme.colors.accent : theme.colors.surfaceAlt)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radii.xs, style: .continuous)
+                    .strokeBorder(selected ? Color.clear : theme.colors.border, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radii.xs, style: .continuous))
         }
+        .buttonStyle(.pressable(scale: 0.97))
+    }
+
+    /// A selected multi-select chip with an inline qty stepper (Flutter QtyChip).
+    private func qtyChip(_ g: Group, _ a: ItemAddonView, qty: Int) -> some View {
+        HStack(spacing: 2) {
+            chipStep("minus") { decMulti(g, a.addonItemId) }
+            VStack(spacing: 0) {
+                Text(a.name).font(.ui(12, .semibold))
+                if a.chargedPriceMinor > 0 {
+                    Text("+\(Money.format(a.chargedPriceMinor * Int64(qty), currency))")
+                        .font(.money(9.5, .bold)).opacity(0.85)
+                }
+            }
+            Text("\(qty)").font(.ui(11, .heavy))
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(theme.colors.textOnAccent.opacity(0.22))
+                .clipShape(Capsule())
+            chipStep("plus") { incMulti(g, a.addonItemId) }
+        }
+        .foregroundStyle(theme.colors.textOnAccent)
+        .padding(.horizontal, 4).padding(.vertical, 3)
+        .background(theme.colors.accent)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.xs, style: .continuous))
+    }
+
+    private func chipStep(_ symbol: String, _ action: @escaping () -> Void) -> some View {
+        Button { Haptics.selection(); action() } label: {
+            Image(systemName: symbol).font(.system(size: 11, weight: .bold))
+                .foregroundStyle(theme.colors.textOnAccent).frame(width: 24, height: 32)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The little "+price" pill inside a chip.
+    private func pricePill(_ minor: Int64, on: Bool) -> some View {
+        Text("+\(Money.format(minor, currency))")
+            .font(.money(10.5, .bold))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(on ? theme.colors.textOnAccent.opacity(0.2) : theme.colors.accentBg)
+            .foregroundStyle(on ? theme.colors.textOnAccent : theme.colors.accent)
+            .clipShape(Capsule())
     }
 
     private var optionalsSection: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             sectionTitle(t("order.optionals"))
-            VStack(spacing: 0) {
-                let fields = item.optionalFields.filter { $0.isActive }
-                ForEach(Array(fields.enumerated()), id: \.element.id) { idx, f in
-                    let on = optionals.contains(f.id)
-                    HStack(spacing: Space.md) {
-                        Image(systemName: on ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(on ? theme.colors.accent : theme.colors.textMuted)
-                        Text(f.name).font(.ui(14)).foregroundStyle(theme.colors.textPrimary)
-                        Spacer(minLength: Space.sm)
-                        if f.priceMinor > 0 {
-                            Text("+\(Money.format(f.priceMinor, currency))")
-                                .font(.money(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
-                        }
-                    }
-                    .padding(.vertical, 11)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        Haptics.selection()
-                        if optionals.contains(f.id) { optionals.remove(f.id) } else { optionals.insert(f.id) }
-                    }
-                    if idx < fields.count - 1 { Rectangle().fill(theme.colors.borderLight).frame(height: 1) }
+            FlowLayout(spacing: Space.sm) {
+                ForEach(item.optionalFields.filter { $0.isActive }, id: \.id) { f in
+                    optionalChip(f)
                 }
             }
-            .padding(.horizontal, Space.md)
-            .background(theme.colors.surface)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                    .strokeBorder(theme.colors.border, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
+    }
+
+    private func optionalChip(_ f: OptionalFieldView) -> some View {
+        let on = optionals.contains(f.id)
+        return Button {
+            Haptics.selection()
+            if on { optionals.remove(f.id) } else { optionals.insert(f.id) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.system(size: 12))
+                Text(f.name).font(.ui(13, .semibold))
+                if f.priceMinor > 0 { pricePill(f.priceMinor, on: on) }
+            }
+            .foregroundStyle(on ? theme.colors.textOnAccent : theme.colors.textPrimary)
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(on ? theme.colors.accent : theme.colors.surfaceAlt)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radii.xs, style: .continuous)
+                    .strokeBorder(on ? Color.clear : theme.colors.border, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radii.xs, style: .continuous))
+        }
+        .buttonStyle(.pressable(scale: 0.97))
     }
 
     private var footer: some View {
