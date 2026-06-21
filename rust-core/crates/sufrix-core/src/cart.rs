@@ -24,6 +24,8 @@ use crate::store::Store;
 pub(crate) const K_CART: &str = "cart:lines";
 /// kv key — the selected discount id (empty = none).
 pub(crate) const K_DISCOUNT: &str = "cart:discount";
+/// kv key — parked/held carts (drafts) as a JSON array.
+pub(crate) const K_DRAFTS: &str = "cart:drafts";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct StoredAddon {
@@ -521,6 +523,86 @@ pub(crate) fn clear(store: &Store) -> CoreResult<()> {
     save(store, &[])
 }
 
+// ── drafts (parked / held carts) ─────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct StoredDraft {
+    id: String,
+    name: String,
+    created_at: String,
+    lines: Vec<StoredLine>,
+}
+
+/// A parked cart, summarized for the drafts list.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct DraftView {
+    pub id: String,
+    pub name: String,
+    pub item_count: i64,
+    pub total_minor: i64,
+    pub created_at: String,
+}
+
+fn load_drafts(store: &Store) -> CoreResult<Vec<StoredDraft>> {
+    match store.kv_get(K_DRAFTS)? {
+        Some(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
+        None => Ok(Vec::new()),
+    }
+}
+fn save_drafts(store: &Store, drafts: &[StoredDraft]) -> CoreResult<()> {
+    store.kv_put(K_DRAFTS, &serde_json::to_string(drafts)?)
+}
+
+/// Park the current cart as a named draft and empty the cart. `id`/`now` are
+/// host-supplied (the core stays free of clock/uuid). Errors if the cart is empty.
+pub(crate) fn hold(store: &Store, id: String, name: String, now: String) -> CoreResult<()> {
+    let lines = load(store)?;
+    if lines.is_empty() {
+        return Err(crate::error::CoreError::Validation { field: "cart".into(), detail: "cart is empty".into() });
+    }
+    let mut drafts = load_drafts(store)?;
+    drafts.push(StoredDraft { id, name, created_at: now, lines });
+    save_drafts(store, &drafts)?;
+    clear(store)
+}
+
+/// The parked drafts, newest first.
+pub(crate) fn drafts(store: &Store) -> CoreResult<Vec<DraftView>> {
+    let mut out: Vec<DraftView> = load_drafts(store)?
+        .iter()
+        .map(|d| DraftView {
+            id: d.id.clone(),
+            name: d.name.clone(),
+            item_count: d.lines.iter().map(|l| l.qty).sum(),
+            total_minor: d.lines.iter().map(line_total).sum(),
+            created_at: d.created_at.clone(),
+        })
+        .collect();
+    out.reverse();
+    Ok(out)
+}
+
+/// Restore a draft into the cart (replacing any current lines) and drop it from
+/// the drafts list. Returns the new cart view.
+pub(crate) fn restore_draft(store: &Store, id: &str) -> CoreResult<Vec<CartLineView>> {
+    let mut drafts = load_drafts(store)?;
+    let Some(pos) = drafts.iter().position(|d| d.id == id) else {
+        return Ok(view(&load(store)?));
+    };
+    let draft = drafts.remove(pos);
+    save_drafts(store, &drafts)?;
+    clear_discount(store)?;
+    save(store, &draft.lines)?;
+    Ok(view(&draft.lines))
+}
+
+/// Discard a parked draft without restoring it.
+pub(crate) fn discard_draft(store: &Store, id: &str) -> CoreResult<()> {
+    let mut drafts = load_drafts(store)?;
+    drafts.retain(|d| d.id != id);
+    save_drafts(store, &drafts)
+}
+
 // ── discount ─────────────────────────────────────────────────────────────────
 
 pub(crate) fn set_discount(store: &Store, discount_id: &str) -> CoreResult<()> {
@@ -815,6 +897,28 @@ mod tests {
         assert_eq!(totals(&s, 0.0).unwrap().discount_minor, 100);
         clear_discount(&s).unwrap();
         assert_eq!(totals(&s, 0.0).unwrap().discount_minor, 0);
+    }
+
+    #[test]
+    fn hold_then_restore_roundtrips_the_cart() {
+        let s = store();
+        add(&s, "latte", "Latte", 5000).unwrap();
+        add(&s, "bun", "Bun", 2000).unwrap();
+        hold(&s, "d1".into(), "Table 4".into(), "2026-06-21T10:00:00Z".into()).unwrap();
+        // Held → cart empty, one draft summarizing the two lines.
+        assert!(lines(&s).unwrap().is_empty());
+        let ds = drafts(&s).unwrap();
+        assert_eq!(ds.len(), 1);
+        assert_eq!(ds[0].name, "Table 4");
+        assert_eq!(ds[0].item_count, 2);
+        assert_eq!(ds[0].total_minor, 7000);
+        // Restore → cart back, draft gone.
+        let restored = restore_draft(&s, "d1").unwrap();
+        assert_eq!(restored.len(), 2);
+        assert!(drafts(&s).unwrap().is_empty());
+        // Holding an empty cart is rejected.
+        clear(&s).unwrap();
+        assert!(hold(&s, "d2".into(), "x".into(), "t".into()).is_err());
     }
 
     #[test]

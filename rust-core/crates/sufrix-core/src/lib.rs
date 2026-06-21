@@ -650,6 +650,24 @@ impl SufrixCore {
     pub fn cart_clear(&self) -> Result<(), CoreError> {
         cart::clear(&self.store)
     }
+    /// Park the current cart as a named draft (held order) and empty the cart.
+    pub fn hold_cart(&self, name: String) -> Result<(), CoreError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        cart::hold(&self.store, id, name, now)
+    }
+    /// The parked drafts (held orders), newest first.
+    pub fn list_drafts(&self) -> Result<Vec<cart::DraftView>, CoreError> {
+        cart::drafts(&self.store)
+    }
+    /// Restore a draft into the cart (replaces current lines) and drop it.
+    pub fn restore_draft(&self, id: String) -> Result<Vec<cart::CartLineView>, CoreError> {
+        cart::restore_draft(&self.store, &id)
+    }
+    /// Discard a parked draft.
+    pub fn discard_draft(&self, id: String) -> Result<(), CoreError> {
+        cart::discard_draft(&self.store, &id)
+    }
     /// Apply a discount (by id) to the cart — reflected in `cart_totals`.
     pub fn cart_set_discount(&self, discount_id: String) -> Result<(), CoreError> {
         cart::set_discount(&self.store, &discount_id)
