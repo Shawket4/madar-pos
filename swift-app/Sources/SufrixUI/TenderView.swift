@@ -1,7 +1,8 @@
-// Tender — the checkout sheet. Pick a payment method, take cash (with live
-// change), and place the order through the core (online or queued offline). On
-// success the same sheet flips to a receipt confirmation. All money + the order
-// assembly live in the core; this view only collects the tender and renders.
+// Tender — the checkout sheet. Pick a payment method (or split a bill), take cash
+// with live change, add a tip/discount, then place the order through the core
+// (online or queued offline). On success the same sheet flips to a receipt
+// confirmation with a printable on-screen preview. All money + order assembly
+// live in the core; this view only collects the tender and renders.
 import SwiftUI
 
 struct TenderView: View {
@@ -13,6 +14,7 @@ struct TenderView: View {
     @State private var selectedMethod: String?
     @State private var tenderedMinor: Int64 = 0
     @State private var tipMinor: Int64 = 0
+    @State private var tipMethod: String?
     @State private var customerName = ""
     @State private var notes = ""
     /// Split a single bill across several payment methods (the teller allocates
@@ -25,9 +27,15 @@ struct TenderView: View {
     private var isCash: Bool { method?.isCash ?? false }
     private var total: Int64 { app.cartTotals.totalMinor }
     /// A tip paid on a cash order comes out of the same drawer → due with the bill.
-    private var tipCash: Int64 { isCash ? tipMinor : 0 }
+    private var tipCash: Int64 { (tipMethodIsCash) ? tipMinor : 0 }
+    private var tipMethodIsCash: Bool {
+        guard tipMinor > 0 else { return false }
+        let m = app.paymentMethods.first { $0.id == (tipMethod ?? selectedMethod) }
+        return m?.isCash ?? isCash
+    }
     private var dueCash: Int64 { total + tipCash }
     private var changeMinor: Int64 { max(0, tenderedMinor - dueCash) }
+    private var shortMinor: Int64 { max(0, dueCash - tenderedMinor) }
 
     // ── split payment ──
     private var splitAllocated: Int64 { splitAmounts.values.reduce(0, +) }
@@ -75,11 +83,101 @@ struct TenderView: View {
         if splitMode {
             guard let primary = splitPrimary else { return }
             await app.placeOrder(paymentMethodId: primary, amountTenderedMinor: 0, tipMinor: tipMinor,
-                                 customerName: name, notes: note, splits: splitLegs)
+                                 tipPaymentMethodId: tipMethod, customerName: name, notes: note, splits: splitLegs)
         } else {
             guard let id = selectedMethod else { return }
             await app.placeOrder(paymentMethodId: id, amountTenderedMinor: isCash ? tenderedMinor : 0,
-                                 tipMinor: tipMinor, customerName: name, notes: note)
+                                 tipMinor: tipMinor, tipPaymentMethodId: tipMethod, customerName: name, notes: note)
+        }
+    }
+
+    // MARK: - Form
+
+    private var tenderForm: some View {
+        VStack(spacing: 0) {
+            // Header.
+            HStack {
+                Text(t("order.tender")).font(.ui(20, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                Spacer()
+                Button { onClose() } label: {
+                    Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.colors.textMuted)
+                        .frame(width: 32, height: 32)
+                        .background(theme.colors.surfaceAlt).clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, Space.lg).padding(.top, Space.sm).padding(.bottom, Space.md)
+
+            ScrollView {
+                VStack(spacing: Space.lg) {
+                    summaryCard
+                    paymentSection
+                    if isCash && !splitMode { cashSection }
+                    tipCard
+                    discountSection
+                    customerSection
+                    if let error = app.errorMessage {
+                        NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
+                    }
+                }
+                .frame(maxWidth: 480)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Space.lg)
+                .padding(.bottom, Space.lg)
+            }
+
+            footer
+        }
+    }
+
+    /// Order totals card (always visible at the top of the sheet).
+    private var summaryCard: some View {
+        VStack(spacing: Space.sm) {
+            row(t("order.subtotal"), Money.format(app.cartTotals.subtotalMinor, currency), tone: theme.colors.textSecondary)
+            if app.cartTotals.discountMinor > 0 {
+                row(t("order.discount"), "−\(Money.format(app.cartTotals.discountMinor, currency))", tone: theme.colors.success)
+            }
+            if app.cartTotals.taxMinor > 0 {
+                row(t("order.tax"), Money.format(app.cartTotals.taxMinor, currency), tone: theme.colors.textSecondary)
+            }
+            Rectangle().fill(theme.colors.border).frame(height: 1)
+            row(t("order.total"), Money.format(total, currency), emphasized: true)
+        }
+        .padding(Space.lg)
+        .background(theme.colors.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+    }
+
+    private var paymentSection: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            HStack {
+                sectionLabel(t("order.payment_method"))
+                Spacer()
+                if app.paymentMethods.count > 1 {
+                    Button { Haptics.selection(); withAnimation(Motion.standard) { splitMode.toggle() } } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: splitMode ? "checkmark.circle.fill" : "rectangle.split.2x1")
+                            Text(t("order.split_payment"))
+                        }
+                        .font(.ui(11, .semibold))
+                        .foregroundStyle(splitMode ? theme.colors.accent : theme.colors.textMuted)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(splitMode ? theme.colors.accentBg : theme.colors.surfaceAlt)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if splitMode {
+                splitAllocator
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: Space.sm)], spacing: Space.sm) {
+                    ForEach(app.paymentMethods, id: \.id) { m in
+                        PayChip(method: m, active: m.id == selectedMethod) { selectedMethod = m.id }
+                    }
+                }
+            }
         }
     }
 
@@ -88,8 +186,9 @@ struct TenderView: View {
         VStack(spacing: Space.sm) {
             ForEach(app.paymentMethods, id: \.id) { m in
                 HStack(spacing: Space.sm) {
+                    Circle().fill(Color(hex: m.color)).frame(width: 9, height: 9)
                     Text(m.name).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
-                        .frame(width: 92, alignment: .leading)
+                        .frame(width: 86, alignment: .leading)
                     AmountField(amountMinor: splitBinding(m.id), currencyCode: currency)
                 }
             }
@@ -100,147 +199,219 @@ struct TenderView: View {
                     .font(.money(13, .bold))
                     .foregroundStyle(splitRemaining == 0 ? theme.colors.success : theme.colors.danger)
             }
+            .padding(.horizontal, Space.md).padding(.vertical, 10)
+            .background((splitRemaining == 0 ? theme.colors.successBg : theme.colors.warningBg))
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
     }
 
-    private var tenderForm: some View {
-        ScrollView {
-            VStack(spacing: Space.xl) {
-                HStack {
-                    Text(t("order.tender")).font(.ui(22, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                    Spacer()
-                    Button { onClose() } label: {
-                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(theme.colors.textMuted)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                VStack(alignment: .leading, spacing: Space.sm) {
-                    HStack {
-                        Text(t("order.payment_method"))
-                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-                        Spacer()
-                        if app.paymentMethods.count > 1 {
-                            Button { Haptics.selection(); withAnimation(Motion.standard) { splitMode.toggle() } } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: splitMode ? "checkmark.circle.fill" : "rectangle.split.2x1")
-                                    Text(t("order.split_payment"))
-                                }
-                                .font(.ui(11, .semibold))
-                                .foregroundStyle(splitMode ? theme.colors.accent : theme.colors.textMuted)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    if splitMode {
-                        splitAllocator
-                    } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: Space.sm)], spacing: Space.sm) {
-                            ForEach(app.paymentMethods, id: \.id) { m in
-                                MethodChip(label: m.name, active: m.id == selectedMethod) {
-                                    selectedMethod = m.id
-                                }
-                            }
-                        }
-                    }
-                }
-
-                let activeDiscounts = app.discounts.filter { $0.isActive }
-                if !activeDiscounts.isEmpty {
-                    VStack(alignment: .leading, spacing: Space.sm) {
-                        Text(t("order.discount"))
-                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: Space.sm)], spacing: Space.sm) {
-                            MethodChip(label: t("order.no_discount"), active: app.cartDiscountId == nil) {
-                                app.setDiscount(nil)
-                            }
-                            ForEach(activeDiscounts, id: \.id) { d in
-                                MethodChip(label: discountLabel(d), active: app.cartDiscountId == d.id) {
-                                    app.setDiscount(d.id)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: Space.sm) {
-                    Text(t("order.customer")).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-                    SufrixTextField(placeholder: t("order.customer_hint"), text: $customerName, icon: "person")
-                    SufrixTextField(placeholder: t("order.notes_hint"), text: $notes, icon: "text.bubble")
-                }
-
-                VStack(alignment: .leading, spacing: Space.sm) {
-                    Text(t("order.tip")).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-                    AmountField(amountMinor: $tipMinor, currencyCode: currency)
-                }
-
-                if isCash && !splitMode {
-                    VStack(alignment: .leading, spacing: Space.sm) {
-                        Text(t("order.cash_received"))
-                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-                        AmountField(amountMinor: $tenderedMinor, currencyCode: currency)
-                    }
-                }
-
-                VStack(spacing: Space.sm) {
-                    if app.cartTotals.discountMinor > 0 {
-                        HStack {
-                            Text(t("order.discount")).font(.ui(14, .medium)).foregroundStyle(theme.colors.success)
-                            Spacer()
-                            Text("−\(Money.format(app.cartTotals.discountMinor, currency))")
-                                .font(.money(14, .semibold)).foregroundStyle(theme.colors.success)
-                        }
-                    }
-                    SummaryRow(label: t("order.total"), value: Money.format(total, currency), emphasized: true)
-                    if tipMinor > 0 {
-                        SummaryRow(label: t("order.tip"), value: Money.format(tipMinor, currency))
-                    }
-                    if isCash && !splitMode {
-                        SummaryRow(label: t("order.change"), value: Money.format(changeMinor, currency))
-                    }
-                }
-
-                if let error = app.errorMessage {
-                    NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
-                }
-
-                SufrixButton(label: t("order.place_order"), icon: "checkmark", loading: app.isPlacingOrder) {
-                    Task { await place() }
-                }
-                .opacity(canPlace ? 1 : 0.5)
-                .allowsHitTesting(canPlace)
+    private var cashSection: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            sectionLabel(t("order.cash_received"))
+            AmountField(amountMinor: $tenderedMinor, currencyCode: currency)
+            // Quick-tender chips.
+            FlowLayout(spacing: Space.sm) {
+                quickChip(t("order.exact"), amount: dueCash)
+                ForEach(quickPresets, id: \.self) { p in quickChip(Money.format(p, currency), amount: p) }
             }
-            .frame(maxWidth: 460)
-            .frame(maxWidth: .infinity)
-            .padding(Space.xl)
+            if tenderedMinor > 0 {
+                changeBanner
+            }
         }
     }
-}
 
-private struct MethodChip: View {
-    @Environment(\.theme) private var theme
-    let label: String
-    let active: Bool
-    let action: () -> Void
+    /// Round-number cash presets at or above the amount due.
+    private var quickPresets: [Int64] {
+        let units: [Int64] = [5000, 10000, 20000, 50000] // 50/100/200/500 major
+        return units.filter { $0 >= dueCash }.prefix(3).map { $0 }
+    }
 
-    var body: some View {
-        Button { Haptics.selection(); action() } label: {
+    private func quickChip(_ label: String, amount: Int64) -> some View {
+        let active = tenderedMinor == amount
+        return Button { Haptics.selection(); tenderedMinor = amount } label: {
             Text(label)
-                .font(.ui(14, .semibold))
-                .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textPrimary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(active ? theme.colors.accent : theme.colors.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                        .strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                .font(.ui(12, .bold))
+                .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(active ? theme.colors.accent : theme.colors.surfaceAlt)
+                .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: 1))
+        }
+        .buttonStyle(.pressable(scale: 0.96))
+    }
+
+    @ViewBuilder private var changeBanner: some View {
+        let ok = changeMinor >= 0 && shortMinor == 0
+        HStack(spacing: Space.sm) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(ok ? theme.colors.success : theme.colors.danger)
+            Text(ok ? t("order.change_due") : t("order.short_by"))
+                .font(.ui(13, .semibold)).foregroundStyle(ok ? theme.colors.success : theme.colors.danger)
+            Spacer()
+            Text(Money.format(ok ? changeMinor : shortMinor, currency))
+                .font(.money(15, .heavy)).foregroundStyle(ok ? theme.colors.success : theme.colors.danger)
+        }
+        .padding(.horizontal, Space.md).padding(.vertical, 10)
+        .background(ok ? theme.colors.successBg : theme.colors.dangerBg)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+    }
+
+    private var tipCard: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "heart.circle").font(.system(size: 13))
+                sectionLabel(t("order.tip"))
+                Spacer()
+                if tipMinor > 0 {
+                    StatusChip(label: Money.format(tipMinor, currency), icon: "plus", tone: .success)
+                }
+            }
+            if app.paymentMethods.count > 1 {
+                FlowLayout(spacing: 6) {
+                    ForEach(app.paymentMethods, id: \.id) { m in
+                        let active = (tipMethod ?? selectedMethod) == m.id
+                        Button { Haptics.selection(); tipMethod = m.id } label: {
+                            HStack(spacing: 4) {
+                                if active { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
+                                Text(m.name).font(.ui(11, .semibold))
+                            }
+                            .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
+                            .padding(.horizontal, 11).padding(.vertical, 6)
+                            .background(active ? Color(hex: m.color) : theme.colors.surface)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: 1))
+                        }
+                        .buttonStyle(.pressable(scale: 0.96))
+                    }
+                }
+            }
+            AmountField(amountMinor: $tipMinor, currencyCode: currency)
+        }
+        .padding(Space.lg)
+        .background(theme.colors.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.border, lineWidth: 1))
+    }
+
+    @ViewBuilder private var discountSection: some View {
+        let activeDiscounts = app.discounts.filter { $0.isActive }
+        if !activeDiscounts.isEmpty {
+            VStack(alignment: .leading, spacing: Space.sm) {
+                sectionLabel(t("order.discount"))
+                FlowLayout(spacing: Space.sm) {
+                    chip(t("order.no_discount"), active: app.cartDiscountId == nil) { app.setDiscount(nil) }
+                    ForEach(activeDiscounts, id: \.id) { d in
+                        chip(discountLabel(d), active: app.cartDiscountId == d.id) { app.setDiscount(d.id) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var customerSection: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            sectionLabel(t("order.customer"))
+            SufrixTextField(placeholder: t("order.customer_hint"), text: $customerName, icon: "person", caps: .words)
+            SufrixTextField(placeholder: t("order.notes_hint"), text: $notes, icon: "text.bubble", caps: .words)
+        }
+    }
+
+    private var footer: some View {
+        VStack(spacing: Space.sm) {
+            SufrixButton(label: t("order.place_order"), icon: "checkmark", loading: app.isPlacingOrder) {
+                Task { await place() }
+            }
+            .opacity(canPlace ? 1 : 0.5)
+            .allowsHitTesting(canPlace)
+            .keyboardShortcut(.return, modifiers: .command)
+        }
+        .padding(Space.lg)
+        .background(theme.colors.surface)
+        .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    // MARK: small builders
+    private func sectionLabel(_ s: String) -> some View {
+        Text(s).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted).textCase(.uppercase)
+    }
+
+    private func row(_ label: String, _ value: String, emphasized: Bool = false, tone: Color? = nil) -> some View {
+        HStack {
+            Text(label)
+                .font(.ui(emphasized ? 16 : 14, emphasized ? .bold : .medium))
+                .foregroundStyle(emphasized ? theme.colors.textPrimary : (tone ?? theme.colors.textSecondary))
+            Spacer()
+            Text(value)
+                .font(.money(emphasized ? 18 : 14, emphasized ? .heavy : .semibold))
+                .foregroundStyle(emphasized ? theme.colors.textPrimary : (tone ?? theme.colors.textSecondary))
+                .contentTransition(.numericText())
+        }
+    }
+
+    private func chip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button { Haptics.selection(); action() } label: {
+            HStack(spacing: 5) {
+                if active { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }
+                Text(label).font(.ui(13, .semibold))
+            }
+            .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textPrimary)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(active ? theme.colors.accent : theme.colors.surfaceAlt)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                .strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: active ? 0 : 1))
         }
         .buttonStyle(.pressable(scale: 0.97))
     }
 }
+
+/// Payment method tile — icon (in the method's brand color) + label + a check
+/// when active. Selected fills with the method color.
+private struct PayChip: View {
+    @Environment(\.theme) private var theme
+    let method: PaymentMethodView
+    let active: Bool
+    let action: () -> Void
+
+    private var color: Color { Color(hex: method.color) }
+
+    var body: some View {
+        Button { Haptics.selection(); action() } label: {
+            HStack(spacing: Space.sm) {
+                Image(systemName: PayChip.symbol(method.icon))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(active ? theme.colors.textOnAccent : color)
+                Text(method.name).font(.ui(13, .semibold)).lineLimit(1)
+                    .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textPrimary)
+                Spacer(minLength: 0)
+                if active { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(theme.colors.textOnAccent) }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(active ? color : theme.colors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                .strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: 1))
+        }
+        .buttonStyle(.pressable(scale: 0.97))
+    }
+
+    /// Map a backend payment-icon token to an SF Symbol.
+    static func symbol(_ icon: String) -> String {
+        switch icon.lowercased() {
+        case "cash", "banknote", "money": return "banknote"
+        case "card", "credit_card", "creditcard", "visa", "mastercard", "debit": return "creditcard"
+        case "wallet", "ewallet", "e_wallet": return "wallet.pass"
+        case "bank", "transfer", "bank_transfer": return "building.columns"
+        case "phone", "mobile", "vodafone", "instapay": return "iphone"
+        case "qr", "qr_code": return "qrcode"
+        default: return "dollarsign.circle"
+        }
+    }
+}
+
+// MARK: - Receipt confirmation (preview before printing)
 
 private struct ReceiptConfirmation: View {
     @ObservedObject var app: AppModel
@@ -251,56 +422,38 @@ private struct ReceiptConfirmation: View {
     let onDone: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: Space.lg) {
-                SufrixMark(size: 52)
-                Text(t("order.order_placed")).font(.ui(22, .heavy)).foregroundStyle(theme.colors.textPrimary)
+        VStack(spacing: 0) {
+            // Status header.
+            VStack(spacing: Space.sm) {
+                Image(systemName: receipt.queuedOffline ? "clock.badge.checkmark" : "checkmark.circle.fill")
+                    .font(.system(size: 38))
+                    .foregroundStyle(receipt.queuedOffline ? theme.colors.warning : theme.colors.success)
+                Text(t("order.order_placed")).font(.ui(20, .heavy)).foregroundStyle(theme.colors.textPrimary)
                 StatusChip(
                     label: t(receipt.queuedOffline ? "order.queued_hint" : "order.sent_hint"),
                     icon: receipt.queuedOffline ? "clock" : "checkmark.circle",
                     tone: receipt.queuedOffline ? .warning : .success
                 )
-
-                VStack(spacing: Space.sm) {
-                    ForEach(Array(receipt.lines.enumerated()), id: \.offset) { _, line in
-                        ReceiptLineRow(line: line, currency: currency)
-                    }
-                }
-                .padding(Space.lg)
-                .background(theme.colors.surface)
-                .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radii.md, style: .continuous)
-                        .strokeBorder(theme.colors.border, lineWidth: 1)
-                )
-
-                VStack(spacing: Space.sm) {
-                    SummaryRow(label: t("order.subtotal"), value: Money.format(receipt.subtotalMinor, currency))
-                    if receipt.discountMinor > 0 {
-                        SummaryRow(label: t("order.discount"), value: "−\(Money.format(receipt.discountMinor, currency))")
-                    }
-                    SummaryRow(label: t("order.tax"), value: Money.format(receipt.taxMinor, currency))
-                    if receipt.deliveryFeeMinor > 0 {
-                        SummaryRow(label: t("receipt.delivery_fee"), value: Money.format(receipt.deliveryFeeMinor, currency))
-                    }
-                    SummaryRow(label: t("order.total"), value: Money.format(receipt.totalMinor, currency), emphasized: true)
-                    if receipt.tipMinor > 0 {
-                        SummaryRow(label: t("order.tip"), value: Money.format(receipt.tipMinor, currency))
-                    }
-                    if receipt.isCash {
-                        SummaryRow(label: t("order.cash_received"), value: Money.format(receipt.amountTenderedMinor, currency))
-                        SummaryRow(label: t("order.change"), value: Money.format(receipt.changeMinor, currency))
-                    }
-                }
-
-                printControl
-
-                SufrixButton(label: t("order.new_order"), icon: "plus") { onDone() }
-                    .padding(.top, Space.sm)
             }
-            .frame(maxWidth: 460)
+            .padding(.top, Space.lg).padding(.bottom, Space.md)
+
+            // The printable receipt, exactly as it will print.
+            ScrollView {
+                ReceiptPaper(receipt: receipt, storeName: app.branchName, currency: currency)
+                    .padding(.horizontal, Space.lg)
+                    .padding(.bottom, Space.lg)
+            }
+
+            // Actions.
+            VStack(spacing: Space.sm) {
+                printControl
+                SufrixButton(label: t("order.new_order"), icon: "plus", variant: .outline) { onDone() }
+            }
+            .padding(Space.lg)
+            .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
-            .padding(Space.xl)
+            .background(theme.colors.surface)
+            .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
         }
     }
 
@@ -310,82 +463,17 @@ private struct ReceiptConfirmation: View {
         switch app.printState {
         case .printed:
             StatusChip(label: t("receipt.printed"), icon: "checkmark.circle", tone: .success)
+                .frame(maxWidth: .infinity)
         case .noPrinter:
             StatusChip(label: t("receipt.no_printer"), icon: "exclamationmark.triangle", tone: .warning)
+                .frame(maxWidth: .infinity)
         default:
             SufrixButton(
                 label: app.printState == .failed ? t("receipt.print_failed") : t("receipt.print"),
                 icon: "printer",
-                variant: .outline,
                 loading: app.printState == .printing
             ) {
                 Task { await app.printCurrentReceipt() }
-            }
-        }
-    }
-}
-
-/// A label/value row shared by the tender form + receipt.
-private struct SummaryRow: View {
-    @Environment(\.theme) private var theme
-    let label: String
-    let value: String
-    var emphasized = false
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.ui(emphasized ? 16 : 14, emphasized ? .bold : .medium))
-                .foregroundStyle(emphasized ? theme.colors.textPrimary : theme.colors.textSecondary)
-            Spacer()
-            Text(value)
-                .font(.money(emphasized ? 18 : 14, emphasized ? .heavy : .semibold))
-                .foregroundStyle(emphasized ? theme.colors.textPrimary : theme.colors.textSecondary)
-        }
-    }
-}
-
-/// One receipt line with its modifier / bundle breakdown — the on-screen mirror
-/// of the printed item block.
-private struct ReceiptLineRow: View {
-    @Environment(\.theme) private var theme
-    let line: ReceiptLineView
-    let currency: String
-
-    private func name(_ base: String, _ size: String?) -> String {
-        if let s = size, !s.isEmpty { return "\(base) (\(s))" }
-        return base
-    }
-
-    private func modifier(_ prefix: String, _ m: ReceiptModifierView) -> some View {
-        HStack(spacing: 4) {
-            Text("\(prefix)\(m.name)").font(.ui(12)).foregroundStyle(theme.colors.textMuted)
-            Spacer(minLength: 0)
-            if m.priceMinor > 0 {
-                Text("+\(Money.format(m.priceMinor, currency))")
-                    .font(.money(12)).foregroundStyle(theme.colors.textMuted)
-            }
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text("\(line.qty)× \(name(line.name, line.sizeLabel))")
-                    .font(.ui(14, .medium)).foregroundStyle(theme.colors.textSecondary)
-                Spacer()
-                Text(Money.format(line.lineTotalMinor, currency))
-                    .font(.money(14, .semibold)).foregroundStyle(theme.colors.textPrimary)
-            }
-            if line.isBundle {
-                ForEach(Array(line.components.enumerated()), id: \.offset) { _, c in
-                    Text("– \(name(c.name, c.sizeLabel))").font(.ui(12, .medium)).foregroundStyle(theme.colors.textSecondary)
-                    ForEach(Array(c.addons.enumerated()), id: \.offset) { _, a in modifier("   + ", a) }
-                    ForEach(Array(c.optionals.enumerated()), id: \.offset) { _, o in modifier("   + ", o) }
-                }
-            } else {
-                ForEach(Array(line.addons.enumerated()), id: \.offset) { _, a in modifier(" + ", a) }
-                ForEach(Array(line.optionals.enumerated()), id: \.offset) { _, o in modifier(" + ", o) }
             }
         }
     }

@@ -472,6 +472,15 @@ final class AppModel: ObservableObject {
         shiftReport = try? await core.shiftReport()
     }
 
+    /// Drives the mid-shift Z-report preview sheet (print without closing).
+    @Published var showReportPreview = false
+    /// Open the mid-shift report preview: reset any stale print state, then show
+    /// the sheet (which loads the report on appear).
+    func openShiftReportPreview() {
+        printState = .idle
+        showReportPreview = true
+    }
+
     /// Close the open shift with the counted cash + optional note. On success the
     /// core marks the shift closed, so the route flips back to open-shift.
     func closeShift(closingCashMinor: Int64, note: String?) async {
@@ -678,6 +687,15 @@ final class AppModel: ObservableObject {
         cartLines = (try? core.restoreDraft(id: id)) ?? cartLines
         cartDiscountId = (try? core.cartDiscountId()) ?? nil
         refreshCartTotals(); loadDrafts()
+    }
+    /// Tab-style switch to a held order: park the current cart first (if any) so
+    /// nothing is lost, then load the selected held order into the cart.
+    func switchToHeldOrder(_ id: String) {
+        if !cartLines.isEmpty {
+            let f = DateFormatter(); f.dateFormat = "HH:mm"
+            _ = try? core.holdCart(name: f.string(from: Date()))
+        }
+        restoreDraft(id)
     }
     func discardDraft(_ id: String) { _ = try? core.discardDraft(id: id); loadDrafts() }
 

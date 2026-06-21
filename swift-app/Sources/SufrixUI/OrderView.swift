@@ -117,6 +117,10 @@ struct OrderView: View {
             .sufrixSheet(isPresented: $app.showDrafts) { dismiss in
                 DraftsView(app: app, onClose: dismiss)
             }
+            // Mid-shift Z-report preview + print.
+            .sufrixSheet(isPresented: $app.showReportPreview, size: .large) { dismiss in
+                ShiftReportPreviewView(app: app, onClose: dismiss)
+            }
             // ── Full-screen routed screens: slide-in over the hub, own back
             // chevron. Reached from the action bar / More drawer. ────────────────
             .appScreen(isPresented: $app.showCloseShift) { _ in
@@ -372,6 +376,9 @@ private struct MoreDrawer: View {
                 }
                 row(icon: "clock.arrow.circlepath", label: t("shifts.title"), tone: theme.colors.textPrimary) {
                     app.showMore = false; app.showShiftHistory = true
+                }
+                row(icon: "printer", label: t("shift.print_report"), tone: theme.colors.textPrimary) {
+                    app.showMore = false; app.openShiftReportPreview()
                 }
                 row(icon: "tray.full", label: t("drafts.title"), tone: theme.colors.textPrimary) {
                     app.showMore = false; app.loadDrafts(); app.showDrafts = true
@@ -656,6 +663,12 @@ private struct CartPanel: View {
             .padding(Space.lg)
             Rectangle().fill(theme.colors.border).frame(height: 1)
 
+            // Held-order tabs — flip between parked carts (switching parks the
+            // current one first, so nothing is lost). The bottom Hold button stays.
+            if !app.drafts.isEmpty {
+                HeldOrdersTabs(app: app)
+            }
+
             if app.cartLines.isEmpty {
                 VStack(spacing: Space.md) {
                     Image(systemName: "cart")
@@ -689,6 +702,59 @@ private struct CartPanel: View {
             }
         }
         .background(theme.colors.bg)
+        .onAppear { app.loadDrafts() }
+    }
+}
+
+/// Held-order tabs above the cart — the active cart plus a tab per parked order.
+/// Tapping a held tab parks the current cart, then loads that one (lossless).
+private struct HeldOrdersTabs: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.sm) {
+                tab(label: t("drafts.current"), count: Int(app.cartTotals.itemCount), active: true, onTap: nil, onClose: nil)
+                ForEach(app.drafts, id: \.id) { d in
+                    tab(label: d.name, count: Int(d.itemCount), active: false,
+                        onTap: { app.switchToHeldOrder(d.id) },
+                        onClose: { app.discardDraft(d.id) })
+                }
+            }
+            .padding(.horizontal, Space.lg).padding(.vertical, Space.sm)
+        }
+        .background(theme.colors.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.borderLight).frame(height: 1) }
+    }
+
+    private func tab(label: String, count: Int, active: Bool, onTap: (() -> Void)?, onClose: (() -> Void)?) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: active ? "cart.fill" : "tray.full")
+                .font(.system(size: 11, weight: .semibold))
+            Text(label).font(.ui(12, .semibold)).lineLimit(1)
+            if count > 0 {
+                Text("\(count)").font(.ui(10, .bold))
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(active ? theme.colors.textOnAccent.opacity(0.25) : theme.colors.surfaceAlt)
+                    .clipShape(Capsule())
+            }
+            if let onClose {
+                Button { Haptics.selection(); onClose() } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textMuted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(active ? theme.colors.accent : theme.colors.surfaceAlt)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: 1))
+        .contentShape(Capsule())
+        .onTapGesture { if let onTap { Haptics.selection(); onTap() } }
     }
 }
 
