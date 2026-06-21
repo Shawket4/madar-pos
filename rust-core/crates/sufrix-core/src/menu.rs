@@ -11,6 +11,7 @@
 //! in `lib.rs`; this module is pure (store + locale in, view DTOs out) so it's
 //! unit-testable without a network.
 
+use serde::Deserialize;
 use serde_json::Value;
 use sufrix_api::models;
 
@@ -126,8 +127,79 @@ pub struct DiscountView {
 
 // ── projections (kv → views) ────────────────────────────────────────────────
 
+// Local, deserialization-TOLERANT shapes for the `?full=true` menu-item wire.
+//
+// We deliberately DO NOT reuse `models::MenuItemFull` here: that generated struct
+// embeds `recipes: Vec<MenuItemRecipe>` and `optional_fields[].quantity_used`,
+// both typed `f64` by the generator — but the backend serializes those Postgres
+// `numeric` columns via `BigDecimal`, i.e. as JSON *strings* ("0.500"). serde
+// then fails the WHOLE `Vec<MenuItemFull>` parse, which blanked the menu (the
+// host swallows the error to an empty list). These local structs capture only
+// the fields the POS projection actually needs and omit every decimal field, so
+// the wire's string-vs-number encoding can't break the read. Unknown JSON fields
+// are ignored by serde, so this stays forward-compatible.
+#[derive(Deserialize)]
+struct FullItem {
+    id: uuid::Uuid,
+    name: String,
+    #[serde(default)]
+    name_translations: Value,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    description_translations: Value,
+    #[serde(default)]
+    category_id: Option<uuid::Uuid>,
+    base_price: i32,
+    #[serde(default)]
+    image_url: Option<String>,
+    is_active: bool,
+    #[serde(default)]
+    deleted_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    #[serde(default)]
+    default_milk_addon_id: Option<String>,
+    #[serde(default)]
+    sizes: Vec<FullSize>,
+    #[serde(default)]
+    addon_slots: Vec<FullSlot>,
+    #[serde(default)]
+    optional_fields: Vec<FullOptional>,
+}
+
+#[derive(Deserialize)]
+struct FullSize {
+    id: uuid::Uuid,
+    label: String,
+    price_override: i32,
+    is_active: bool,
+}
+
+#[derive(Deserialize)]
+struct FullSlot {
+    id: uuid::Uuid,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    label_translations: Value,
+    addon_type: String,
+    is_required: bool,
+    min_selections: i32,
+    #[serde(default)]
+    max_selections: Option<i32>,
+}
+
+#[derive(Deserialize)]
+struct FullOptional {
+    id: uuid::Uuid,
+    name: String,
+    #[serde(default)]
+    name_translations: Value,
+    price: i32,
+    is_active: bool,
+}
+
 pub(crate) fn menu_items(store: &Store, locale: &str) -> CoreResult<Vec<MenuItemView>> {
-    let items: Vec<models::MenuItemFull> = parse_kv(store, K_MENU_ITEMS)?;
+    let items: Vec<FullItem> = parse_kv_lenient(store, K_MENU_ITEMS)?;
     Ok(items
         .into_iter()
         .filter(|i| i.deleted_at.is_none())
@@ -155,11 +227,11 @@ pub(crate) fn menu_items(store: &Store, locale: &str) -> CoreResult<Vec<MenuItem
                 .iter()
                 .map(|sl| AddonSlotView {
                     id: sl.id.to_string(),
-                    label: flat(&sl.label).map(|l| resolve(&sl.label_translations, &l, locale)),
+                    label: sl.label.clone().map(|l| resolve(&sl.label_translations, &l, locale)),
                     addon_type: sl.addon_type.clone(),
                     is_required: sl.is_required,
                     min_selections: sl.min_selections,
-                    max_selections: flat(&sl.max_selections),
+                    max_selections: sl.max_selections,
                 })
                 .collect(),
             optional_fields: i
@@ -265,6 +337,19 @@ fn parse_kv<T: serde::de::DeserializeOwned>(store: &Store, key: &str) -> CoreRes
     }
 }
 
+/// Like `parse_kv`, but parses the array element-by-element and SKIPS any row
+/// that fails to deserialize, instead of failing the whole stream. A single
+/// malformed item must never blank an entire catalog screen — better to show the
+/// rows that parse. Used for the menu items, whose `?full=true` payload is the
+/// widest (and historically the most fragile) shape on the wire.
+fn parse_kv_lenient<T: serde::de::DeserializeOwned>(store: &Store, key: &str) -> CoreResult<Vec<T>> {
+    let rows: Vec<Value> = match store.kv_get(key)? {
+        Some(json) => serde_json::from_str(&json)?,
+        None => return Ok(Vec::new()),
+    };
+    Ok(rows.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect())
+}
+
 /// Resolve a `*_translations` object to the device locale, falling back
 /// locale → its language subtag → `en` → the base field (R9).
 fn resolve(translations: &Value, base: &str, locale: &str) -> String {
@@ -340,6 +425,79 @@ mod tests {
         // Unknown locale with no match → base field.
         let fr = menu_items(&store, "fr").unwrap();
         assert_eq!(fr[0].name, "Latte");
+    }
+
+    #[test]
+    fn menu_items_tolerate_bigdecimal_string_quantity_used() {
+        // Regression: the backend serializes `quantity_used` (Postgres numeric)
+        // via BigDecimal, i.e. as a JSON STRING. The generated MenuItemFull types
+        // it `f64`, so the full-payload parse used to fail and blank the menu.
+        // Recipes + optional_fields here carry string quantity_used — the read
+        // must still surface the item.
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_MENU_ITEMS,
+            r#"[{
+              "base_price": 5000,
+              "created_at": "2026-06-19T10:00:00Z",
+              "updated_at": "2026-06-19T10:00:00Z",
+              "id": "00000000-0000-0000-0000-0000000000a1",
+              "org_id": "00000000-0000-0000-0000-0000000000ff",
+              "is_active": true,
+              "name": "Latte",
+              "name_translations": {"en": "Latte"},
+              "description_translations": {},
+              "addon_slots": [],
+              "allowed_addon_ids": [],
+              "optional_fields": [{
+                  "id": "00000000-0000-0000-0000-0000000000f1",
+                  "created_at": "2026-06-19T10:00:00Z",
+                  "updated_at": "2026-06-19T10:00:00Z",
+                  "menu_item_id": "00000000-0000-0000-0000-0000000000a1",
+                  "name": "Extra shot",
+                  "name_translations": {"en": "Extra shot"},
+                  "price": 1500,
+                  "is_active": true,
+                  "quantity_used": "0.500",
+                  "ingredient_unit": "shot"
+              }],
+              "recipes": [{
+                  "category": "coffee", "ingredient_name": "Beans",
+                  "ingredient_unit": "g", "quantity_used": "18.000", "size_label": "Large"
+              }],
+              "sizes": []
+            }]"#,
+        );
+
+        let items = menu_items(&store, "en").unwrap();
+        assert_eq!(items.len(), 1, "string quantity_used must not blank the menu");
+        assert_eq!(items[0].name, "Latte");
+        assert_eq!(items[0].base_price_minor, 5000);
+        assert_eq!(items[0].optional_fields.len(), 1);
+        assert_eq!(items[0].optional_fields[0].name, "Extra shot");
+        assert_eq!(items[0].optional_fields[0].price_minor, 1500);
+    }
+
+    #[test]
+    fn menu_items_skip_malformed_rows_keep_good_ones() {
+        // One broken row (missing required base_price) must not nuke the rest.
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_MENU_ITEMS,
+            r#"[
+              {"id":"00000000-0000-0000-0000-0000000000a1","name":"Broken","is_active":true},
+              {"base_price":4200,"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000a2","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "is_active":true,"name":"Espresso","name_translations":{"en":"Espresso"},
+               "description_translations":{},"addon_slots":[],"allowed_addon_ids":[],
+               "optional_fields":[],"recipes":[],"sizes":[]}
+            ]"#,
+        );
+        let items = menu_items(&store, "en").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "Espresso");
     }
 
     #[test]
