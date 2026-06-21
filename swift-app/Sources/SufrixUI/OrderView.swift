@@ -129,6 +129,18 @@ struct OrderView: View {
                     .frame(minWidth: 640, minHeight: 640)
                     .modalChrome(app, theme, t)
             }
+            // Cash In/Out.
+            .sheet(isPresented: $app.showCashMovements) {
+                CashMovementsView(app: app, onClose: { app.showCashMovements = false })
+                    .frame(minWidth: 440, minHeight: 560)
+                    .modalChrome(app, theme, t)
+            }
+            // Past shifts.
+            .sheet(isPresented: $app.showShiftHistory) {
+                ShiftHistoryView(app: app, onClose: { app.showShiftHistory = false })
+                    .frame(minWidth: 460, minHeight: 560)
+                    .modalChrome(app, theme, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -348,6 +360,12 @@ private struct MoreDrawer: View {
                 .padding(.horizontal, Space.lg)
             }
             VStack(spacing: Space.sm) {
+                row(icon: "banknote", label: t("cash.title"), tone: theme.colors.textPrimary) {
+                    app.showMore = false; app.errorMessage = nil; app.showCashMovements = true
+                }
+                row(icon: "clock.arrow.circlepath", label: t("shifts.title"), tone: theme.colors.textPrimary) {
+                    app.showMore = false; app.showShiftHistory = true
+                }
                 row(icon: "lock", label: t("order.close_shift"), tone: theme.colors.danger) {
                     app.showMore = false; app.errorMessage = nil; app.showCloseShift = true
                 }

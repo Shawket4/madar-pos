@@ -509,6 +509,39 @@ final class AppModel: ObservableObject {
         return f.string(from: Date())
     }
 
+    // ── cash movements + shift history (online) ───────────────────────────────────
+    @Published var showCashMovements = false
+    @Published var showShiftHistory = false
+    @Published private(set) var cashMovements: [CashMovementView] = []
+    @Published private(set) var shiftHistory: [ShiftSummaryView] = []
+    @Published private(set) var isLoadingCash = false
+    @Published private(set) var isLoadingShifts = false
+
+    /// The open shift's cash movements (online read).
+    func loadCashMovements() async {
+        isLoadingCash = true; defer { isLoadingCash = false }
+        cashMovements = (try? await core.listCashMovements()) ?? []
+    }
+    /// Record a pay-in (amount > 0) or pay-out (amount < 0). Reloads the list on
+    /// success; surfaces the error otherwise. Returns whether it succeeded.
+    func recordCashMovement(amountMinor: Int64, note: String) async -> Bool {
+        isBusy = true; errorMessage = nil
+        defer { isBusy = false }
+        do {
+            _ = try await core.recordCashMovement(amountMinor: amountMinor, note: note)
+            await loadCashMovements()
+            return true
+        } catch {
+            errorMessage = humanMessage(error)
+            return false
+        }
+    }
+    /// Past shifts for the branch (online read).
+    func loadShiftHistory() async {
+        isLoadingShifts = true; defer { isLoadingShifts = false }
+        shiftHistory = (try? await core.listShifts()) ?? []
+    }
+
     // ── device setup (manager) ──────────────────────────────────────────────────
 
     /// Step 1: a manager authenticates (online), then we load the org's branches
