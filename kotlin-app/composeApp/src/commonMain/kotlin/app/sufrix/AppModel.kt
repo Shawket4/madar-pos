@@ -370,6 +370,9 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Session connectivity — drives the offline banner + sync chip state. */
     var isOnline by mutableStateOf(true)
         private set
+    /** Server-vs-device clock skew in minutes (drives the clock-skew banner). */
+    var clockSkewMinutes by mutableStateOf(0)
+        private set
 
     /** Refresh the sync chrome signals (chip counts + online) in one local read. */
     fun refreshPending() {
@@ -378,6 +381,14 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
             syncFailed = it.failed.toInt()
             isOnline = it.online
         }
+    }
+    /** Connectivity heartbeat — ping (updates online + skew + drains), then
+     *  re-read the chrome. Called on appear + on a 15s timer by the order screen. */
+    suspend fun refreshConnectivity() {
+        if (session == null) return
+        core.refreshConnectivity()
+        clockSkewMinutes = core.clockSkewMinutes()
+        refreshPending()
     }
     fun loadOutbox() {
         outbox = runCatching { core.listOutbox() }.getOrDefault(emptyList())

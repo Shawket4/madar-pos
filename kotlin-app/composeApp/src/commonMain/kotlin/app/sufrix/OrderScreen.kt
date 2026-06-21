@@ -100,6 +100,13 @@ fun OrderScreen(model: AppModel) {
         model.refreshPending()
         model.loadHistory()
     }
+    // Connectivity heartbeat — refresh online + clock skew (+ drain) every 15s.
+    LaunchedEffect("heartbeat") {
+        while (true) {
+            model.refreshConnectivity()
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
 
     val visible = model.menuItems
         .filter { it.isActive }
@@ -113,6 +120,11 @@ fun OrderScreen(model: AppModel) {
             if (!model.isOnline) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
                     NoticeBanner(t("chrome.offline_banner"), ChipTone.WARNING)
+                }
+            }
+            if (kotlin.math.abs(model.clockSkewMinutes) >= 5) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
+                    NoticeBanner("${t("chrome.clock_skew")} (${kotlin.math.abs(model.clockSkewMinutes)}m)", ChipTone.WARNING)
                 }
             }
             model.error?.let {
