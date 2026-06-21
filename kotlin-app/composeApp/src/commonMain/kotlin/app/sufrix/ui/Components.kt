@@ -46,6 +46,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.resources.Res
+// Compose Resources emits these as extension properties on Res.drawable in the
+// app.sufrix.resources package; they must be imported to use Res.drawable.Icon/Logo.
+import app.sufrix.resources.Icon
+import app.sufrix.resources.Logo
 import org.jetbrains.compose.resources.painterResource
 
 // The Compose mirror of the refined SwiftUI component library — same tokens,

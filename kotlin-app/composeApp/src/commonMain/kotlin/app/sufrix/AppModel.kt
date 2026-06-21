@@ -132,6 +132,9 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Change the UI locale (en/ar); re-resolves strings + RTL, persists. The
      *  cached catalog was projected under the old locale, so re-read it (offline,
      *  from the mirror) to switch item/category/payment labels immediately. */
+    // @JvmName avoids a JVM clash with the `locale` property's (private) setter,
+    // which also lowers to setLocale(String); Kotlin call sites are unaffected.
+    @JvmName("applyLocale")
     fun setLocale(value: String) {
         core.setLocale(value)
         locale = value
@@ -146,6 +149,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun t(key: String): String = core.tr(key)
     val isRTL: Boolean get() = core.isRtl()
 
+    @JvmName("applyThemeMode")
     fun setThemeMode(mode: ThemeMode) {
         themeMode = mode
         vault.themeMode = mode.name
@@ -297,6 +301,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun cartQtyForItem(itemId: String): Long = cartLines.filter { it.itemId == itemId }.sumOf { it.qty }
 
     /** Set the network printer address (Settings); persisted in the host vault. */
+    @JvmName("applyPrinterHost")
     fun setPrinterHost(value: String) {
         printerHost = value
         vault.printerHost = value

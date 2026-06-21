@@ -93,7 +93,9 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
 
     fun submit() {
         if (needsReason && reason.isBlank()) {
-            model.flagError(t("shift.opening_reason_required"))
+            // Non-composable `model.t` (not the @Composable top-level `t`) — submit()
+            // runs from an event handler, outside composition.
+            model.flagError(model.t("shift.opening_reason_required"))
         } else {
             scope.launch { model.openShift(openingMinor, if (needsReason) reason else null) }
         }

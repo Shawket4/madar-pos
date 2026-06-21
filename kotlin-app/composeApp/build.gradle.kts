@@ -25,9 +25,13 @@ kotlin {
             // Compose resources — the real brand assets in composeResources/.
             implementation(compose.components.resources)
             implementation(libs.kotlinx.coroutines.core)
-            // The generated UniFFI binding (app/sufrix/core/sufrix_core.kt) lives
-            // in commonMain and needs JNA at runtime.
-            implementation(libs.jna)
+            // The generated UniFFI binding (app/sufrix/core/sufrix_core.kt) lives in
+            // commonMain and needs JNA to COMPILE. `compileOnly` keeps the plain jna
+            // .jar off the runtime classpath so it can't collide with the Android
+            // @aar below (same com.sun.jna classes → checkDuplicateClasses fails).
+            // Each platform supplies JNA at runtime: android via the @aar, desktop
+            // via the .jar added in desktopMain.
+            compileOnly(libs.jna)
             // Coil 3 — async network images (menu-item photos). The network engine
             // (okhttp) is added per JVM target; the fetcher auto-registers via the
             // ServiceLoader, so the default ImageLoader handles http(s) URLs.
@@ -41,6 +45,8 @@ kotlin {
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
+            // JNA runtime for the desktop JVM (commonMain carries it compileOnly).
+            implementation(libs.jna)
             implementation(libs.coil.network.okhttp)
         }
     }
@@ -55,6 +61,13 @@ android {
         targetSdk = libs.versions.android.compileSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+    }
+    // Match Kotlin's JVM target (17) so AGP's Java compile isn't left at its 1.8
+    // default — otherwise compileDebugKotlinAndroid (17) vs Java (1.8) fails the
+    // JVM-target consistency check.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     // Per-ABI .so produced by ../../rust-core/tool/build-android.sh land in
     // src/androidMain/jniLibs (the default jniLibs dir).
