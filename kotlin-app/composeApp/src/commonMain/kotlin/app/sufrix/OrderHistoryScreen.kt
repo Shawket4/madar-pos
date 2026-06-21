@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.sufrix.core.OrderDetailLineView
+import app.sufrix.core.OrderDetailView
 import app.sufrix.core.OrderSummaryView
 import app.sufrix.ui.BtnVariant
 import app.sufrix.ui.ChipTone
@@ -64,6 +66,7 @@ fun OrderHistoryScreen(model: AppModel) {
     var search by remember { mutableStateOf("") }
     var statusFilter by remember { mutableStateOf<String?>(null) } // null=all; completed|voided|queued
     val currency = model.session?.currencyCode ?: ""
+    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { model.loadHistory() }
 
     val filtered = model.history.filter { o ->
@@ -76,6 +79,16 @@ fun OrderHistoryScreen(model: AppModel) {
             else -> o.status == statusFilter
         }
         matchesSearch && matchesStatus
+    }
+
+    // Load the expanded row's lines (skip queued orders — they aren't on the
+    // server yet). Mirrors the Swift `.task(id: expandedId)` detail loader.
+    LaunchedEffect(expandedId) {
+        val id = expandedId
+        if (id != null) {
+            val o = filtered.firstOrNull { it.id == id }
+            if (o != null && !o.queued) model.loadOrderDetail(id)
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -138,8 +151,10 @@ fun OrderHistoryScreen(model: AppModel) {
                     items(filtered, key = { it.id }) { item ->
                         HistoryRow(
                             item, currency, expandedId == item.id,
+                            detail = model.orderDetail?.takeIf { it.id == item.id },
                             onToggle = { expandedId = if (expandedId == item.id) null else item.id },
                             onVoid = { voidTarget = item },
+                            onReprint = { scope.launch { model.reprintOrder(item.id) } },
                         )
                     }
                 }
@@ -155,8 +170,10 @@ private fun HistoryRow(
     item: OrderSummaryView,
     currency: String,
     expanded: Boolean,
+    detail: OrderDetailView?,
     onToggle: () -> Unit,
     onVoid: () -> Unit,
+    onReprint: () -> Unit,
 ) {
     val c = sufrixColors()
     val canVoid = !item.queued && item.status != "voided"
@@ -177,12 +194,25 @@ private fun HistoryRow(
         }
         if (expanded) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+            if (detail != null && detail.id == item.id) {
+                detail.lines.forEach { line -> LineRow(line, currency) }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
+            }
             DetailRow(t("order.subtotal"), Money.format(item.subtotalMinor, currency))
             DetailRow(t("order.tax"), Money.format(item.taxMinor, currency))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.md),
+            ) {
                 Text(item.paymentLabel, color = c.textSecondary, fontFamily = SufrixFont, fontSize = 12.sp)
                 Box(Modifier.weight(1f))
                 if (canVoid) {
+                    Text(
+                        "⎙ ${t("receipt.print")}", color = c.accent, fontFamily = SufrixFont,
+                        fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                        modifier = Modifier.clickable { onReprint() },
+                    )
                     Text(
                         "✕ ${t("void.action")}", color = c.danger, fontFamily = SufrixFont,
                         fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
@@ -210,6 +240,23 @@ private fun DetailRow(label: String, value: String) {
         Text(label, color = c.textSecondary, fontFamily = SufrixFont, fontSize = 12.sp)
         Box(Modifier.weight(1f))
         Text(value, color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+    }
+}
+
+// One fetched order line — "qty× name" + its modifiers (size · addons ·
+// optionals) on the left, the line total on the right. Mirror of Swift lineRow.
+@Composable
+private fun LineRow(line: OrderDetailLineView, currency: String) {
+    val c = sufrixColors()
+    val mods = (listOfNotNull(line.sizeLabel) + line.addons + line.optionals)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text("${line.qty}× ${line.name}", color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+            if (mods.isNotEmpty()) {
+                Text(mods.joinToString(" · "), color = c.textMuted, fontFamily = SufrixFont, fontSize = 10.sp, maxLines = 2)
+            }
+        }
+        Text(Money.format(line.lineTotalMinor, currency), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
     }
 }
 

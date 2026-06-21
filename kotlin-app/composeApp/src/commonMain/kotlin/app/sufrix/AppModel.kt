@@ -21,6 +21,7 @@ import app.sufrix.core.ItemAddonView
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
 import app.sufrix.core.MenuItemView
+import app.sufrix.core.OrderDetailView
 import app.sufrix.core.OrderSummaryView
 import app.sufrix.core.OutboxItemView
 import app.sufrix.core.PaymentMethodView
@@ -401,6 +402,28 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         private set
     var shiftOrderCount by mutableStateOf(0)
         private set
+    /** The fetched lines for the expanded history row (null = none/queued). */
+    var orderDetail by mutableStateOf<OrderDetailView?>(null)
+        private set
+
+    /** Load an order's lines for the expanded history row (best-effort). */
+    suspend fun loadOrderDetail(id: String) {
+        orderDetail = runCatching { core.orderDetail(id) }.getOrNull()
+    }
+
+    /** Re-render and re-print a past order — same printer path as the receipt. */
+    suspend fun reprintOrder(id: String) {
+        val (host, port) = parsePrinter(printerHost)
+        if (host.isBlank()) { printState = PrintState.NO_PRINTER; return }
+        printState = PrintState.PRINTING
+        val bytes = core.renderOrderReceipt(id, branchName, session?.currencyCode ?: "", 32u)
+        printState = try {
+            core.sendToPrinter(host, port, bytes)
+            PrintState.PRINTED
+        } catch (e: Exception) {
+            PrintState.FAILED
+        }
+    }
 
     /** Load the current shift's orders (synced + queued). Best-effort. Also
      *  refreshes the stats pill from the same list (voided excluded, in core). */
