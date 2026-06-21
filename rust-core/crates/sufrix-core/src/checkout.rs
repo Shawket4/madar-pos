@@ -112,7 +112,7 @@ pub(crate) fn prepare(
     let amount_tendered_minor = input.amount_tendered_minor;
     let lines = cart::lines(store)?;
     if lines.is_empty() {
-        return Err(CoreError::Validation { field: "cart".into(), message: "cart is empty".into() });
+        return Err(CoreError::Validation { field: "cart".into(), detail: "cart is empty".into() });
     }
 
     let branch_uuid = parse_uuid(branch_id, "branch_id")?;
@@ -122,7 +122,7 @@ pub(crate) fn prepare(
     // NOT the localized label — resolve from the cached payment-method catalog.
     let raw = raw_payment_method(store, payment_method_id)?.ok_or_else(|| CoreError::Validation {
         field: "payment_method".into(),
-        message: "unknown payment method".into(),
+        detail: "unknown payment method".into(),
     })?;
     let payment_method = raw.name.clone();
     let is_cash = raw.is_cash;
@@ -148,14 +148,25 @@ pub(crate) fn prepare(
             .map(|l| pricing::CartLine {
                 quantity: l.qty,
                 unit_price: l.unit_price_minor,
-                is_bundle: false,
+                is_bundle: l.bundle_id.is_some(),
                 addons: l
                     .addons
                     .iter()
                     .map(|a| pricing::AddonSel { price_modifier: a.price_modifier_minor, quantity: a.qty })
                     .collect(),
                 optionals: l.optionals.iter().map(|o| pricing::OptionalSel { price: o.price_minor }).collect(),
-                bundle_components: vec![],
+                bundle_components: l
+                    .bundle_components
+                    .iter()
+                    .map(|c| pricing::BundleComponentSel {
+                        addons: c
+                            .addons
+                            .iter()
+                            .map(|a| pricing::AddonSel { price_modifier: a.price_modifier_minor, quantity: a.qty })
+                            .collect(),
+                        optionals: c.optionals.iter().map(|o| pricing::OptionalSel { price: o.price_minor }).collect(),
+                    })
+                    .collect(),
             })
             .collect(),
         discount_kind,
@@ -170,18 +181,39 @@ pub(crate) fn prepare(
     let items: Vec<models::OrderItemInput> = lines
         .iter()
         .map(|l| {
+            // A bundle line carries its config in `bundle_components`; its own
+            // top-level addons/optionals stay empty (Flutter parity).
+            if let Some(bid) = &l.bundle_id {
+                let comps: Vec<models::BundleComponentInput> = l
+                    .bundle_components
+                    .iter()
+                    .filter_map(|c| {
+                        let item_id = uuid::Uuid::parse_str(&c.item_id).ok()?;
+                        let mut ci = models::BundleComponentInput::new(item_id, c.qty as i32);
+                        let addons = component_addons(&c.addons);
+                        if !addons.is_empty() {
+                            ci.addons = Some(addons);
+                        }
+                        let opt_ids: Vec<uuid::Uuid> = c
+                            .optionals
+                            .iter()
+                            .filter_map(|o| uuid::Uuid::parse_str(&o.optional_field_id).ok())
+                            .collect();
+                        if !opt_ids.is_empty() {
+                            ci.optional_field_ids = Some(opt_ids);
+                        }
+                        ci.size_label = Some(c.size_label.clone());
+                        Some(ci)
+                    })
+                    .collect();
+                let mut item = models::OrderItemInput::new(vec![], vec![], l.qty as i32);
+                item.bundle_id = uuid::Uuid::parse_str(bid).ok().map(Some);
+                item.bundle_components = Some(comps);
+                item.unit_price = Some(Some(l.unit_price_minor as i32));
+                return item;
+            }
             // Addons carry their CHARGED unit price (swap delta / extra) verbatim.
-            let addons: Vec<models::AddonInput> = l
-                .addons
-                .iter()
-                .filter_map(|a| {
-                    let id = uuid::Uuid::parse_str(&a.addon_item_id).ok()?;
-                    let mut ai = models::AddonInput::new(id);
-                    ai.quantity = Some(a.qty as i32);
-                    ai.unit_price = Some(Some(a.price_modifier_minor as i32));
-                    Some(ai)
-                })
-                .collect();
+            let addons = component_addons(&l.addons);
             let optional_ids: Vec<uuid::Uuid> = l
                 .optionals
                 .iter()
@@ -270,8 +302,24 @@ pub(crate) fn prepare(
     Ok(Prepared { order_id, command: CheckoutCommand { request }, receipt, event_at: now_rfc3339 })
 }
 
+/// Wire `AddonInput`s from cart addons — the CHARGED unit price recorded
+/// verbatim (so an offline order equals the receipt). Shared by normal lines
+/// and bundle components.
+fn component_addons(addons: &[cart::CartAddonView]) -> Vec<models::AddonInput> {
+    addons
+        .iter()
+        .filter_map(|a| {
+            let id = uuid::Uuid::parse_str(&a.addon_item_id).ok()?;
+            let mut ai = models::AddonInput::new(id);
+            ai.quantity = Some(a.qty as i32);
+            ai.unit_price = Some(Some(a.price_modifier_minor as i32));
+            Some(ai)
+        })
+        .collect()
+}
+
 fn parse_uuid(s: &str, field: &str) -> CoreResult<uuid::Uuid> {
-    uuid::Uuid::parse_str(s).map_err(|_| CoreError::Validation { field: field.into(), message: "bad uuid".into() })
+    uuid::Uuid::parse_str(s).map_err(|_| CoreError::Validation { field: field.into(), detail: "bad uuid".into() })
 }
 
 /// Total of still-queued cash sales (outbox `create_order` whose payment method

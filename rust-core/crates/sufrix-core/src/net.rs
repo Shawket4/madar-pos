@@ -64,7 +64,7 @@ impl ApiClient {
             .timeout(Duration::from_secs(20))
             .user_agent(user_agent.clone())
             .build()
-            .map_err(|e| CoreError::Internal { message: format!("http client: {e}") })?;
+            .map_err(|e| CoreError::Internal { detail: format!("http client: {e}") })?;
         Ok(Self {
             base_url,
             user_agent,
@@ -125,9 +125,9 @@ pub(crate) fn map_api_error<T>(e: ApiError<T>) -> CoreError {
     match e {
         // Transport failures — classified the same way for typed + raw calls.
         ApiError::Reqwest(re) => classify_reqwest(&re),
-        ApiError::Io(io) => CoreError::Transient { message: io.to_string() },
+        ApiError::Io(io) => CoreError::Transient { detail: io.to_string() },
         // A 2xx body we couldn't decode = wire drift / our bug, never the user's.
-        ApiError::Serde(se) => CoreError::Internal { message: format!("decode: {se}") },
+        ApiError::Serde(se) => CoreError::Internal { detail: format!("decode: {se}") },
         ApiError::ResponseError(rc) => status_to_error(rc.status.as_u16(), &rc.content),
     }
 }
@@ -136,9 +136,9 @@ pub(crate) fn map_api_error<T>(e: ApiError<T>) -> CoreError {
 /// transient (sync retries).
 fn classify_reqwest(e: &reqwest::Error) -> CoreError {
     if e.is_connect() {
-        CoreError::Offline { message: e.to_string() }
+        CoreError::Offline { detail: e.to_string() }
     } else {
-        CoreError::Transient { message: e.to_string() }
+        CoreError::Transient { detail: e.to_string() }
     }
 }
 
@@ -147,13 +147,13 @@ fn status_to_error(status: u16, body: &str) -> CoreError {
     let message = extract_error_message(body)
         .unwrap_or_else(|| reason(status).to_string());
     match status {
-        401 => CoreError::Unauthenticated { message },
+        401 => CoreError::Unauthenticated { detail: message },
         // Network 403s carry no resource/action pair (that's `has_permission`'s
         // job); surface the server's message in `action` so the host can show it.
         403 => CoreError::Forbidden { resource: "api".into(), action: message },
-        400 | 422 => CoreError::Validation { field: String::new(), message },
-        s if s >= 500 => CoreError::Transient { message },
-        s => CoreError::Server { status: s, code: reason(s).to_string(), message },
+        400 | 422 => CoreError::Validation { field: String::new(), detail: message },
+        s if s >= 500 => CoreError::Transient { detail: message },
+        s => CoreError::Server { status: s, code: reason(s).to_string(), detail: message },
     }
 }
 
@@ -209,7 +209,7 @@ mod tests {
             Some("nope")
         );
         // Falls back to the status reason when the body isn't the envelope.
-        if let CoreError::Validation { message, .. } = status_to_error(400, "not json") {
+        if let CoreError::Validation { detail: message, .. } = status_to_error(400, "not json") {
             assert_eq!(message, "Bad Request");
         } else {
             panic!("expected validation");

@@ -215,7 +215,7 @@ pub(crate) fn unlock_from_bundle(
     let raw = store
         .kv_get(BUNDLE_KEY)?
         .ok_or_else(|| CoreError::Unauthenticated {
-            message: "no offline bundle cached — sign in online once first".into(),
+            detail: "no offline bundle cached — sign in online once first".into(),
         })?;
     let bundle: models::OfflineAuthBundle = serde_json::from_str(&raw)?;
 
@@ -232,7 +232,7 @@ pub(crate) fn unlock_from_bundle(
                     .unwrap_or(false)
         })
         .ok_or_else(|| CoreError::Unauthenticated {
-            message: "PIN not recognized offline".into(),
+            detail: "PIN not recognized offline".into(),
         })?;
 
     let (currency_code, tax_rate) = match store.kv_get(ORG_CONFIG_KEY)? {
@@ -276,7 +276,7 @@ fn nonblank(field: &Option<String>, name: &'static str) -> CoreResult<String> {
 }
 
 fn invalid(field: &str, message: &str) -> CoreError {
-    CoreError::Validation { field: field.to_string(), message: message.to_string() }
+    CoreError::Validation { field: field.to_string(), detail: message.to_string() }
 }
 
 #[cfg(test)]

@@ -257,11 +257,11 @@ impl SufrixCore {
     fn org_branch(&self) -> Result<(String, Option<String>), CoreError> {
         let g = self.session.read().unwrap_or_else(|e| e.into_inner());
         let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
-            message: "not signed in".into(),
+            detail: "not signed in".into(),
         })?;
         let org = s.snapshot.org_id.clone().ok_or_else(|| CoreError::Validation {
             field: "org_id".into(),
-            message: "session has no org".into(),
+            detail: "session has no org".into(),
         })?;
         Ok((org, s.snapshot.branch_id.clone()))
     }
@@ -546,9 +546,30 @@ impl SufrixCore {
         let item = items
             .iter()
             .find(|i| i.id == item_id)
-            .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
+            .ok_or_else(|| CoreError::Validation { field: "item".into(), detail: "unknown item".into() })?;
         let addon_catalog = menu::addons(&self.store, &self.current_locale())?;
         let line = cart::resolve_line(item, &addon_catalog, size_label, &addons, &optional_field_ids, qty, notes);
+        cart::add_resolved(&self.store, line)
+    }
+    /// Add a configured BUNDLE line: the fixed bundle price + each component's
+    /// chosen item/size/addons/optionals. The core resolves the component
+    /// up-charges from the catalog (component base/size price is never charged —
+    /// the bundle price covers it) and merges identical bundle configs.
+    pub fn cart_add_bundle(
+        &self,
+        bundle_id: String,
+        components: Vec<cart::BundleComponentSelection>,
+        qty: i64,
+    ) -> Result<Vec<cart::CartLineView>, CoreError> {
+        let locale = self.current_locale();
+        let bundles = menu::bundles(&self.store, &locale)?;
+        let bundle = bundles
+            .iter()
+            .find(|b| b.id == bundle_id)
+            .ok_or_else(|| CoreError::Validation { field: "bundle".into(), detail: "unknown bundle".into() })?;
+        let items = menu::menu_items(&self.store, &locale)?;
+        let addon_catalog = menu::addons(&self.store, &locale)?;
+        let line = cart::resolve_bundle_line(bundle, &items, &addon_catalog, &components, qty);
         cart::add_resolved(&self.store, line)
     }
     /// Active addons offered for an item, with their CHARGED price resolved (swap
@@ -558,7 +579,7 @@ impl SufrixCore {
         let item = items
             .iter()
             .find(|i| i.id == item_id)
-            .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
+            .ok_or_else(|| CoreError::Validation { field: "item".into(), detail: "unknown item".into() })?;
         let addon_catalog = menu::addons(&self.store, &self.current_locale())?;
         Ok(cart::item_addons(item, &addon_catalog))
     }
@@ -578,7 +599,7 @@ impl SufrixCore {
         let item = items
             .iter()
             .find(|i| i.id == item_id)
-            .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
+            .ok_or_else(|| CoreError::Validation { field: "item".into(), detail: "unknown item".into() })?;
         let addon_catalog = menu::addons(&self.store, &self.current_locale())?;
         Ok(recipe::compute_recipe(item, &addon_catalog, size_label.as_deref(), &addons, &optional_field_ids))
     }
@@ -777,7 +798,7 @@ impl SufrixCore {
             // Timed out → treat as offline.
             Err(_elapsed) if offline_ok => offline(self),
             Err(_elapsed) => Err(CoreError::Offline {
-                message: "sign-in timed out — check your connection".into(),
+                detail: "sign-in timed out — check your connection".into(),
             }),
         }
     }
@@ -883,18 +904,18 @@ impl SufrixCore {
         let (branch_id, teller_id, teller_name) = {
             let g = self.session.read().unwrap_or_else(|e| e.into_inner());
             let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
-                message: "not signed in".into(),
+                detail: "not signed in".into(),
             })?;
             let branch = s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
                 field: "branch_id".into(),
-                message: "session has no branch".into(),
+                detail: "session has no branch".into(),
             })?;
             (branch, s.snapshot.user_id.clone(), s.snapshot.display_name.clone())
         };
         let branch_uuid = uuid::Uuid::parse_str(&branch_id)
-            .map_err(|_| CoreError::Validation { field: "branch_id".into(), message: "bad uuid".into() })?;
+            .map_err(|_| CoreError::Validation { field: "branch_id".into(), detail: "bad uuid".into() })?;
         let teller_uuid = uuid::Uuid::parse_str(&teller_id)
-            .map_err(|_| CoreError::Validation { field: "teller_id".into(), message: "bad uuid".into() })?;
+            .map_err(|_| CoreError::Validation { field: "teller_id".into(), detail: "bad uuid".into() })?;
         let shift_id = uuid::Uuid::new_v4();
         let opened_at = chrono::Utc::now().fixed_offset();
         let opening_cash = opening_cash_minor as i32;
@@ -940,7 +961,7 @@ impl SufrixCore {
         let _ = self.drain_outbox().await;
 
         shift::current(&self.store)?
-            .ok_or_else(|| CoreError::Internal { message: "shift not persisted".into() })
+            .ok_or_else(|| CoreError::Internal { detail: "shift not persisted".into() })
     }
 
     /// Close the current open shift: count the closing drawer cash + an optional
@@ -954,7 +975,7 @@ impl SufrixCore {
     ) -> Result<(), CoreError> {
         let shift = shift::current(&self.store)?
             .filter(|s| s.is_open)
-            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no open shift".into() })?;
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
 
         let closed_at = chrono::Utc::now().fixed_offset();
         let mut request = sufrix_api::models::CloseShiftRequest::new(closing_cash_minor as i32);
@@ -993,7 +1014,7 @@ impl SufrixCore {
     pub async fn shift_report(&self) -> Result<shift::ShiftReportView, CoreError> {
         use sufrix_api::apis::shifts_api;
         let shift = shift::current(&self.store)?
-            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no shift".into() })?;
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no shift".into() })?;
         let queued_cash = checkout::queued_cash_total(&self.store)?;
         let online = self.current_session().map(|s| s.online).unwrap_or(false);
         if online {
@@ -1021,17 +1042,17 @@ impl SufrixCore {
         let (branch_id, tax_rate) = {
             let g = self.session.read().unwrap_or_else(|e| e.into_inner());
             let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
-                message: "not signed in".into(),
+                detail: "not signed in".into(),
             })?;
             let branch = s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
                 field: "branch_id".into(),
-                message: "session has no branch".into(),
+                detail: "session has no branch".into(),
             })?;
             (branch, s.snapshot.tax_rate)
         };
         let shift = shift::current(&self.store)?
             .filter(|s| s.is_open)
-            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no open shift".into() })?;
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
 
         let now = chrono::Utc::now().to_rfc3339();
         let prepared = checkout::prepare(
@@ -1085,13 +1106,13 @@ impl SufrixCore {
     pub async fn list_shift_orders(&self) -> Result<Vec<orders::OrderSummaryView>, CoreError> {
         use sufrix_api::apis::orders_api;
         let shift = shift::current(&self.store)?
-            .ok_or_else(|| CoreError::Validation { field: "shift".into(), message: "no shift".into() })?;
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no shift".into() })?;
         let (branch_id, online) = {
             let g = self.session.read().unwrap_or_else(|e| e.into_inner());
-            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated { message: "not signed in".into() })?;
+            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated { detail: "not signed in".into() })?;
             let b = s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
                 field: "branch_id".into(),
-                message: "session has no branch".into(),
+                detail: "session has no branch".into(),
             })?;
             (b, s.snapshot.online)
         };
@@ -1147,7 +1168,7 @@ impl SufrixCore {
     ) -> Result<(), CoreError> {
         // Must be signed in (the replay needs a token).
         if !self.is_authenticated() {
-            return Err(CoreError::Unauthenticated { message: "not signed in".into() });
+            return Err(CoreError::Unauthenticated { detail: "not signed in".into() });
         }
         let voided_at = chrono::Utc::now().fixed_offset();
         let mut request = sufrix_api::models::VoidOrderRequest::new(reason);
@@ -1177,11 +1198,11 @@ impl SufrixCore {
         let branch_id = {
             let g = self.session.read().unwrap_or_else(|e| e.into_inner());
             let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
-                message: "not signed in".into(),
+                detail: "not signed in".into(),
             })?;
             s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
                 field: "branch_id".into(),
-                message: "session has no branch".into(),
+                detail: "session has no branch".into(),
             })?
         };
         let prefill = shifts_api::get_current_shift(
@@ -1231,16 +1252,16 @@ impl SufrixCore {
         let connect = tokio::net::TcpStream::connect(&addr);
         let mut stream = timeout(Duration::from_secs(5), connect)
             .await
-            .map_err(|_| CoreError::Transient { message: format!("printer timeout: {addr}") })?
-            .map_err(|e| CoreError::Transient { message: format!("printer connect: {e}") })?;
+            .map_err(|_| CoreError::Transient { detail: format!("printer timeout: {addr}") })?
+            .map_err(|e| CoreError::Transient { detail: format!("printer connect: {e}") })?;
         stream
             .write_all(&bytes)
             .await
-            .map_err(|e| CoreError::Transient { message: format!("printer write: {e}") })?;
+            .map_err(|e| CoreError::Transient { detail: format!("printer write: {e}") })?;
         stream
             .flush()
             .await
-            .map_err(|e| CoreError::Transient { message: format!("printer flush: {e}") })?;
+            .map_err(|e| CoreError::Transient { detail: format!("printer flush: {e}") })?;
         Ok(())
     }
 }
