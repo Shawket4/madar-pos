@@ -17,6 +17,7 @@ import app.sufrix.core.CategoryView
 import app.sufrix.core.ComputedRecipeLineView
 import app.sufrix.core.CoreException
 import app.sufrix.core.DiscountView
+import app.sufrix.core.DraftView
 import app.sufrix.core.ItemAddonView
 import app.sufrix.core.LoginMode
 import app.sufrix.core.LoginRequest
@@ -552,6 +553,34 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     }
     private fun refreshCartTotals() {
         cartTotals = runCatching { core.cartTotals() }.getOrDefault(CartTotals(0L, 0L, 0L, 0L, 0L))
+    }
+
+    // ── drafts / held orders ──────────────────────────────────────────────────────
+    /** Drives the held-orders screen (shown over the order screen). */
+    var showDrafts by mutableStateOf(false)
+    var drafts by mutableStateOf<List<DraftView>>(emptyList())
+        private set
+
+    fun loadDrafts() { drafts = runCatching { core.listDrafts() }.getOrDefault(emptyList()) }
+
+    /** Park the current cart as a held order, auto-named by time of day. */
+    fun holdCart() {
+        val name = java.time.LocalTime.now().toString().take(5)
+        runCatching { core.holdCart(name) }
+        loadCart(); loadDrafts()
+    }
+
+    /** Restore a held order into the cart (replacing the current one). */
+    fun restoreDraft(id: String) {
+        cartLines = runCatching { core.restoreDraft(id) }.getOrDefault(cartLines)
+        cartDiscountId = runCatching { core.cartDiscountId() }.getOrNull()
+        refreshCartTotals()
+        loadDrafts()
+    }
+
+    fun discardDraft(id: String) {
+        runCatching { core.discardDraft(id) }
+        loadDrafts()
     }
 
     // ── item customization ───────────────────────────────────────────────────────

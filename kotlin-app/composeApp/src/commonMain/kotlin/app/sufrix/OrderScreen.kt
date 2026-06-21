@@ -197,6 +197,11 @@ fun OrderScreen(model: AppModel) {
             ShiftHistoryScreen(model)
         }
 
+        // Held orders (drafts) — full-screen over the order screen.
+        if (model.showDrafts) {
+            DraftsScreen(model)
+        }
+
         // Settings — full-screen over the order screen.
         if (model.showSettings) {
             SettingsScreen(model)
@@ -251,6 +256,9 @@ private fun MoreDrawer(model: AppModel, modifier: Modifier = Modifier) {
             }
             MoreRow("↺", t("shifts.title"), c.textPrimary) {
                 model.showMore = false; model.showShiftHistory = true
+            }
+            MoreRow("⤓", t("drafts.title"), c.textPrimary) {
+                model.showMore = false; model.loadDrafts(); model.showDrafts = true
             }
             MoreRow("🔒", t("order.close_shift"), c.danger) {
                 model.showMore = false; model.error = null; model.showCloseShift = true
@@ -643,7 +651,7 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                     )
                 }
             }
-            CartFooter(model.cartTotals, currency, onCheckout)
+            CartFooter(model.cartTotals, currency, onCheckout, onHold = { model.holdCart() })
         }
     }
 }
@@ -748,8 +756,9 @@ private fun StepButton(glyph: String, danger: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> Unit) {
+private fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> Unit, onHold: (() -> Unit)? = null) {
     val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
     Column(
         Modifier.fillMaxWidth().background(c.surface).padding(Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
@@ -765,7 +774,28 @@ private fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> U
         }
         TotalRow(t("order.tax"), Money.format(totals.taxMinor, currency))
         TotalRow(t("order.total"), Money.format(totals.totalMinor, currency), emphasized = true)
-        SufrixButton(t("order.checkout"), { onCheckout() })
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            if (onHold != null) {
+                val interaction = remember { MutableInteractionSource() }
+                Box(
+                    Modifier.size(50.dp).pressScale(interaction, 0.97f).clip(RoundedCornerShape(Radii.sm))
+                        .background(c.accentBg)
+                        .clickable(interactionSource = interaction, indication = null) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress); onHold()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("⤓", color = c.accent, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                }
+            }
+            Box(Modifier.weight(1f)) {
+                SufrixButton(t("order.checkout"), { onCheckout() })
+            }
+        }
     }
 }
 
