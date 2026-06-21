@@ -42,6 +42,7 @@ import app.sufrix.core.OrderDetailView
 import app.sufrix.core.OrderSummaryView
 import app.sufrix.ui.BtnVariant
 import app.sufrix.ui.ChipTone
+import app.sufrix.ui.SkeletonList
 import app.sufrix.ui.Money
 import app.sufrix.ui.NoticeBanner
 import app.sufrix.ui.Radii
@@ -131,15 +132,13 @@ fun OrderHistoryScreen(model: AppModel) {
             }
 
             // ── Content ───────────────────────────────────────────────────────
-            if (filtered.isEmpty()) {
+            if (model.isLoadingHistory && model.history.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { SkeletonList() }
+            } else if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (model.isLoadingHistory) {
-                        CircularProgressIndicator(color = c.accent)
-                    } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                            Text("▦", color = c.textMuted, fontSize = 40.sp)
-                            Text(t("history.empty"), color = c.textSecondary, fontFamily = SufrixFont, fontSize = 14.sp)
-                        }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                        Text("▦", color = c.textMuted, fontSize = 40.sp)
+                        Text(t("history.empty"), color = c.textSecondary, fontFamily = SufrixFont, fontSize = 14.sp)
                     }
                 }
             } else {

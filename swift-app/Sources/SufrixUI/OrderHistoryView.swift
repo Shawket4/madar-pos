@@ -40,16 +40,14 @@ struct OrderHistoryView: View {
             VStack(spacing: 0) {
                 header
                 if !app.history.isEmpty { filterBar }
-                if filtered.isEmpty {
+                if app.isLoadingHistory && app.history.isEmpty {
+                    ScrollView { SkeletonList() }
+                } else if filtered.isEmpty {
                     VStack(spacing: Space.md) {
-                        if app.isLoadingHistory {
-                            ProgressView().controlSize(.large)
-                        } else {
-                            Image(systemName: "tray")
-                                .font(.system(size: 40, weight: .light))
-                                .foregroundStyle(theme.colors.textMuted)
-                            Text(t("history.empty")).font(.ui(14)).foregroundStyle(theme.colors.textSecondary)
-                        }
+                        Image(systemName: "tray")
+                            .font(.system(size: 40, weight: .light))
+                            .foregroundStyle(theme.colors.textMuted)
+                        Text(t("history.empty")).font(.ui(14)).foregroundStyle(theme.colors.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
