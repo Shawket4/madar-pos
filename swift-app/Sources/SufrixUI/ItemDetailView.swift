@@ -158,11 +158,11 @@ struct ItemDetailView: View {
                 header
                 ScrollView {
                     VStack(alignment: .leading, spacing: Space.lg) {
+                        if showRecipe { recipeSection }
                         if !item.sizes.isEmpty { sizeSection }
                         ForEach(groups) { groupCard($0) }
                         if showAll || hasHiddenAddonTypes { showAllToggle }
                         if !item.optionalFields.isEmpty { optionalsSection }
-                        if showRecipe, !visibleRecipes.isEmpty { recipeSection }
                     }
                     .frame(maxWidth: 680)
                     .frame(maxWidth: .infinity)
@@ -217,8 +217,11 @@ struct ItemDetailView: View {
             if !item.recipes.isEmpty {
                 Button { withAnimation(Motion.standard) { showRecipe.toggle() } } label: {
                     Image(systemName: "list.bullet.rectangle")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(showRecipe ? theme.colors.accent : theme.colors.textMuted)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(showRecipe ? theme.colors.textOnAccent : theme.colors.accent)
+                        .frame(width: 32, height: 32)
+                        .background(showRecipe ? theme.colors.accent : theme.colors.accentBg)
+                        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -234,29 +237,37 @@ struct ItemDetailView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
 
-    /// The recipe lines for the current size (size-specific + size-agnostic).
+    /// The recipe lines for the current size (size-specific + size-agnostic);
+    /// falls back to ALL lines if nothing matches the selected size, so the
+    /// recipe button never reveals an empty panel.
     private var visibleRecipes: [RecipeLineView] {
-        item.recipes.filter { $0.sizeLabel == nil || $0.sizeLabel == size }
+        let matched = item.recipes.filter { $0.sizeLabel == nil || $0.sizeLabel == size }
+        return matched.isEmpty ? item.recipes : matched
     }
 
     private var recipeSection: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
-            sectionTitle(t("order.recipe"))
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.rectangle").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.colors.accent)
+                sectionTitle(t("order.recipe"))
+            }
             VStack(spacing: 0) {
                 let lines = visibleRecipes
                 ForEach(Array(lines.enumerated()), id: \.offset) { idx, r in
-                    HStack {
+                    HStack(spacing: Space.sm) {
+                        Circle().fill(theme.colors.accent.opacity(0.45)).frame(width: 5, height: 5)
                         Text(r.ingredientName).font(.ui(13)).foregroundStyle(theme.colors.textPrimary)
                         Spacer(minLength: Space.sm)
                         Text("\(fmtQty(r.quantity)) \(r.unit)")
                             .font(.money(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
                     }
-                    .padding(.vertical, 9)
+                    .padding(.vertical, 10)
                     if idx < lines.count - 1 { Rectangle().fill(theme.colors.borderLight).frame(height: 1) }
                 }
             }
             .padding(.horizontal, Space.md)
-            .background(theme.colors.surface)
+            .background(theme.colors.surfaceAlt)
             .overlay(
                 RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
                     .strokeBorder(theme.colors.border, lineWidth: 1)

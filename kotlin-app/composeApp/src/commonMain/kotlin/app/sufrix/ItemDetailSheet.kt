@@ -200,10 +200,14 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                     modifier = Modifier.clip(RoundedCornerShape(Radii.sm)).background(c.navyBg).padding(horizontal = 10.dp, vertical = 5.dp),
                 )
                 if (item.recipes.isNotEmpty()) {
-                    Text(
-                        "▤", color = if (showRecipe) c.accent else c.textMuted, fontSize = 18.sp,
-                        modifier = Modifier.clickable { showRecipe = !showRecipe },
-                    )
+                    Box(
+                        Modifier.size(32.dp).clip(RoundedCornerShape(Radii.sm))
+                            .background(if (showRecipe) c.accent else c.accentBg)
+                            .clickable { showRecipe = !showRecipe },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("▤", color = if (showRecipe) c.textOnAccent else c.accent, fontSize = 15.sp)
+                    }
                 }
                 Text("✕", color = c.textMuted, fontSize = 16.sp, modifier = Modifier.clickable { onClose() })
             }
@@ -215,6 +219,40 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.lg),
         ) {
+            // Recipe (revealed by the header button) — at the top so it's visible
+            // on toggle; falls back to all lines if the size has no specific recipe.
+            val recipeLines = item.recipes
+                .filter { it.sizeLabel == null || it.sizeLabel == size }
+                .ifEmpty { item.recipes }
+            if (showRecipe && recipeLines.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("▤", color = c.accent, fontSize = 12.sp)
+                        SectionTitle(t("order.recipe"))
+                    }
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
+                            .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).padding(horizontal = Space.md),
+                    ) {
+                        recipeLines.forEachIndexed { i, r ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                            ) {
+                                Box(Modifier.size(5.dp).clip(CircleShape).background(c.accent.copy(alpha = 0.45f)))
+                                Text(r.ingredientName, color = c.textPrimary, fontFamily = SufrixFont, fontSize = 13.sp)
+                                Box(Modifier.weight(1f))
+                                Text(
+                                    "${fmtQty(r.quantity)} ${r.unit}", color = c.textSecondary,
+                                    fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                                )
+                            }
+                            if (i < recipeLines.size - 1) Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
+                        }
+                    }
+                }
+            }
             if (item.sizes.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     SectionTitle(t("order.size"))
@@ -254,29 +292,6 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                             AddonOptionChip(f.name, f.priceMinor, on, multi = true, currency) {
                                 optionals = if (on) optionals - f.id else optionals + f.id
                             }
-                        }
-                    }
-                }
-            }
-            // Recipe lines for the current size (size-specific + size-agnostic).
-            val recipeLines = item.recipes.filter { it.sizeLabel == null || it.sizeLabel == size }
-            if (showRecipe && recipeLines.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    SectionTitle(t("order.recipe"))
-                    Card {
-                        recipeLines.forEachIndexed { i, r ->
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 9.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(r.ingredientName, color = c.textPrimary, fontFamily = SufrixFont, fontSize = 13.sp)
-                                Box(Modifier.weight(1f))
-                                Text(
-                                    "${fmtQty(r.quantity)} ${r.unit}", color = c.textSecondary,
-                                    fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
-                                )
-                            }
-                            if (i < recipeLines.size - 1) Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
                         }
                     }
                 }
@@ -425,15 +440,6 @@ private fun PricePill(price: Long, on: Boolean, currency: String) {
 /** Recipe quantity: whole numbers without a decimal, else the shortest form. */
 private fun fmtQty(q: Double): String =
     if (q == q.toLong().toDouble()) q.toLong().toString() else q.toString()
-
-@Composable
-private fun Card(content: @Composable () -> Unit) {
-    val c = sufrixColors()
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).padding(horizontal = Space.md),
-    ) { content() }
-}
 
 @Composable
 private fun SectionTitle(s: String) {
