@@ -54,15 +54,11 @@ struct MenuItemCard: View {
                 .kerning(1.5)
             // Real photo (when present) covers the gradient/monogram once loaded;
             // while loading or on failure it's transparent, so the gradient shows.
+            // Disk+memory cached (offline-capable), matching the Flutter app.
             if let urlStr = item.imageUrl, let url = URL(string: urlStr) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image): image.resizable().scaledToFill()
-                    default: Color.clear
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
+                CachedAsyncImage(url: url)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
             }
             if inCartQty > 0 {
                 Text("\(inCartQty)")

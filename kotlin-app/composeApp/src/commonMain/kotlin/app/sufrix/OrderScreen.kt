@@ -400,8 +400,8 @@ private fun ItemGridOrEmpty(
             columns = MaxExtentCells(200.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(Space.lg),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             items(items, key = { it.id }) { item ->
                 MenuItemCard(item, categoryName(item.categoryId), currency, cartQty(item.id)) { onAdd(item) }

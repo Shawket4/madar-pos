@@ -338,7 +338,7 @@ private struct ItemGridOrEmpty: View {
     let onAdd: (MenuItemView) -> Void
 
     // Width-driven columns (≈150–200pt cells) so landscape never yields giant cards.
-    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 10)]
+    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 14)]
 
     var body: some View {
         if items.isEmpty {
@@ -352,7 +352,7 @@ private struct ItemGridOrEmpty: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 10) {
+                LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(items, id: \.id) { item in
                         MenuItemCard(
                             item: item,
