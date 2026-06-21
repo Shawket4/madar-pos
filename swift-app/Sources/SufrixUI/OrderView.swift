@@ -1078,16 +1078,3 @@ extension ShiftView {
     }
 }
 
-extension View {
-    /// Inject the app chrome a modally-presented screen needs. A `.sheet` /
-    /// `.fullScreenCover` is hosted in a FRESH environment that does NOT inherit
-    /// the presenter's `\.theme`, `\.localize`, or `\.layoutDirection`, so each
-    /// modal must re-inject them — including the RTL flip, or Arabic sheets would
-    /// render left-to-right while the rest of the app mirrors.
-    func modalChrome(_ app: AppModel, _ theme: SufrixTheme, _ t: @escaping (String) -> String) -> some View {
-        environment(\.theme, theme)
-            .environment(\.localize, t)
-            .environment(\.layoutDirection, app.isRTL ? .rightToLeft : .leftToRight)
-            .toastHost(app)
-    }
-}

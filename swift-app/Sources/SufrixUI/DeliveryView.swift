@@ -35,11 +35,11 @@ struct DeliveryView: View {
                 await app.loadDeliveryOrders()
             }
         }
-        .sheet(item: $finalizing) { order in
-            FinalizeSheet(app: app, order: order).modalChrome(app, theme, t)
+        .sufrixSheet(item: $finalizing) { order, dismiss in
+            FinalizeSheet(app: app, order: order, onClose: dismiss)
         }
-        .sheet(item: $cancelling) { order in
-            CancelSheet(app: app, order: order).modalChrome(app, theme, t)
+        .sufrixSheet(item: $cancelling) { order, dismiss in
+            CancelSheet(app: app, order: order, onClose: dismiss)
         }
     }
 
@@ -190,8 +190,8 @@ private struct FinalizeSheet: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
-    @Environment(\.dismiss) private var dismiss
     let order: DeliveryOrderView
+    let onClose: () -> Void
     @State private var method: String?
 
     private var currency: String { app.session?.currencyCode ?? "" }
@@ -210,7 +210,7 @@ private struct FinalizeSheet: View {
             }
             SufrixButton(label: t("delivery.finalize"), icon: "checkmark.seal", loading: app.isBusy) {
                 guard let id = method else { return }
-                Task { if await app.finalizeDelivery(order, paymentMethodId: id) { dismiss() } }
+                Task { if await app.finalizeDelivery(order, paymentMethodId: id) { onClose() } }
             }
             .disabled(method == nil)
             Spacer()
@@ -227,8 +227,8 @@ private struct CancelSheet: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
-    @Environment(\.dismiss) private var dismiss
     let order: DeliveryOrderView
+    let onClose: () -> Void
     @State private var reason = ""
     @State private var restock = true
 
@@ -243,7 +243,7 @@ private struct CancelSheet: View {
             .tint(theme.colors.accent)
             SufrixButton(label: t("delivery.cancel"), icon: "xmark.circle", variant: .danger, loading: app.isBusy) {
                 Task {
-                    if await app.cancelDelivery(order, reason: reason.isEmpty ? nil : reason, restoreInventory: restock) { dismiss() }
+                    if await app.cancelDelivery(order, reason: reason.isEmpty ? nil : reason, restoreInventory: restock) { onClose() }
                 }
             }
             Spacer()

@@ -69,14 +69,12 @@ struct BundleDetailView: View {
             }
         }
         // Per-component customization, reusing ItemDetailView in configure mode.
-        .sheet(item: $configuring) { ctx in
+        .sufrixSheet(item: $configuring, size: .large) { ctx, dismiss in
             ItemDetailView(
-                app: app, item: ctx.item, onClose: { configuring = nil },
+                app: app, item: ctx.item, onClose: dismiss,
                 configureSeed: drafts[ctx.id],
-                onConfigure: { draft in drafts[ctx.id] = draft; configuring = nil }
+                onConfigure: { draft in drafts[ctx.id] = draft; dismiss() }
             )
-            .frame(minWidth: 640, minHeight: 640)
-            .modalChrome(app, theme, t)
         }
     }
 
