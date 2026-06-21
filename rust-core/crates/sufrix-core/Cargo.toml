@@ -20,13 +20,24 @@ uniffi = { version = "0.28", features = ["cli", "tokio"] }
 
 # The typed reqwest API client generated from the backend OpenAPI spec
 # (tool/generate_api.sh). The `net/` layer drives it; nothing here hand-rolls wire.
-sufrix-api = { path = "../sufrix-api" }
+# `default-features = false` drops its `default = ["native-tls"]` (→ openssl-sys,
+# which won't cross-compile to Android); TLS is supplied by our `rustls-no-provider`
+# reqwest below, unified into the one reqwest build. Survives client regeneration.
+sufrix-api = { path = "../sufrix-api", default-features = false }
 # Async runtime backing the exported `async fn`s (and reqwest's executor).
 # `macros` powers `#[tokio::test]`; `net`/`io-util` back the printer TCP send.
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util"] }
 # HTTP plumbing we touch directly in `net/` (client builder, status codes, errors).
-# Features union with sufrix-api's, resolving to one reqwest build.
-reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
+# Features union with sufrix-api's, resolving to one reqwest build. `rustls-no-provider`
+# turns on reqwest's rustls connector WITHOUT aws-lc-rs (needs cmake) — we hand it a
+# ring-backed config in net.rs via `use_preconfigured_tls`. No native-tls → no OpenSSL.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+# rustls stack for that preconfigured client: ring crypto (cross-compiles to
+# Android/iOS with no cmake or OpenSSL) + bundled Mozilla CA roots (webpki-roots),
+# so the backend's Let's Encrypt cert verifies identically on every platform with
+# zero platform cert-store wiring. See net.rs::default_tls_config.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
 # Offline-PIN verifier — argon2id, byte-compatible with the backend's
 # `auth::offline::hash_offline_pin` (verifies any PHC string it ships in the bundle).
 argon2 = "0.5"

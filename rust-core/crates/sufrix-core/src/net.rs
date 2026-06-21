@@ -12,13 +12,32 @@
 //! lands with the cart/checkout module that needs it — the header name is
 //! verified against the backend there, not guessed here.
 
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use sufrix_api::apis::configuration::Configuration;
 use sufrix_api::apis::Error as ApiError;
 
 use crate::error::{CoreError, CoreResult};
+
+/// The TLS config every backend request rides on: rustls with the **ring** crypto
+/// provider and the bundled Mozilla CA roots (`webpki-roots`). reqwest 0.13's stock
+/// `rustls` feature would drag in aws-lc-rs (needs cmake to cross-compile) plus
+/// `rustls-platform-verifier` (needs Android `Context`/JNI init), so we enable
+/// `rustls-no-provider` and hand reqwest a fully-built config here instead. Result:
+/// pure-Rust, cross-compiles clean to Android/iOS, same trust anchors everywhere —
+/// no OpenSSL and no platform cert-store wiring.
+fn default_tls_config() -> rustls::ClientConfig {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider supports rustls' default protocol versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth()
+}
 
 /// The single HTTP client the core talks to the backend through. Cheap to clone
 /// the inner `reqwest::Client` (it's `Arc`-backed), so every call gets a fresh
@@ -36,6 +55,9 @@ impl ApiClient {
     pub fn new(base_url: String) -> CoreResult<Self> {
         let user_agent = format!("sufrix-core/{}", env!("CARGO_PKG_VERSION"));
         let http = reqwest::Client::builder()
+            // ring + bundled Mozilla roots (see default_tls_config) — keeps cert
+            // verification identical on Android/iOS/desktop with no OpenSSL.
+            .use_preconfigured_tls(default_tls_config())
             // Short connect timeout so an unreachable server fails fast and the
             // hot path can fall back to offline instead of stranding a teller.
             .connect_timeout(Duration::from_secs(4))
