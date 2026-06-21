@@ -839,6 +839,7 @@ mod tests {
             available_until_date: None,
             available_from_time: None,
             available_until_time: None,
+            components: vec![],
         }
     }
 

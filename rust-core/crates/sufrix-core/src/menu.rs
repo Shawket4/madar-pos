@@ -146,6 +146,19 @@ pub struct BundleView {
     pub available_until_date: Option<String>,
     pub available_from_time: Option<String>,
     pub available_until_time: Option<String>,
+    /// The bundle's component items (which menu item + how many). The detail
+    /// sheet configures each one through the normal item-customization flow.
+    pub components: Vec<BundleComponentView>,
+}
+
+/// One item that makes up a bundle (hydrated from the bundle list). The
+/// component's base price is never charged separately — the bundle price covers
+/// it; only its addon/optional up-charges add money.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct BundleComponentView {
+    pub item_id: String,
+    pub item_name: String,
+    pub quantity: i64,
 }
 
 #[derive(uniffi::Record, Clone, Debug)]
@@ -409,23 +422,72 @@ pub(crate) fn addons(store: &Store, locale: &str) -> CoreResult<Vec<AddonItemVie
         .collect())
 }
 
+// Tolerant local shape for the `/bundles` wire (PaginatedBundles.data is
+// `Vec<BundleWithComponents>` — the COMPONENTS the detail sheet needs ride
+// along). Captured leniently (dates/status as strings, decimals omitted) so the
+// encoding can't blank the combos; a bad row is skipped, not fatal.
+#[derive(Deserialize)]
+struct FullBundle {
+    id: uuid::Uuid,
+    name: String,
+    #[serde(default)]
+    name_translations: Value,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    description_translations: Value,
+    price: i32,
+    status: String,
+    #[serde(default)]
+    image_url: Option<String>,
+    #[serde(default)]
+    available_from_date: Option<String>,
+    #[serde(default)]
+    available_until_date: Option<String>,
+    #[serde(default)]
+    available_from_time: Option<String>,
+    #[serde(default)]
+    available_until_time: Option<String>,
+    #[serde(default)]
+    components: Vec<FullBundleComponent>,
+}
+
+#[derive(Deserialize)]
+struct FullBundleComponent {
+    item_id: uuid::Uuid,
+    #[serde(default)]
+    item_name: String,
+    #[serde(default)]
+    quantity: i32,
+}
+
 pub(crate) fn bundles(store: &Store, locale: &str) -> CoreResult<Vec<BundleView>> {
-    let items: Vec<models::Bundle> = parse_kv(store, K_BUNDLES)?;
+    let items: Vec<FullBundle> = parse_kv_lenient(store, K_BUNDLES)?;
     Ok(items
         .into_iter()
         .map(|b| BundleView {
             id: b.id.to_string(),
-            name: resolve(b.name_translations.as_ref().unwrap_or(&Value::Null), &b.name, locale),
-            description: flat(&b.description).map(|d| {
-                resolve(b.description_translations.as_ref().unwrap_or(&Value::Null), &d, locale)
-            }),
+            name: resolve(&b.name_translations, &b.name, locale),
+            description: b
+                .description
+                .clone()
+                .map(|d| resolve(&b.description_translations, &d, locale)),
             price_minor: b.price as i64,
-            image_url: flat(&b.image_url),
-            is_available: matches!(b.status, models::BundleStatus::Active),
-            available_from_date: flat(&b.available_from_date).map(|d| d.to_string()),
-            available_until_date: flat(&b.available_until_date).map(|d| d.to_string()),
-            available_from_time: flat(&b.available_from_time),
-            available_until_time: flat(&b.available_until_time),
+            image_url: b.image_url.clone(),
+            is_available: b.status == "active",
+            available_from_date: b.available_from_date.clone().filter(|s| !s.is_empty()),
+            available_until_date: b.available_until_date.clone().filter(|s| !s.is_empty()),
+            available_from_time: b.available_from_time.clone().filter(|s| !s.is_empty()),
+            available_until_time: b.available_until_time.clone().filter(|s| !s.is_empty()),
+            components: b
+                .components
+                .iter()
+                .map(|c| BundleComponentView {
+                    item_id: c.item_id.to_string(),
+                    item_name: c.item_name.clone(),
+                    quantity: c.quantity.max(1) as i64,
+                })
+                .collect(),
         })
         .collect())
 }
@@ -763,6 +825,7 @@ mod tests {
                 available_until_date: None,
                 available_from_time: from_t.map(String::from),
                 available_until_time: until_t.map(String::from),
+                components: vec![],
             }
         }
         let now = chrono::DateTime::parse_from_rfc3339("2026-06-21T10:30:00+00:00").unwrap();
