@@ -43,10 +43,14 @@ struct SufrixTextField: View {
     }
 
     @ViewBuilder private var field: some View {
+        // `.plain` is essential: on macOS the default TextField/SecureField style is
+        // `.roundedBorder`, which draws its OWN bezel inside our custom border —
+        // that's the "multiple outlines" look. Plain lets our overlay be the only ring.
         let base = Group {
             if secure { SecureField(placeholder, text: $text) }
             else { TextField(placeholder, text: $text) }
         }
+        .textFieldStyle(.plain)
         #if os(iOS)
         base
             .keyboardType(uiKeyboard)

@@ -78,94 +78,67 @@ struct OrderView: View {
                     }
                 }
             }
+            // ── Bottom-sheet modals: scrim + draggable card (tap-out / drag-down
+            // to dismiss). Custom presenter — macOS .sheet can't do either and
+            // stacking many leaves dismiss artifacts. In-tree, so they inherit the
+            // theme/localize/RTL/toast environment (no modalChrome needed). ───────
             // Phone: the cart sheet swaps its content to tender on checkout.
-            .sheet(isPresented: $showCart, onDismiss: { tenderInCart = false; app.dismissReceipt() }) {
+            .sufrixSheet(isPresented: $showCart, size: .large,
+                         onDismiss: { tenderInCart = false; app.dismissReceipt() }) { dismiss in
                 Group {
                     if tenderInCart {
-                        TenderView(app: app, onClose: { tenderInCart = false; showCart = false })
+                        TenderView(app: app, onClose: { tenderInCart = false; dismiss() })
                     } else {
-                        CartPanel(app: app, onClose: { showCart = false }, onCheckout: { tenderInCart = true })
+                        CartPanel(app: app, onClose: dismiss, onCheckout: { tenderInCart = true })
                     }
                 }
-                .modalChrome(app, theme, t)
             }
-            // Wide: tender is a root sheet beside the cart column.
-            .sheet(isPresented: $showTenderWide, onDismiss: { app.dismissReceipt() }) {
-                TenderView(app: app, onClose: { showTenderWide = false })
-                    .modalChrome(app, theme, t)
+            // Wide: tender is its own sheet beside the cart column.
+            .sufrixSheet(isPresented: $showTenderWide, size: .large,
+                         onDismiss: { app.dismissReceipt() }) { dismiss in
+                TenderView(app: app, onClose: dismiss)
             }
-            // Close-shift flow over the order screen.
-            #if os(iOS)
-            .fullScreenCover(isPresented: $app.showCloseShift) {
-                CloseShiftView(app: app)
-                    .modalChrome(app, theme, t)
-            }
-            #else
-            .sheet(isPresented: $app.showCloseShift) {
-                CloseShiftView(app: app)
-                    .frame(minWidth: 480, minHeight: 600)
-                    .modalChrome(app, theme, t)
-            }
-            #endif
-            // Sync center.
-            .sheet(isPresented: $app.showSync) {
-                SyncView(app: app, onClose: { app.showSync = false })
-                    .frame(minWidth: 420, minHeight: 520)
-                    .modalChrome(app, theme, t)
-            }
-            // Order history.
-            .sheet(isPresented: $app.showHistory) {
-                OrderHistoryView(app: app, onClose: { app.showHistory = false })
-                    .frame(minWidth: 460, minHeight: 560)
-                    .modalChrome(app, theme, t)
-            }
-            // Item customization. Bind through a derived binding so EVERY dismissal
-            // route — header ✕, swipe-down, or tap-outside — runs closeItemDetail()
-            // and clears the edit state, not just the explicit close button.
-            .sheet(item: Binding(get: { app.detailItem }, set: { if $0 == nil { app.closeItemDetail() } })) { item in
-                ItemDetailView(app: app, item: item, onClose: { app.closeItemDetail() })
-                    .frame(minWidth: 640, minHeight: 640)
-                    .modalChrome(app, theme, t)
-            }
-            // Settings.
-            .sheet(isPresented: $app.showSettings) {
-                SettingsView(app: app, onClose: { app.showSettings = false })
-                    .frame(minWidth: 440, minHeight: 560)
-                    .modalChrome(app, theme, t)
-            }
-            // More — overflow nav hub (close shift, sign out, …).
-            .sheet(isPresented: $app.showMore) {
-                MoreDrawer(app: app)
-                    .modalChrome(app, theme, t)
+            // Item customization. The derived binding runs closeItemDetail() on
+            // EVERY dismissal route — tap-out, drag-down, or the header ✕.
+            .sufrixSheet(item: Binding(get: { app.detailItem },
+                                       set: { if $0 == nil { app.closeItemDetail() } }),
+                         size: .large) { item, dismiss in
+                ItemDetailView(app: app, item: item, onClose: dismiss)
             }
             // Bundle (combo) configuration.
-            .sheet(item: $app.detailBundle) { bundle in
-                BundleDetailView(app: app, bundle: bundle, onClose: { app.closeBundleDetail() })
-                    .frame(minWidth: 640, minHeight: 640)
-                    .modalChrome(app, theme, t)
+            .sufrixSheet(item: $app.detailBundle, size: .large) { bundle, dismiss in
+                BundleDetailView(app: app, bundle: bundle, onClose: dismiss)
             }
-            // Cash In/Out.
-            .sheet(isPresented: $app.showCashMovements) {
-                CashMovementsView(app: app, onClose: { app.showCashMovements = false })
-                    .frame(minWidth: 440, minHeight: 560)
-                    .modalChrome(app, theme, t)
-            }
-            // Past shifts.
-            .sheet(isPresented: $app.showShiftHistory) {
-                ShiftHistoryView(app: app, onClose: { app.showShiftHistory = false })
-                    .frame(minWidth: 460, minHeight: 560)
-                    .modalChrome(app, theme, t)
+            // More — overflow nav hub (close shift, sign out, …).
+            .sufrixSheet(isPresented: $app.showMore) { _ in
+                MoreDrawer(app: app)
             }
             // Held orders (drafts).
-            .sheet(isPresented: $app.showDrafts) {
-                DraftsView(app: app, onClose: { app.showDrafts = false })
-                    .frame(minWidth: 420, minHeight: 480)
-                    .modalChrome(app, theme, t)
+            .sufrixSheet(isPresented: $app.showDrafts) { dismiss in
+                DraftsView(app: app, onClose: dismiss)
             }
-            .sheet(isPresented: $app.showDelivery) {
-                DeliveryView(app: app, onClose: { app.showDelivery = false })
-                    .frame(minWidth: 480, minHeight: 560)
-                    .modalChrome(app, theme, t)
+            // ── Full-screen routed screens: slide-in over the hub, own back
+            // chevron. Reached from the action bar / More drawer. ────────────────
+            .appScreen(isPresented: $app.showCloseShift) { _ in
+                CloseShiftView(app: app)
+            }
+            .appScreen(isPresented: $app.showSync) { dismiss in
+                SyncView(app: app, onClose: dismiss)
+            }
+            .appScreen(isPresented: $app.showHistory) { dismiss in
+                OrderHistoryView(app: app, onClose: dismiss)
+            }
+            .appScreen(isPresented: $app.showSettings) { dismiss in
+                SettingsView(app: app, onClose: dismiss)
+            }
+            .appScreen(isPresented: $app.showCashMovements) { dismiss in
+                CashMovementsView(app: app, onClose: dismiss)
+            }
+            .appScreen(isPresented: $app.showShiftHistory) { dismiss in
+                ShiftHistoryView(app: app, onClose: dismiss)
+            }
+            .appScreen(isPresented: $app.showDelivery) { dismiss in
+                DeliveryView(app: app, onClose: dismiss)
             }
         }
         .task {
@@ -620,6 +593,7 @@ private struct SearchField: View {
                 .font(.system(size: 14))
                 .foregroundStyle(theme.colors.textMuted)
             TextField(placeholder, text: $text)
+                .textFieldStyle(.plain) // no inner macOS bezel
                 .font(.ui(15))
                 .foregroundStyle(theme.colors.textPrimary)
             if !text.isEmpty {

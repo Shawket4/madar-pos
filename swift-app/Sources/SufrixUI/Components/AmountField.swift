@@ -36,6 +36,7 @@ struct AmountField: View {
                 }
             ))
             .font(.money(28, .heavy))
+            .textFieldStyle(.plain) // suppress macOS's default rounded-border bezel
             .foregroundStyle(theme.colors.textPrimary)
             .focused($focused)
             #if os(iOS)
