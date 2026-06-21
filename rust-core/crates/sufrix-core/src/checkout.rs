@@ -282,6 +282,10 @@ pub(crate) fn prepare(
         .collect();
 
     let mut request = models::CreateOrderRequest::new(branch_uuid, items, payment_method.clone(), shift_uuid);
+    // Exactly-once: the in-body idempotency key IS the client order id. It rides
+    // inside the persisted outbox payload, so a replay after a lost response —
+    // even months later — dedups against `orders.idempotency_key` server-side.
+    request.idempotency_key = Some(Some(order_id));
     request.subtotal = Some(Some(priced.subtotal_minor as i32));
     request.tax_amount = Some(Some(priced.tax_minor as i32));
     request.total_amount = Some(Some(priced.total_minor as i32));
@@ -446,13 +450,22 @@ pub(crate) fn queued_cash_total(store: &Store) -> CoreResult<i64> {
         raw.iter().filter(|p| p.is_cash).map(|p| p.name.clone()).collect();
     let mut total = 0i64;
     for item in store.list_active()? {
-        if item.op_type != "create_order" {
-            continue;
-        }
-        if let Ok(cmd) = serde_json::from_str::<CheckoutCommand>(&item.payload) {
-            if cash_names.contains(&cmd.request.payment_method) {
-                total += cmd.request.total_amount.flatten().unwrap_or(0) as i64;
+        match item.op_type.as_str() {
+            // A still-queued cash sale: its cash is physically in the drawer.
+            "create_order" => {
+                if let Ok(cmd) = serde_json::from_str::<CheckoutCommand>(&item.payload) {
+                    if cash_names.contains(&cmd.request.payment_method) {
+                        total += cmd.request.total_amount.flatten().unwrap_or(0) as i64;
+                    }
+                }
             }
+            // A queued pay-in/pay-out (signed): the drawer already moved.
+            "cash_movement" => {
+                if let Ok(cmd) = serde_json::from_str::<crate::shift::CashMovementCommand>(&item.payload) {
+                    total += cmd.request.amount as i64;
+                }
+            }
+            _ => {}
         }
     }
     Ok(total)
@@ -626,7 +639,7 @@ mod tests {
                     idempotency_key: id.into(),
                     payload: serde_json::to_string(&cmd).unwrap(),
                     event_at: "2026-06-20T12:00:00+00:00".into(),
-                    depends_on_seq: None,
+                    ..Default::default()
                 })
                 .unwrap();
         };

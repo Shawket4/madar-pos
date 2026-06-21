@@ -44,6 +44,14 @@ pub(crate) struct CloseShiftCommand {
     pub request: models::CloseShiftRequest,
 }
 
+/// Outbox payload for an offline cash movement — carries the path `shift_id`.
+/// Idempotent on the request's `client_ref` (the backend dedups replays).
+#[derive(Serialize, Deserialize)]
+pub(crate) struct CashMovementCommand {
+    pub shift_id: String,
+    pub request: models::CashMovementRequest,
+}
+
 /// A cash-drawer movement (pay-in / pay-out). `amount_minor` is signed:
 /// positive = cash in, negative = cash out.
 #[derive(uniffi::Record, Clone, Debug)]

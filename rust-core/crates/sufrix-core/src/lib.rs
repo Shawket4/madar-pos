@@ -113,6 +113,9 @@ pub struct SufrixCore {
     /// Server-vs-device clock skew in SECONDS, refreshed by `refresh_connectivity`
     /// (from the server `Date` header). Drives the clock-skew banner.
     clock_skew_secs: std::sync::atomic::AtomicI64,
+    /// `true` after a drain hit a 401: the outbox is parked (no retry budget
+    /// burned, no heartbeat hammering) until the next successful login clears it.
+    auth_paused: std::sync::atomic::AtomicBool,
 }
 
 #[uniffi::export]
@@ -133,6 +136,7 @@ impl SufrixCore {
             session: RwLock::new(None),
             token_store: Mutex::new(None),
             clock_skew_secs: std::sync::atomic::AtomicI64::new(0),
+            auth_paused: std::sync::atomic::AtomicBool::new(false),
         }))
     }
 
@@ -294,110 +298,305 @@ impl SufrixCore {
             .any(|i| i.op_type == op_type && (i.id == sid || i.id == close_id)))
     }
 
-    /// Drain the durable outbox in FIFO order. Each op dispatches by `op_type`;
-    /// a connectivity error stops the drain (items stay pending for next time),
-    /// a 4xx marks the item dead. The single place outbox writes hit the network.
+    /// (enqueuing teller id, device→server clock skew in ms) stamped on every
+    /// queued op — the drain scopes by teller and re-bases timestamps at sync.
+    fn outbox_meta(&self) -> (Option<String>, Option<i64>) {
+        let user_id = self
+            .session
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|s| s.snapshot.user_id.clone());
+        let skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed) * 1000;
+        (user_id, Some(skew_ms))
+    }
+
+    /// Drain the durable outbox — the single place outbox writes hit the network.
+    /// Ports the Flutter offline-queue engine (offline_queue.dart) so a device
+    /// can run months offline and replay safely:
+    ///   • backoff-gated, FIFO, user-scoped `due_for_sync`;
+    ///   • crash recovery (inflight → pending) + acked-row retention purge;
+    ///   • dependency gating with cascade-fail-on-dead;
+    ///   • close-shift-must-be-LAST (shift-scoped);
+    ///   • exactly-once via in-body idempotency keys (a lost-response retry dedups);
+    ///   • precise per-status handling — 401 parks the queue, network blips
+    ///     reschedule without burning retry budget, genuine 4xx dead-letter,
+    ///     idempotent 409/404 ack, 5xx exponential-backoff up to 8 tries.
     async fn drain_outbox(&self) -> Result<(), CoreError> {
-        use sufrix_api::apis::shifts_api;
-        for item in self.store.pending()? {
-            match item.op_type.as_str() {
-                "open_shift" => {
-                    let cmd: shift::OpenShiftCommand = serde_json::from_str(&item.payload)?;
-                    let res = shifts_api::open_shift(
-                        &self.api.config(),
-                        shifts_api::OpenShiftParams {
-                            branch_id: cmd.branch_id,
-                            open_shift_request: cmd.request,
-                        },
-                    )
-                    .await;
-                    match res {
-                        Ok(server) => {
-                            shift::save(&self.store, &server)?;
-                            self.store.mark_acked(item.seq, Some(&server.id.to_string()))?;
-                        }
-                        Err(e) => match net::map_api_error(e) {
-                            // Network down → stop; retry the whole queue later.
-                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
-                            // 4xx/terminal → dead-letter, keep draining the rest.
-                            other => {
-                                self.store.mark_dead(item.seq, &other.to_string())?;
-                                // The server REJECTED the open (e.g. 409 already
-                                // open). Drop the optimistic shift so the teller
-                                // isn't left selling against a shift that doesn't
-                                // exist server-side (checkout only checks is_open).
-                                if shift::current(&self.store)?.map(|s| s.id) == Some(item.id.clone()) {
-                                    let _ = shift::clear(&self.store);
-                                }
-                            }
-                        },
+        use std::sync::atomic::Ordering::Relaxed;
+        // Crash recovery + retention housekeeping (cheap, idempotent).
+        let _ = self.store.recover_inflight();
+        let _ = self.store.purge_acked_older_than(now_ms() - K_ACKED_RETENTION_MS);
+        // A 401-parked queue burns nothing until the next successful login.
+        if self.auth_paused.load(Relaxed) {
+            return Ok(());
+        }
+
+        let (user_id, _) = self.outbox_meta();
+        for item in self.store.due_for_sync(now_ms(), user_id.as_deref())? {
+            // A shift close must be the LAST op for its shift — wait while any of
+            // that shift's orders/voids/cash are still live (shift-scoped).
+            if item.op_type == "close_shift" {
+                if let Some(sid) = item.shift_id.as_deref() {
+                    if self.store.has_live_shift_writes(sid, item.seq)? {
+                        continue;
                     }
                 }
-                "close_shift" => {
-                    let cmd: shift::CloseShiftCommand = serde_json::from_str(&item.payload)?;
-                    let res = shifts_api::close_shift(
-                        &self.api.config(),
-                        shifts_api::CloseShiftParams {
-                            shift_id: cmd.shift_id,
-                            close_shift_request: cmd.request,
-                        },
-                    )
-                    .await;
-                    match res {
-                        Ok(_) => self.store.mark_acked(item.seq, None)?,
-                        Err(e) => match net::map_api_error(e) {
-                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
-                            // close_shift is idempotent (keyed `{shift_id}:close`): a
-                            // 409 means the server already closed it → treat as done.
-                            CoreError::Server { status: 409, .. } => self.store.mark_acked(item.seq, None)?,
-                            other => self.store.mark_dead(item.seq, &other.to_string())?,
-                        },
+            }
+
+            // Prerequisite gating: don't send until the dependency is acked.
+            if let Some(dep) = item.depends_on_seq {
+                match self.store.status_of_seq(dep)?.as_deref() {
+                    Some("pending") | Some("inflight") => continue, // still waiting
+                    Some("dead") => {
+                        // The prerequisite permanently failed — this op can never
+                        // succeed alone. Cascade the failure instead of looping.
+                        self.store.mark_dead(item.seq, "a required earlier action failed to sync")?;
+                        continue;
+                    }
+                    _ => {} // acked / discarded → safe to proceed
+                }
+            }
+
+            self.store.mark_inflight(item.seq)?;
+            match self.send_outbox_item(&item).await {
+                // Applied server-side (or idempotently already-applied).
+                SendOutcome::Acked(server_id) => {
+                    self.store.mark_acked(item.seq, server_id.as_deref())?;
+                }
+                // Permanent rejection — surface in the stuck list, never silently drop.
+                SendOutcome::Dead(err) => {
+                    self.store.mark_dead(item.seq, &err)?;
+                    // A rejected open leaves the teller selling against a phantom
+                    // shift — clear the optimistic local shift.
+                    if item.op_type == "open_shift"
+                        && shift::current(&self.store)?.map(|s| s.id) == Some(item.id.clone())
+                    {
+                        let _ = shift::clear(&self.store);
                     }
                 }
-                "create_order" => {
-                    use sufrix_api::apis::orders_api;
-                    let cmd: checkout::CheckoutCommand = serde_json::from_str(&item.payload)?;
-                    let res = orders_api::create_order(
-                        &self.api.config(),
-                        orders_api::CreateOrderParams { create_order_request: cmd.request },
-                    )
-                    .await;
-                    match res {
-                        Ok(order) => {
-                            self.store.mark_acked(item.seq, Some(&order.id.to_string()))?;
-                        }
-                        Err(e) => match net::map_api_error(e) {
-                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
-                            other => self.store.mark_dead(item.seq, &other.to_string())?,
-                        },
+                // Token expired → park the whole queue (no budget burned) until
+                // the next successful login re-drains.
+                SendOutcome::AuthExpired => {
+                    self.store.mark_retry_no_count(item.seq, now_ms() + K_NETWORK_RETRY_MS)?;
+                    self.auth_paused.store(true, Relaxed);
+                    return Ok(());
+                }
+                // Connectivity blip — reschedule WITHOUT consuming retry budget,
+                // and stop this pass (the network is down for the rest too).
+                SendOutcome::Offline => {
+                    self.store.mark_retry_no_count(item.seq, now_ms() + K_NETWORK_RETRY_MS)?;
+                    return Ok(());
+                }
+                // Server error (5xx) / undecodable 2xx → counted exponential
+                // backoff; dead-letter after the retry budget is exhausted.
+                SendOutcome::Retry(err) => {
+                    let attempts = item.attempts + 1;
+                    if attempts >= K_MAX_RETRIES {
+                        self.store.mark_dead(item.seq, &err)?;
+                    } else {
+                        let backoff = compute_backoff_ms(attempts, item.seq);
+                        self.store.mark_retry(item.seq, &err, now_ms() + backoff)?;
                     }
                 }
-                "void_order" => {
-                    use sufrix_api::apis::orders_api;
-                    let cmd: orders::VoidOrderCommand = serde_json::from_str(&item.payload)?;
-                    let res = orders_api::void_order(
-                        &self.api.config(),
-                        orders_api::VoidOrderParams {
-                            order_id: cmd.order_id,
-                            void_order_request: cmd.request,
-                        },
-                    )
-                    .await;
-                    match res {
-                        Ok(_) => self.store.mark_acked(item.seq, None)?,
-                        Err(e) => match net::map_api_error(e) {
-                            CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
-                            // void is idempotent (guarded CAS, keyed `{order_id}:void`):
-                            // a 409 means it was already voided → treat as done.
-                            CoreError::Server { status: 409, .. } => self.store.mark_acked(item.seq, None)?,
-                            other => self.store.mark_dead(item.seq, &other.to_string())?,
-                        },
-                    }
-                }
-                _ => {} // future op types
             }
         }
         Ok(())
+    }
+
+    /// Dispatch one queued op to the network and classify the result into a
+    /// `SendOutcome`. Timestamps are re-based to the fresh server offset first
+    /// (correct-at-sync), so a sale rung on a wrong-by-a-constant clock records
+    /// the right time. Idempotency keys live in the persisted payload, so a
+    /// replay after a lost response dedups server-side.
+    async fn send_outbox_item(&self, item: &store::OutboxItem) -> SendOutcome {
+        use sufrix_api::apis::{orders_api, shifts_api};
+        let delta = self.rebase_delta_ms(item);
+        match item.op_type.as_str() {
+            "open_shift" => {
+                let mut cmd: shift::OpenShiftCommand = match serde_json::from_str(&item.payload) {
+                    Ok(c) => c,
+                    Err(e) => return SendOutcome::Dead(format!("payload: {e}")),
+                };
+                rebase_dopt(&mut cmd.request.opened_at, delta);
+                match shifts_api::open_shift(
+                    &self.api.config(),
+                    shifts_api::OpenShiftParams { branch_id: cmd.branch_id, open_shift_request: cmd.request },
+                )
+                .await
+                {
+                    Ok(server) => {
+                        let _ = shift::save(&self.store, &server);
+                        SendOutcome::Acked(Some(server.id.to_string()))
+                    }
+                    // Replaying the SAME shift id returns 200; a 409 means a
+                    // DIFFERENT shift already holds this branch/teller open — the
+                    // local optimistic shift will never be accepted.
+                    Err(e) => classify_send(net::map_api_error(e), Idem::No),
+                }
+            }
+            "close_shift" => {
+                let mut cmd: shift::CloseShiftCommand = match serde_json::from_str(&item.payload) {
+                    Ok(c) => c,
+                    Err(e) => return SendOutcome::Dead(format!("payload: {e}")),
+                };
+                rebase_dopt(&mut cmd.request.closed_at, delta);
+                match shifts_api::close_shift(
+                    &self.api.config(),
+                    shifts_api::CloseShiftParams { shift_id: cmd.shift_id, close_shift_request: cmd.request },
+                )
+                .await
+                {
+                    Ok(_) => SendOutcome::Acked(None),
+                    // Idempotent: a 409/404 means already-closed → done.
+                    Err(e) => classify_send(net::map_api_error(e), Idem::Yes),
+                }
+            }
+            "create_order" => {
+                let mut cmd: checkout::CheckoutCommand = match serde_json::from_str(&item.payload) {
+                    Ok(c) => c,
+                    Err(e) => return SendOutcome::Dead(format!("payload: {e}")),
+                };
+                rebase_dopt(&mut cmd.request.created_at, delta);
+                match orders_api::create_order(
+                    &self.api.config(),
+                    orders_api::CreateOrderParams { create_order_request: cmd.request },
+                )
+                .await
+                {
+                    Ok(order) => SendOutcome::Acked(Some(order.id.to_string())),
+                    // A replay of an already-saved order returns 200 (idempotency
+                    // dedup); a 409 means the target shift closed before it landed
+                    // → genuinely NOT recorded → surface, don't lose the sale.
+                    Err(e) => classify_send(net::map_api_error(e), Idem::No),
+                }
+            }
+            "void_order" => {
+                let mut cmd: orders::VoidOrderCommand = match serde_json::from_str(&item.payload) {
+                    Ok(c) => c,
+                    Err(e) => return SendOutcome::Dead(format!("payload: {e}")),
+                };
+                rebase_dopt(&mut cmd.request.voided_at, delta);
+                match orders_api::void_order(
+                    &self.api.config(),
+                    orders_api::VoidOrderParams { order_id: cmd.order_id, void_order_request: cmd.request },
+                )
+                .await
+                {
+                    Ok(_) => SendOutcome::Acked(None),
+                    // Idempotent (guarded CAS): 409 already-voided → done. But a
+                    // 404 means the order never reached the server — treating that
+                    // as applied would silently discard the void, so dead-letter.
+                    Err(e) => classify_send(net::map_api_error(e), Idem::VoidIdem),
+                }
+            }
+            "cash_movement" => {
+                let mut cmd: shift::CashMovementCommand = match serde_json::from_str(&item.payload) {
+                    Ok(c) => c,
+                    Err(e) => return SendOutcome::Dead(format!("payload: {e}")),
+                };
+                rebase_dopt(&mut cmd.request.created_at, delta);
+                match shifts_api::add_cash_movement(
+                    &self.api.config(),
+                    shifts_api::AddCashMovementParams { shift_id: cmd.shift_id, cash_movement_request: cmd.request },
+                )
+                .await
+                {
+                    // Idempotent on `client_ref`: a replay returns the existing row.
+                    Ok(_) => SendOutcome::Acked(None),
+                    Err(e) => classify_send(net::map_api_error(e), Idem::Yes),
+                }
+            }
+            _ => SendOutcome::Dead(format!("unknown op_type {}", item.op_type)),
+        }
+    }
+
+    /// Milliseconds to add to a queued timestamp to re-base it from the skew the
+    /// device had at enqueue to the fresh skew we hold now (correct-at-sync). 0
+    /// when either offset is unknown (legacy rows) — never makes things worse.
+    fn rebase_delta_ms(&self, item: &store::OutboxItem) -> i64 {
+        let now_skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed) * 1000;
+        match item.clock_offset_ms {
+            Some(then) => now_skew_ms - then,
+            None => 0,
+        }
+    }
+}
+
+/// What a single send attempt resolved to (drives the outbox state machine).
+enum SendOutcome {
+    /// Applied (or idempotently already-applied); carries the server id if known.
+    Acked(Option<String>),
+    /// Permanent rejection — dead-letter, surface in the stuck list.
+    Dead(String),
+    /// 401 — park the whole queue until the next successful login.
+    AuthExpired,
+    /// Connectivity blip — reschedule without burning retry budget; stop the pass.
+    Offline,
+    /// Retryable server/transport error — counted exponential backoff.
+    Retry(String),
+}
+
+/// Idempotency profile of an endpoint, deciding how 409/404 are read.
+enum Idem {
+    /// Not idempotent for our purposes: 409/404 are genuine rejections → dead.
+    No,
+    /// Idempotent already-applied: 409/404 → treat as success.
+    Yes,
+    /// Void: 409 → already-voided (success); 404 → order never synced → dead.
+    VoidIdem,
+}
+
+/// Classify a `CoreError` from a send into a `SendOutcome` per the endpoint's
+/// idempotency profile. Mirrors the Flutter drain's per-status branches.
+fn classify_send(err: CoreError, idem: Idem) -> SendOutcome {
+    match err {
+        CoreError::Offline { .. } => SendOutcome::Offline,
+        CoreError::Unauthenticated { .. } => SendOutcome::AuthExpired,
+        // 5xx / timeouts / undecodable 2xx — retry with backoff.
+        CoreError::Transient { detail } | CoreError::Internal { detail } => SendOutcome::Retry(detail),
+        // Permanent validation/permission — retrying can't help.
+        CoreError::Validation { detail, .. } | CoreError::Forbidden { action: detail, .. } => {
+            SendOutcome::Dead(detail)
+        }
+        CoreError::Server { status, detail, .. } => match (status, idem) {
+            (409, Idem::Yes) | (409, Idem::VoidIdem) | (404, Idem::Yes) => SendOutcome::Acked(None),
+            // void 404 = the order never landed → don't silently swallow the void.
+            (404, Idem::VoidIdem) => SendOutcome::Dead(format!("order not found on server — {detail}")),
+            _ => SendOutcome::Dead(detail),
+        },
+    }
+}
+
+// ── outbox backoff (mirrors offline_queue.dart constants) ────────────────────
+const K_MAX_RETRIES: i64 = 8;
+const K_BASE_BACKOFF_MS: i64 = 2_000; // 2s
+const K_MAX_BACKOFF_MS: i64 = 300_000; // 5min
+const K_NETWORK_RETRY_MS: i64 = 15_000; // fixed reschedule for connectivity blips
+const K_ACKED_RETENTION_MS: i64 = 48 * 60 * 60 * 1000; // keep acked rows 48h
+
+/// Epoch milliseconds (matches the outbox's `next_attempt_at` / `synced_at`).
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+/// Exponential backoff with jitter: BASE·2^(attempts-1), capped at MAX, plus a
+/// deterministic per-item jitter (0–999ms, seeded by seq — no RNG dep) to avoid
+/// a thundering herd when many items came due together.
+fn compute_backoff_ms(attempts: i64, seq: i64) -> i64 {
+    let shift = (attempts.clamp(1, 30) - 1) as u32;
+    let exp = K_BASE_BACKOFF_MS.saturating_mul(1i64.checked_shl(shift).unwrap_or(i64::MAX));
+    let capped = exp.min(K_MAX_BACKOFF_MS);
+    let jitter = (seq.wrapping_mul(2_654_435_761)).rem_euclid(1000);
+    (capped + jitter).min(K_MAX_BACKOFF_MS)
+}
+
+/// Re-base a double-`Option` timestamp (the generated `Option<Option<DateTime>>`).
+fn rebase_dopt(field: &mut Option<Option<chrono::DateTime<chrono::FixedOffset>>>, delta_ms: i64) {
+    if delta_ms != 0 {
+        if let Some(Some(dt)) = field.as_mut().map(|o| o.as_mut()) {
+            *dt += chrono::Duration::milliseconds(delta_ms);
+        }
     }
 }
 
@@ -812,8 +1011,10 @@ impl SufrixCore {
             .await
             .map_err(net::map_api_error)?;
 
-        // Token is live from here on.
+        // Token is live from here on. A fresh token un-parks a 401-stalled
+        // outbox so a re-login resumes syncing immediately.
         self.api.set_bearer(Some(resp.token.clone()));
+        self.auth_paused.store(false, std::sync::atomic::Ordering::Relaxed);
 
         // PIN login carries the device branch; email login has none.
         let branch_id = req.branch_id.clone();
@@ -1037,13 +1238,17 @@ impl SufrixCore {
             ..Default::default()
         };
         let cmd = shift::OpenShiftCommand { branch_id, request };
+        let (user_id, clock_offset_ms) = self.outbox_meta();
         self.store.enqueue(&store::NewOutboxOp {
             id: shift_id.to_string(),
             op_type: "open_shift".into(),
             idempotency_key: shift_id.to_string(),
             payload: serde_json::to_string(&cmd)?,
             event_at: opened_at.to_rfc3339(),
-            depends_on_seq: None,
+            depends_on_seq: None, // the root of the shift chain
+            user_id,
+            clock_offset_ms,
+            shift_id: Some(shift_id.to_string()),
         })?;
 
         // Best-effort: send now if online (offline just leaves it queued).
@@ -1082,13 +1287,19 @@ impl SufrixCore {
         // Queue the durable command. Keyed by `{shift_id}:close` so it doesn't
         // collide with the still-pending open_shift command (id == shift PK).
         let cmd = shift::CloseShiftCommand { shift_id: shift.id.clone(), request };
+        let (user_id, clock_offset_ms) = self.outbox_meta();
         self.store.enqueue(&store::NewOutboxOp {
             id: format!("{}:close", shift.id),
             op_type: "close_shift".into(),
             idempotency_key: format!("{}:close", shift.id),
             payload: serde_json::to_string(&cmd)?,
             event_at: closed_at.to_rfc3339(),
-            depends_on_seq: None,
+            // Gate behind the shift's open (if still queued); the close-last
+            // drain rule then also waits for every order/cash of this shift.
+            depends_on_seq: self.store.live_seq_of(&shift.id)?,
+            user_id,
+            clock_offset_ms,
+            shift_id: Some(shift.id.clone()),
         })?;
 
         // Best-effort: the FIFO drain runs the open + orders before the close,
@@ -1120,41 +1331,97 @@ impl SufrixCore {
     }
 
     /// Record a cash-drawer movement against the open shift — pay-IN when
-    /// `amount_minor > 0`, pay-OUT when `< 0`. ONLINE-ONLY (Flutter parity: cash
-    /// movements are never queued, so the drawer total stays authoritative).
+    /// `amount_minor > 0`, pay-OUT when `< 0`. OFFLINE-FIRST: queued through the
+    /// durable outbox (gated behind the shift's open) and idempotent on a minted
+    /// `client_ref`, so a replay after a lost response never double-applies cash.
     pub async fn record_cash_movement(
         &self,
         amount_minor: i64,
         note: String,
     ) -> Result<shift::CashMovementView, CoreError> {
-        use sufrix_api::apis::shifts_api;
         let shift = shift::current(&self.store)?
-            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no shift".into() })?;
-        if !self.current_session().map(|s| s.online).unwrap_or(false) {
-            return Err(CoreError::Offline { detail: "cash movements need a connection".into() });
-        }
-        let req = sufrix_api::models::CashMovementRequest::new(amount_minor as i32, note);
-        let cm = shifts_api::add_cash_movement(
-            &self.api.config(),
-            shifts_api::AddCashMovementParams { shift_id: shift.id.clone(), cash_movement_request: req },
-        )
-        .await
-        .map_err(net::map_api_error)?;
-        Ok(shift::cash_movement_view(&cm))
+            .filter(|s| s.is_open)
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
+
+        // The client_ref IS the outbox id — stable across replays so the backend
+        // dedups on its `client_ref` unique index.
+        let client_ref = uuid::Uuid::new_v4();
+        let created_at = chrono::Utc::now().fixed_offset();
+        let mut request = sufrix_api::models::CashMovementRequest::new(amount_minor as i32, note.clone());
+        request.client_ref = Some(Some(client_ref));
+        request.created_at = Some(Some(created_at));
+        let cmd = shift::CashMovementCommand { shift_id: shift.id.clone(), request };
+
+        let (user_id, clock_offset_ms) = self.outbox_meta();
+        self.store.enqueue(&store::NewOutboxOp {
+            id: client_ref.to_string(),
+            op_type: "cash_movement".into(),
+            idempotency_key: client_ref.to_string(),
+            payload: serde_json::to_string(&cmd)?,
+            event_at: created_at.to_rfc3339(),
+            depends_on_seq: self.store.live_seq_of(&shift.id)?,
+            user_id,
+            clock_offset_ms,
+            shift_id: Some(shift.id.clone()),
+        })?;
+        // Best-effort send now; offline just leaves it queued.
+        let _ = self.drain_outbox().await;
+
+        // Optimistic view (the drawer moved regardless of sync state).
+        let teller = self.current_session().map(|s| s.display_name).unwrap_or_default();
+        Ok(shift::CashMovementView {
+            id: client_ref.to_string(),
+            amount_minor,
+            note,
+            moved_by_name: teller,
+            created_at: created_at.to_rfc3339(),
+        })
     }
 
-    /// Cash movements recorded against the open shift (online read).
+    /// Cash movements for the open shift — server rows merged with still-queued
+    /// (offline) ones, so the drawer view is complete with or without a connection.
     pub async fn list_cash_movements(&self) -> Result<Vec<shift::CashMovementView>, CoreError> {
         use sufrix_api::apis::shifts_api;
         let shift = shift::current(&self.store)?
             .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no shift".into() })?;
-        let list = shifts_api::list_cash_movements(
-            &self.api.config(),
-            shifts_api::ListCashMovementsParams { shift_id: shift.id.clone() },
-        )
-        .await
-        .map_err(net::map_api_error)?;
-        Ok(list.iter().map(shift::cash_movement_view).collect())
+
+        // Queued (not-yet-synced) movements for this shift, parsed from the outbox.
+        let teller = self.current_session().map(|s| s.display_name).unwrap_or_default();
+        let queued: Vec<shift::CashMovementView> = self
+            .store
+            .list_active()?
+            .into_iter()
+            .filter(|i| i.op_type == "cash_movement" && i.shift_id.as_deref() == Some(shift.id.as_str()))
+            .filter_map(|i| {
+                serde_json::from_str::<shift::CashMovementCommand>(&i.payload).ok().map(|cmd| shift::CashMovementView {
+                    id: i.id.clone(),
+                    amount_minor: cmd.request.amount as i64,
+                    note: cmd.request.note,
+                    moved_by_name: teller.clone(),
+                    created_at: i.event_at.clone(),
+                })
+            })
+            .collect();
+
+        // Server rows when online; offline we show just the queued ones.
+        let mut server: Vec<shift::CashMovementView> = if self.current_session().map(|s| s.online).unwrap_or(false) {
+            match shifts_api::list_cash_movements(
+                &self.api.config(),
+                shifts_api::ListCashMovementsParams { shift_id: shift.id.clone() },
+            )
+            .await
+            {
+                Ok(list) => list.iter().map(shift::cash_movement_view).collect(),
+                Err(_) => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        // Server first (chronological), then the still-queued tail. Dedup by id
+        // so a movement that synced between enqueue and this read isn't doubled.
+        let seen: std::collections::HashSet<String> = server.iter().map(|m| m.id.clone()).collect();
+        server.extend(queued.into_iter().filter(|q| !seen.contains(&q.id)));
+        Ok(server)
     }
 
     /// Past shifts for this branch, newest first (the history screen; online read).
@@ -1206,14 +1473,20 @@ impl SufrixCore {
             now,
         )?;
 
-        // Queue the durable command (idempotent on the client order UUID).
+        // Queue the durable command. Idempotent on the client order UUID (both
+        // the outbox `id` and the in-body `idempotency_key`), gated behind the
+        // shift's open if that hasn't synced yet.
+        let (user_id, clock_offset_ms) = self.outbox_meta();
         self.store.enqueue(&store::NewOutboxOp {
             id: prepared.order_id.to_string(),
             op_type: "create_order".into(),
             idempotency_key: prepared.order_id.to_string(),
             payload: serde_json::to_string(&prepared.command)?,
             event_at: prepared.event_at.clone(),
-            depends_on_seq: None,
+            depends_on_seq: self.store.live_seq_of(&shift.id)?,
+            user_id,
+            clock_offset_ms,
+            shift_id: Some(shift.id.clone()),
         })?;
         // The sale is committed locally; the cart is now spent.
         cart::clear(&self.store)?;
@@ -1372,14 +1645,22 @@ impl SufrixCore {
         request.restore_inventory = Some(Some(restore_inventory));
         request.voided_at = Some(Some(voided_at));
 
+        // The void targets a SYNCED order (server id), so it has no queued
+        // create_order to gate behind. If that order was created offline and is
+        // still queued, the void depends on it (and the drain's 404-on-void
+        // handling protects against the order never landing).
         let cmd = orders::VoidOrderCommand { order_id: order_id.clone(), request };
+        let (user_id, clock_offset_ms) = self.outbox_meta();
         self.store.enqueue(&store::NewOutboxOp {
             id: format!("{order_id}:void"),
             op_type: "void_order".into(),
             idempotency_key: format!("{order_id}:void"),
             payload: serde_json::to_string(&cmd)?,
             event_at: voided_at.to_rfc3339(),
-            depends_on_seq: None,
+            depends_on_seq: self.store.live_seq_of(&order_id)?,
+            user_id,
+            clock_offset_ms,
+            shift_id: None,
         })?;
         let _ = self.drain_outbox().await;
         Ok(())
@@ -1639,6 +1920,45 @@ mod tests {
     }
 
     #[test]
+    fn backoff_is_exponential_capped_and_jittered() {
+        // BASE·2^(n-1): 2s, 4s, 8s … then capped at 5min.
+        assert!((2_000..3_000).contains(&compute_backoff_ms(1, 7)));
+        assert!((4_000..5_000).contains(&compute_backoff_ms(2, 7)));
+        assert!((8_000..9_000).contains(&compute_backoff_ms(3, 7)));
+        // Far out it saturates at the 5-minute cap (never overflows).
+        assert_eq!(compute_backoff_ms(40, 7), K_MAX_BACKOFF_MS);
+        assert_eq!(compute_backoff_ms(100, 1), K_MAX_BACKOFF_MS);
+        // Jitter spreads two different items apart at the same attempt.
+        assert_ne!(compute_backoff_ms(1, 1), compute_backoff_ms(1, 999));
+    }
+
+    #[test]
+    fn classify_send_maps_every_status_correctly() {
+        let dead = |o: &SendOutcome| matches!(o, SendOutcome::Dead(_));
+        let ack = |o: &SendOutcome| matches!(o, SendOutcome::Acked(_));
+        let retry = |o: &SendOutcome| matches!(o, SendOutcome::Retry(_));
+
+        // Connectivity / auth / server-error.
+        assert!(matches!(classify_send(CoreError::Offline { detail: "x".into() }, Idem::No), SendOutcome::Offline));
+        assert!(matches!(classify_send(CoreError::Unauthenticated { detail: "x".into() }, Idem::No), SendOutcome::AuthExpired));
+        assert!(retry(&classify_send(CoreError::Transient { detail: "503".into() }, Idem::No)));
+        // Permanent validation / permission → dead.
+        assert!(dead(&classify_send(CoreError::Validation { field: "".into(), detail: "bad".into() }, Idem::No)));
+        assert!(dead(&classify_send(CoreError::Forbidden { resource: "api".into(), action: "no".into() }, Idem::No)));
+        // 409: order/open NOT recorded → dead; void/close already-applied → ack.
+        assert!(dead(&classify_send(srv(409), Idem::No)));
+        assert!(ack(&classify_send(srv(409), Idem::Yes)));
+        assert!(ack(&classify_send(srv(409), Idem::VoidIdem)));
+        // 404: idempotent gone → ack; but a VOID 404 (order never landed) → dead.
+        assert!(ack(&classify_send(srv(404), Idem::Yes)));
+        assert!(dead(&classify_send(srv(404), Idem::VoidIdem)));
+    }
+
+    fn srv(status: u16) -> CoreError {
+        CoreError::Server { status, code: "x".into(), detail: "boom".into() }
+    }
+
+    #[test]
     fn core_reads_env_config() {
         let core = SufrixCore::from_env().unwrap();
         assert!(core.base_url().starts_with("http"));
@@ -1781,7 +2101,8 @@ mod lifecycle_tests {
                 idempotency_key: id.into(),
                 payload: "{}".into(),
                 event_at: "2026-06-20T12:00:00+00:00".into(),
-                depends_on_seq: None,
+                shift_id: Some(id.into()),
+                ..Default::default()
             })
             .unwrap();
     }
