@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -31,6 +33,7 @@ import app.sufrix.ui.ChipTone
 import app.sufrix.ui.NoticeBanner
 import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
+import app.sufrix.ui.StatusChip
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixTextField
@@ -65,6 +68,24 @@ fun SettingsScreen(model: AppModel) {
         ) {
             Column(Modifier.widthIn(max = 480.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
                 model.error?.let { NoticeBanner(it, ChipTone.WARNING) }
+                Card(t("settings.account")) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                        Box(Modifier.size(44.dp).clip(CircleShape).background(c.accentBg), contentAlignment = Alignment.Center) {
+                            Text((model.shift?.tellerName ?: "?").take(1).uppercase(), color = c.accent,
+                                fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 16.sp)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(model.shift?.tellerName ?: "—", color = c.textPrimary,
+                                fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            if (model.branchName.isNotBlank()) {
+                                Text(model.branchName, color = c.textSecondary, fontFamily = SufrixFont, fontSize = 12.sp)
+                            }
+                        }
+                        model.session?.role?.takeIf { it.isNotBlank() }?.let {
+                            StatusChip(it.replaceFirstChar { ch -> ch.uppercase() }, ChipTone.ACCENT)
+                        }
+                    }
+                }
                 Card(t("settings.appearance")) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Chip(Modifier.weight(1f), t("settings.theme_light"), model.themeMode == ThemeMode.LIGHT) { model.setThemeMode(ThemeMode.LIGHT) }

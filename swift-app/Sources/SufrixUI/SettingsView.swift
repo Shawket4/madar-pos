@@ -19,6 +19,7 @@ struct SettingsView: View {
                         if let error = app.errorMessage {
                             NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .warning)
                         }
+                        accountCard
                         appearanceCard
                         languageCard
                         printerCard
@@ -57,6 +58,29 @@ struct SettingsView: View {
         .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    private var accountCard: some View {
+        card(t("settings.account")) {
+            HStack(spacing: Space.md) {
+                ZStack {
+                    Circle().fill(theme.colors.accentBg).frame(width: 44, height: 44)
+                    Text(String((app.shift?.tellerName ?? "?").prefix(1)).uppercased())
+                        .font(.ui(16, .heavy)).foregroundStyle(theme.colors.accent)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.shift?.tellerName ?? "—")
+                        .font(.ui(15, .bold)).foregroundStyle(theme.colors.textPrimary)
+                    if !app.branchName.isEmpty {
+                        Text(app.branchName).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let role = app.session?.role, !role.isEmpty {
+                    StatusChip(label: role.capitalized, tone: .accent)
+                }
+            }
+        }
     }
 
     private var appearanceCard: some View {

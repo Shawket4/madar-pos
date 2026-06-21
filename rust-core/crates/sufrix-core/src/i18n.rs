@@ -214,6 +214,7 @@ fn en(key: &str) -> Option<&'static str> {
         "void.cancel" => "Cancel",
         // settings
         "settings.title" => "Settings",
+        "settings.account" => "Account",
         "settings.appearance" => "Appearance",
         "settings.theme_light" => "Light",
         "settings.theme_dark" => "Dark",
@@ -419,6 +420,7 @@ fn ar(key: &str) -> Option<&'static str> {
         "void.confirm" => "إبطال الطلب",
         "void.cancel" => "إلغاء",
         "settings.title" => "الإعدادات",
+        "settings.account" => "الحساب",
         "settings.appearance" => "المظهر",
         "settings.theme_light" => "فاتح",
         "settings.theme_dark" => "داكن",
