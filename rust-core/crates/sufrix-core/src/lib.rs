@@ -336,6 +336,9 @@ impl SufrixCore {
                         Ok(_) => self.store.mark_acked(item.seq, None)?,
                         Err(e) => match net::map_api_error(e) {
                             CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
+                            // close_shift is idempotent (keyed `{shift_id}:close`): a
+                            // 409 means the server already closed it → treat as done.
+                            CoreError::Server { status: 409, .. } => self.store.mark_acked(item.seq, None)?,
                             other => self.store.mark_dead(item.seq, &other.to_string())?,
                         },
                     }
@@ -373,6 +376,9 @@ impl SufrixCore {
                         Ok(_) => self.store.mark_acked(item.seq, None)?,
                         Err(e) => match net::map_api_error(e) {
                             CoreError::Offline { .. } | CoreError::Transient { .. } => return Ok(()),
+                            // void is idempotent (guarded CAS, keyed `{order_id}:void`):
+                            // a 409 means it was already voided → treat as done.
+                            CoreError::Server { status: 409, .. } => self.store.mark_acked(item.seq, None)?,
                             other => self.store.mark_dead(item.seq, &other.to_string())?,
                         },
                     }
