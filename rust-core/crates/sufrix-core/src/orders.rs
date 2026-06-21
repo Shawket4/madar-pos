@@ -53,6 +53,92 @@ pub struct OrderSummaryView {
     pub queued: bool,
 }
 
+/// One line of a fetched order (item + its chosen modifiers) — the expanded
+/// history detail.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct OrderDetailLineView {
+    pub name: String,
+    pub qty: i64,
+    pub size_label: Option<String>,
+    pub line_total_minor: i64,
+    /// Addon labels ("Oat milk ×2"), already qty-suffixed for display.
+    pub addons: Vec<String>,
+    /// Optional-field labels.
+    pub optionals: Vec<String>,
+}
+
+/// A fetched order with its lines — drives the history detail + reprint.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct OrderDetailView {
+    pub id: String,
+    pub order_number: Option<i32>,
+    pub status: String,
+    pub payment_label: String,
+    pub subtotal_minor: i64,
+    pub discount_minor: i64,
+    pub tax_minor: i64,
+    pub total_minor: i64,
+    pub created_at: String,
+    pub lines: Vec<OrderDetailLineView>,
+}
+
+pub(crate) fn order_detail_view(o: &models::OrderFull) -> OrderDetailView {
+    OrderDetailView {
+        id: o.id.to_string(),
+        order_number: Some(o.order_number),
+        status: o.status.clone(),
+        payment_label: o.payment_method.clone(),
+        subtotal_minor: o.subtotal as i64,
+        discount_minor: o.discount_amount as i64,
+        tax_minor: o.tax_amount as i64,
+        total_minor: o.total_amount as i64,
+        created_at: o.created_at.to_rfc3339(),
+        lines: o
+            .items
+            .iter()
+            .map(|it| OrderDetailLineView {
+                name: it.item_name.clone(),
+                qty: it.quantity as i64,
+                size_label: it.size_label.clone().filter(|s| !s.is_empty()),
+                line_total_minor: it.line_total as i64,
+                addons: it
+                    .addons
+                    .iter()
+                    .map(|a| if a.quantity > 1 { format!("{} ×{}", a.addon_name, a.quantity) } else { a.addon_name.clone() })
+                    .collect(),
+                optionals: it.optionals.iter().map(|op| op.field_name.clone()).collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Project a fetched order into a printable receipt (reprint from history).
+pub(crate) fn order_to_receipt(o: &models::OrderFull) -> crate::checkout::ReceiptView {
+    crate::checkout::ReceiptView {
+        local_order_id: o.id.to_string(),
+        lines: o
+            .items
+            .iter()
+            .map(|it| crate::checkout::ReceiptLineView {
+                name: it.item_name.clone(),
+                qty: it.quantity as i64,
+                line_total_minor: it.line_total as i64,
+            })
+            .collect(),
+        payment_label: o.payment_method.clone(),
+        subtotal_minor: o.subtotal as i64,
+        discount_minor: o.discount_amount as i64,
+        tax_minor: o.tax_amount as i64,
+        total_minor: o.total_amount as i64,
+        tip_minor: o.tip_amount.unwrap_or(0) as i64,
+        amount_tendered_minor: o.amount_tendered.unwrap_or(0) as i64,
+        change_minor: o.change_given.unwrap_or(0) as i64,
+        is_cash: o.amount_tendered.is_some(),
+        queued_offline: false,
+        created_at: o.created_at.to_rfc3339(),
+    }
+}
+
 /// Live shift totals for the action-bar stats pill: sales total + order count,
 /// voided orders excluded (a voided sale is no revenue and not a fulfilled
 /// order). Mirrors the Flutter pill, which sums `orderHistoryProvider` the same way.

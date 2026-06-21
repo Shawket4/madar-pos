@@ -1237,6 +1237,34 @@ impl SufrixCore {
         Ok(all)
     }
 
+    /// Fetch a synced order's full detail (lines + modifiers) — the expanded
+    /// history row. Online (the queued ones already have their lines locally).
+    pub async fn order_detail(&self, order_id: String) -> Result<orders::OrderDetailView, CoreError> {
+        use sufrix_api::apis::orders_api;
+        let o = orders_api::get_order(&self.api.config(), orders_api::GetOrderParams { order_id })
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(orders::order_detail_view(&o))
+    }
+
+    /// Re-render a synced order as a receipt for reprint — fetches the order and
+    /// projects it through the same ESC/POS path as a fresh receipt. Pair with
+    /// `send_to_printer`.
+    pub async fn render_order_receipt(
+        &self,
+        order_id: String,
+        store_name: String,
+        currency: String,
+        width: u32,
+    ) -> Result<Vec<u8>, CoreError> {
+        use sufrix_api::apis::orders_api;
+        let o = orders_api::get_order(&self.api.config(), orders_api::GetOrderParams { order_id })
+            .await
+            .map_err(net::map_api_error)?;
+        let receipt = orders::order_to_receipt(&o);
+        Ok(self.render_receipt(receipt, store_name, currency, width))
+    }
+
     /// Void a synced order (mistake/refund). Queues an idempotent `void_order`
     /// command keyed `{order_id}:void` and tries to send now; works offline.
     /// History reflects it immediately via the pending-void overlay. Only synced
