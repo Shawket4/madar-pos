@@ -12,15 +12,35 @@ struct OrderHistoryView: View {
 
     @State private var expandedId: String?
     @State private var voidTarget: OrderSummaryView?
+    @State private var search = ""
+    @State private var statusFilter: String?   // nil = all; else "completed"|"voided"|"queued"
 
     private var currency: String { app.session?.currencyCode ?? "" }
+
+    /// History rows matching the search box + status chip.
+    private var filtered: [OrderSummaryView] {
+        app.history.filter { o in
+            let matchesSearch = search.isEmpty
+                || (o.orderNumber.map { "\($0)" } ?? "").contains(search)
+                || o.paymentLabel.localizedCaseInsensitiveContains(search)
+            let matchesStatus: Bool = {
+                switch statusFilter {
+                case nil: return true
+                case "queued": return o.queued
+                default: return o.status == statusFilter
+                }
+            }()
+            return matchesSearch && matchesStatus
+        }
+    }
 
     var body: some View {
         ZStack {
             theme.colors.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                if app.history.isEmpty {
+                if !app.history.isEmpty { filterBar }
+                if filtered.isEmpty {
                     VStack(spacing: Space.md) {
                         if app.isLoadingHistory {
                             ProgressView().controlSize(.large)
@@ -35,7 +55,7 @@ struct OrderHistoryView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: Space.sm) {
-                            ForEach(app.history, id: \.id) { row($0) }
+                            ForEach(filtered, id: \.id) { row($0) }
                         }
                         .frame(maxWidth: 560)
                         .frame(maxWidth: .infinity)
@@ -70,6 +90,35 @@ struct OrderHistoryView: View {
         .padding(.vertical, Space.md)
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    private var filterBar: some View {
+        VStack(spacing: Space.sm) {
+            SufrixTextField(placeholder: t("history.search"), text: $search, icon: "magnifyingglass")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Space.sm) {
+                    filterChip(t("order.all"), value: nil)
+                    filterChip(t("history.completed"), value: "completed")
+                    filterChip(t("history.queued"), value: "queued")
+                    filterChip(t("history.voided"), value: "voided")
+                }
+            }
+        }
+        .padding(.horizontal, Space.lg).padding(.vertical, Space.sm)
+        .background(theme.colors.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.borderLight).frame(height: 1) }
+    }
+
+    private func filterChip(_ label: String, value: String?) -> some View {
+        let active = statusFilter == value
+        return Button { Haptics.selection(); statusFilter = value } label: {
+            Text(label).font(.ui(12, .semibold))
+                .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(active ? theme.colors.accent : theme.colors.surfaceAlt)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.pressable(scale: 0.96))
     }
 
     private func row(_ item: OrderSummaryView) -> some View {

@@ -1,6 +1,7 @@
 package app.sufrix
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,8 +61,22 @@ fun OrderHistoryScreen(model: AppModel) {
     val c = sufrixColors()
     var expandedId by remember { mutableStateOf<String?>(null) }
     var voidTarget by remember { mutableStateOf<OrderSummaryView?>(null) }
+    var search by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf<String?>(null) } // null=all; completed|voided|queued
     val currency = model.session?.currencyCode ?: ""
     LaunchedEffect(Unit) { model.loadHistory() }
+
+    val filtered = model.history.filter { o ->
+        val matchesSearch = search.isBlank() ||
+            (o.orderNumber?.toString() ?: "").contains(search) ||
+            o.paymentLabel.contains(search, ignoreCase = true)
+        val matchesStatus = when (statusFilter) {
+            null -> true
+            "queued" -> o.queued
+            else -> o.status == statusFilter
+        }
+        matchesSearch && matchesStatus
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(c.bg)) {
@@ -81,8 +97,28 @@ fun OrderHistoryScreen(model: AppModel) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
             }
 
+            // ── Filter bar (search + status chips) ──────────────────────────────
+            if (model.history.isNotEmpty()) {
+                Column(
+                    Modifier.fillMaxWidth().background(c.surface).padding(horizontal = Space.lg, vertical = Space.sm),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    SufrixTextField(value = search, onValueChange = { search = it }, placeholder = t("history.search"))
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    ) {
+                        FilterChip(t("order.all"), statusFilter == null) { statusFilter = null }
+                        FilterChip(t("history.completed"), statusFilter == "completed") { statusFilter = "completed" }
+                        FilterChip(t("history.queued"), statusFilter == "queued") { statusFilter = "queued" }
+                        FilterChip(t("history.voided"), statusFilter == "voided") { statusFilter = "voided" }
+                    }
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
+            }
+
             // ── Content ───────────────────────────────────────────────────────
-            if (model.history.isEmpty()) {
+            if (filtered.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     if (model.isLoadingHistory) {
                         CircularProgressIndicator(color = c.accent)
@@ -99,7 +135,7 @@ fun OrderHistoryScreen(model: AppModel) {
                     contentPadding = PaddingValues(Space.lg),
                     verticalArrangement = Arrangement.spacedBy(Space.sm),
                 ) {
-                    items(model.history, key = { it.id }) { item ->
+                    items(filtered, key = { it.id }) { item ->
                         HistoryRow(
                             item, currency, expandedId == item.id,
                             onToggle = { expandedId = if (expandedId == item.id) null else item.id },
@@ -252,4 +288,16 @@ private fun ReasonRow(label: String, active: Boolean, onClick: () -> Unit) {
 private fun timeOf(rfc3339: String): String {
     val i = rfc3339.indexOf('T')
     return if (i >= 0) rfc3339.substring(i + 1).take(5) else rfc3339
+}
+
+@Composable
+private fun FilterChip(label: String, active: Boolean, onClick: () -> Unit) {
+    val c = sufrixColors()
+    Text(
+        label,
+        color = if (active) c.textOnAccent else c.textSecondary,
+        fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+        modifier = Modifier.clip(CircleShape).background(if (active) c.accent else c.surfaceAlt)
+            .clickable { onClick() }.padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
