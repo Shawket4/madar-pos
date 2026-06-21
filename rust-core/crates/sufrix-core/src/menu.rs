@@ -430,6 +430,52 @@ pub(crate) fn bundles(store: &Store, locale: &str) -> CoreResult<Vec<BundleView>
         .collect())
 }
 
+/// True when `b` is orderable at `now` (branch-local wall-clock): status active
+/// AND within its optional date and time windows (inclusive). Branch filtering
+/// is already applied server-side. Mirrors Flutter's `isBundleAvailableNow`.
+pub(crate) fn bundle_available(b: &BundleView, now: chrono::DateTime<chrono::FixedOffset>) -> bool {
+    use chrono::Timelike;
+    if !b.is_available {
+        return false;
+    }
+    let date = now.date_naive();
+    if let Some(from) = b.available_from_date.as_deref().and_then(parse_ymd) {
+        if date < from {
+            return false;
+        }
+    }
+    if let Some(until) = b.available_until_date.as_deref().and_then(parse_ymd) {
+        if date > until {
+            return false;
+        }
+    }
+    let mins = now.hour() as i32 * 60 + now.minute() as i32;
+    if let Some(from) = b.available_from_time.as_deref().and_then(parse_hm) {
+        if mins < from {
+            return false;
+        }
+    }
+    if let Some(until) = b.available_until_time.as_deref().and_then(parse_hm) {
+        if mins > until {
+            return false;
+        }
+    }
+    true
+}
+
+/// "YYYY-MM-DD" (or the date prefix of an RFC3339 string) → NaiveDate.
+fn parse_ymd(s: &str) -> Option<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(&s[..s.len().min(10)], "%Y-%m-%d").ok()
+}
+
+/// "HH:MM[:SS]" → minutes since midnight.
+fn parse_hm(s: &str) -> Option<i32> {
+    let mut it = s.split(':');
+    let h: i32 = it.next()?.parse().ok()?;
+    let m: i32 = it.next()?.parse().ok()?;
+    Some(h * 60 + m)
+}
+
 pub(crate) fn payment_methods(store: &Store, locale: &str) -> CoreResult<Vec<PaymentMethodView>> {
     let items: Vec<models::OrgPaymentMethod> = parse_kv(store, K_PAYMENT_METHODS)?;
     Ok(items
@@ -701,5 +747,29 @@ mod tests {
         assert_eq!(pm.len(), 1); // inactive filtered
         assert_eq!(pm[0].name, "Cash");
         assert!(pm[0].is_cash);
+    }
+
+    #[test]
+    fn bundle_availability_gates_status_and_time_window() {
+        fn bv(active: bool, from_t: Option<&str>, until_t: Option<&str>) -> BundleView {
+            BundleView {
+                id: "b".into(),
+                name: "Combo".into(),
+                description: None,
+                price_minor: 1000,
+                image_url: None,
+                is_available: active,
+                available_from_date: None,
+                available_until_date: None,
+                available_from_time: from_t.map(String::from),
+                available_until_time: until_t.map(String::from),
+            }
+        }
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-21T10:30:00+00:00").unwrap();
+        assert!(bundle_available(&bv(true, None, None), now)); // active, no window
+        assert!(!bundle_available(&bv(false, None, None), now)); // inactive (draft/archived)
+        assert!(bundle_available(&bv(true, Some("08:00"), Some("12:00")), now)); // inside window
+        assert!(!bundle_available(&bv(true, Some("11:00"), Some("12:00")), now)); // before it opens
+        assert!(!bundle_available(&bv(true, Some("08:00"), Some("10:00")), now)); // after it closes
     }
 }

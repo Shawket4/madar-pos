@@ -500,8 +500,16 @@ impl SufrixCore {
     pub fn list_addon_catalog(&self) -> Result<Vec<menu::AddonItemView>, CoreError> {
         menu::addons(&self.store, &self.current_locale())
     }
-    pub fn available_bundles(&self) -> Result<Vec<menu::BundleView>, CoreError> {
-        menu::bundles(&self.store, &self.current_locale())
+    /// Bundles orderable right now — status active and within their date/time
+    /// window at `now` (branch-local). The host passes its local time so the
+    /// window is evaluated in the till's timezone (Flutter parity).
+    pub fn available_bundles(&self, now_rfc3339: String) -> Result<Vec<menu::BundleView>, CoreError> {
+        let now = chrono::DateTime::parse_from_rfc3339(&now_rfc3339)
+            .map_err(|_| CoreError::Validation { field: "now".into(), detail: "bad timestamp".into() })?;
+        Ok(menu::bundles(&self.store, &self.current_locale())?
+            .into_iter()
+            .filter(|b| menu::bundle_available(b, now))
+            .collect())
     }
     pub fn list_payment_methods(&self) -> Result<Vec<menu::PaymentMethodView>, CoreError> {
         menu::payment_methods(&self.store, &self.current_locale())
