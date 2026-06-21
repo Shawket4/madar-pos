@@ -689,11 +689,22 @@ final class AppModel: ObservableObject {
 
     private var activeStatusFilter: String { "received,confirmed,preparing,ready,out_for_delivery" }
 
+    /// The branch's delivery accepting settings (per-channel auto/open/closed).
+    @Published private(set) var deliverySettings: DeliverySettingsView?
+
     /// The branch delivery queue (online). Active-only by default.
     func loadDeliveryOrders() async {
         isLoadingDelivery = true; defer { isLoadingDelivery = false }
         let status: String? = deliveryActiveOnly ? activeStatusFilter : nil
         do { deliveryOrders = try await core.listDeliveryOrders(status: status) }
+        catch { errorMessage = humanMessage(error) }
+        deliverySettings = try? await core.deliverySettings()
+    }
+    /// Cycle a channel's accepting override: auto → open → closed → auto.
+    func cycleAccepting(channel: String, current: String) async {
+        let next = current == "auto" ? "open" : (current == "open" ? "closed" : "auto")
+        isBusy = true; errorMessage = nil; defer { isBusy = false }
+        do { deliverySettings = try await core.deliverySetAccepting(channel: channel, mode: next) }
         catch { errorMessage = humanMessage(error) }
     }
     /// Advance one lifecycle step (Confirm → Preparing → … → Delivered).

@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +95,19 @@ fun DeliveryScreen(model: AppModel) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
             }
 
+            model.deliverySettings?.let { s ->
+                Row(
+                    Modifier.fillMaxWidth().background(c.surface).padding(horizontal = Space.lg, vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    Text(t("delivery.accepting"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                    AcceptingChip(t("delivery.in_mall"), "in_mall", s.inMallOverride, s.inMallEnabled, scope, model)
+                    AcceptingChip(t("delivery.outside"), "outside", s.outsideOverride, s.outsideEnabled, scope, model)
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+            }
+
             model.error?.let { NoticeBanner(it, ChipTone.WARNING) }
 
             if (model.isLoadingDelivery && model.deliveryOrders.isEmpty()) {
@@ -133,6 +147,24 @@ fun DeliveryScreen(model: AppModel) {
         cancelling?.let { o ->
             CancelDialog(model, o, onDismiss = { cancelling = null })
         }
+    }
+}
+
+@Composable
+@Composable
+private fun AcceptingChip(label: String, channel: String, mode: String, enabled: Boolean, scope: kotlinx.coroutines.CoroutineScope, model: AppModel) {
+    // Dashboard-disabled channels can't be opened; show them muted.
+    val tone = if (!enabled) ChipTone.NEUTRAL else when (mode) {
+        "closed" -> ChipTone.DANGER
+        "open" -> ChipTone.SUCCESS
+        else -> ChipTone.ACCENT
+    }
+    val modeLabel = t("delivery.mode_$mode")
+    Box(
+        Modifier.clickable(enabled = enabled && !model.isBusy) { scope.launch { model.cycleAccepting(channel, mode) } }
+            .alpha(if (enabled) 1f else 0.5f),
+    ) {
+        StatusChip("$label: $modeLabel", tone)
     }
 }
 

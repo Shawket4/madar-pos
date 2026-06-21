@@ -18,6 +18,7 @@ import app.sufrix.core.ComputedRecipeLineView
 import app.sufrix.core.CoreException
 import app.sufrix.core.DiscountView
 import app.sufrix.core.DeliveryOrderView
+import app.sufrix.core.DeliverySettingsView
 import app.sufrix.core.DiagLogView
 import app.sufrix.core.DraftView
 import app.sufrix.core.ItemAddonView
@@ -653,6 +654,10 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
 
     private val activeStatusFilter = "received,confirmed,preparing,ready,out_for_delivery"
 
+    /** The branch's delivery accepting settings (per-channel auto/open/closed). */
+    var deliverySettings by mutableStateOf<DeliverySettingsView?>(null)
+        private set
+
     /** The branch delivery queue (online). Active-only by default. */
     suspend fun loadDeliveryOrders() {
         isLoadingDelivery = true
@@ -664,6 +669,15 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         } finally {
             isLoadingDelivery = false
         }
+        deliverySettings = runCatching { core.deliverySettings() }.getOrNull()
+    }
+    /** Cycle a channel's accepting override: auto → open → closed → auto. */
+    suspend fun cycleAccepting(channel: String, current: String) {
+        val next = if (current == "auto") "open" else if (current == "open") "closed" else "auto"
+        isBusy = true; error = null
+        try { deliverySettings = core.deliverySetAccepting(channel, next) }
+        catch (e: CoreException) { error = humanMessage(e) }
+        finally { isBusy = false }
     }
     /** Advance one lifecycle step (Confirm → Preparing → … → Delivered). */
     suspend fun advanceDelivery(o: DeliveryOrderView) {

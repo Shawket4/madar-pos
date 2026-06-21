@@ -19,6 +19,7 @@ struct DeliveryView: View {
             theme.colors.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
+                if let s = app.deliverySettings { acceptingBar(s) }
                 if let error = app.errorMessage {
                     NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .warning).padding(Space.lg)
                 }
@@ -62,6 +63,33 @@ struct DeliveryView: View {
         .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    /// Per-channel accepting control — tap a channel to cycle auto → open → closed.
+    private func acceptingBar(_ s: DeliverySettingsView) -> some View {
+        HStack(spacing: Space.sm) {
+            Text(t("delivery.accepting")).font(.ui(11, .semibold)).foregroundStyle(theme.colors.textMuted)
+            acceptingChip(t("delivery.in_mall"), channel: "in_mall", mode: s.inMallOverride, enabled: s.inMallEnabled)
+            acceptingChip(t("delivery.outside"), channel: "outside", mode: s.outsideOverride, enabled: s.outsideEnabled)
+            Spacer()
+        }
+        .padding(.horizontal, Space.lg).padding(.vertical, Space.sm)
+        .background(theme.colors.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    private func acceptingChip(_ label: String, channel: String, mode: String, enabled: Bool) -> some View {
+        // Dashboard-disabled channels can't be opened; show them muted.
+        let tone: ChipTone = !enabled ? .neutral : (mode == "closed" ? .danger : (mode == "open" ? .success : .accent))
+        let modeLabel = t("delivery.mode_\(mode)")
+        return Button {
+            guard enabled, !app.isBusy else { return }
+            Task { await app.cycleAccepting(channel: channel, current: mode) }
+        } label: {
+            StatusChip(label: "\(label): \(modeLabel)", tone: tone)
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.5)
     }
 
     @ViewBuilder private var content: some View {
