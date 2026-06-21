@@ -68,14 +68,38 @@ private data class Group(
     val minSel: Int,
 )
 
+/**
+ * A host-only draft of one configured bundle component (what the per-component
+ * sheet returns in configure mode). [extrasMinor] is the resolved addon/optional
+ * up-charge, summed into the bundle's live total. Mirrors the Swift
+ * `BundleComponentDraft`.
+ */
+data class BundleComponentDraft(
+    val sizeLabel: String?,
+    val addons: List<AddonSelection>,
+    val optionalIds: List<String>,
+    val extrasMinor: Long,
+)
+
 // Item customization — size, addons (per slot + global types), optional fields.
 // Prices come pre-resolved from the core (list_item_addons); this only displays
 // and sums. Full-screen over the order screen. Mirror of the SwiftUI ItemDetailView.
+//
+// Bundle-component configuration mode: when [onConfigure] is set the footer SAVES
+// the selection back (no cart write), seeded from [configureSeed], and the qty
+// stepper is hidden (the bundle fixes the component count).
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
+fun ItemDetailSheet(
+    model: AppModel,
+    item: MenuItemView,
+    onClose: () -> Unit,
+    configureSeed: BundleComponentDraft? = null,
+    onConfigure: ((BundleComponentDraft) -> Unit)? = null,
+) {
     val c = sufrixColors()
     val currency = model.session?.currencyCode ?: ""
+    val isConfiguring = onConfigure != null
 
     var size by remember { mutableStateOf<String?>(null) }
     val single = remember { mutableStateMapOf<String, String>() }     // groupId -> addonId
@@ -97,23 +121,38 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     LaunchedEffect(item.id) {
         if (seeded) return@LaunchedEffect
         seeded = true
+        // Restore a saved addon (id + qty) into the right group — by its TYPE →
+        // slot / global `type:` bucket, NOT the on-screen groups (which the
+        // allowlist / "show all" filter may hide), so a selection is never dropped.
+        val newMulti = mutableMapOf<String, MutableMap<String, Int>>()
+        fun placeAddon(addonItemId: String, q: Int) {
+            val type = model.itemAddons.firstOrNull { it.addonItemId == addonItemId }?.addonType ?: return
+            val slot = item.addonSlots.firstOrNull { it.addonType == type }
+            if (slot != null) {
+                if ((slot.maxSelections?.toInt() ?: 2) > 1) newMulti.getOrPut(slot.id) { mutableMapOf() }[addonItemId] = q
+                else single[slot.id] = addonItemId
+            } else {
+                val gid = "type:$type"
+                if (type != "milk_type") newMulti.getOrPut(gid) { mutableMapOf() }[addonItemId] = q
+                else single[gid] = addonItemId
+            }
+        }
         val editLine = model.detailEditLine
-        if (editLine != null) {
+        if (isConfiguring) {
+            // Bundle component: seed from the saved draft, else defaults.
+            if (configureSeed != null) {
+                size = configureSeed.sizeLabel ?: item.sizes.firstOrNull()?.label
+                configureSeed.addons.forEach { a -> placeAddon(a.addonItemId, a.qty.toInt()) }
+                multi = newMulti.mapValues { it.value.toMap() }
+                optionals = configureSeed.optionalIds.toSet()
+            } else {
+                size = item.sizes.firstOrNull()?.label
+                item.defaultMilkAddonId?.let { single["type:milk_type"] = it }
+            }
+        } else if (editLine != null) {
             // Edit mode: reconstruct the selection from the existing line.
             size = editLine.sizeLabel ?: item.sizes.firstOrNull()?.label
-            val newMulti = mutableMapOf<String, MutableMap<String, Int>>()
-            editLine.addons.forEach { a ->
-                val type = model.itemAddons.firstOrNull { it.addonItemId == a.addonItemId }?.addonType ?: return@forEach
-                val slot = item.addonSlots.firstOrNull { it.addonType == type }
-                if (slot != null) {
-                    if ((slot.maxSelections?.toInt() ?: 2) > 1) newMulti.getOrPut(slot.id) { mutableMapOf() }[a.addonItemId] = a.qty.toInt()
-                    else single[slot.id] = a.addonItemId
-                } else {
-                    val gid = "type:$type"
-                    if (type != "milk_type") newMulti.getOrPut(gid) { mutableMapOf() }[a.addonItemId] = a.qty.toInt()
-                    else single[gid] = a.addonItemId
-                }
-            }
+            editLine.addons.forEach { a -> placeAddon(a.addonItemId, a.qty.toInt()) }
             multi = newMulti.mapValues { it.value.toMap() }
             optionals = editLine.optionals.map { it.optionalFieldId }.toSet()
             qty = maxOf(1, editLine.qty.toInt())
@@ -361,22 +400,33 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.md),
         ) {
-            MiniStepper(qty, large = true, onDec = { qty = maxOf(1, qty - 1) }, onInc = { qty = minOf(99, qty + 1) })
-            val label = if (canAdd) {
-                if (model.detailEditKey == null) t("order.add_to_cart") else t("order.update_item")
-            } else "${t("order.select_prefix")} ${firstUnsatisfied?.title}"
+            // Configure mode fixes the component count, so no qty stepper.
+            if (!isConfiguring) {
+                MiniStepper(qty, large = true, onDec = { qty = maxOf(1, qty - 1) }, onInc = { qty = minOf(99, qty + 1) })
+            }
+            val label = if (!canAdd) {
+                "${t("order.select_prefix")} ${firstUnsatisfied?.title}"
+            } else if (isConfiguring) {
+                t("order.save_component")
+            } else if (model.detailEditKey == null) t("order.add_to_cart") else t("order.update_item")
+            // Configure mode sums only the extras (the bundle covers the base).
+            val footerPrice = if (isConfiguring) addonsTotal + optionalsTotal else lineTotal
             Row(
                 Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(Radii.sm))
                     .background(if (canAdd) c.accent else c.accent.copy(alpha = 0.45f))
                     .clickable(enabled = canAdd) {
-                        model.addConfigured(item.id, size, selectedAddons, optionals.toList(), qty.toLong(), null)
+                        if (onConfigure != null) {
+                            onConfigure(BundleComponentDraft(size, selectedAddons, optionals.toList(), addonsTotal + optionalsTotal))
+                        } else {
+                            model.addConfigured(item.id, size, selectedAddons, optionals.toList(), qty.toLong(), null)
+                        }
                     }
                     .padding(horizontal = Space.lg),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(label, color = c.textOnAccent, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Box(Modifier.weight(1f))
-                Text(Money.format(lineTotal, currency), color = c.textOnAccent, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                Text(Money.format(footerPrice, currency), color = c.textOnAccent, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 14.sp)
             }
         }
       }

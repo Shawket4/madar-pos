@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.sufrix.core.BundleView
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
 import app.sufrix.core.CategoryView
@@ -72,6 +73,9 @@ import app.sufrix.ui.disclosureGlyph
 import app.sufrix.ui.pressScale
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
+
+/** Synthetic category id for the Combos tab (bundles aren't a real category). */
+private const val kCombosCategory = "__combos__"
 
 // Order screen — the heart of the POS. Per the design language the order screen's
 // action bar is the only nav hub (no tabs/shells). Browse the branch-effective
@@ -125,6 +129,8 @@ fun OrderScreen(model: AppModel) {
                             cartQty = { itemId -> model.cartQtyForItem(itemId) },
                             wide = true,
                             onAdd = { item -> model.openItemDetail(item) },
+                            bundles = model.bundles,
+                            onBundleTap = { b -> model.openBundleDetail(b) },
                         )
                     }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(c.border))
@@ -140,6 +146,8 @@ fun OrderScreen(model: AppModel) {
                         cartQty = { itemId -> model.cartQtyForItem(itemId) },
                         wide = false,
                         onAdd = { item -> model.openItemDetail(item) },
+                        bundles = model.bundles,
+                        onBundleTap = { b -> model.openBundleDetail(b) },
                     )
                 }
                 CartBar(model, currency) { showCart = true }
@@ -185,7 +193,10 @@ fun OrderScreen(model: AppModel) {
         }
 
         // Item customization sheet.
-        model.detailItem?.let { ItemDetailSheet(model, it) { model.closeItemDetail() } }
+        model.detailItem?.let { ItemDetailSheet(model, it, onClose = { model.closeItemDetail() }) }
+
+        // Bundle (combo) configuration sheet.
+        model.detailBundle?.let { BundleDetailSheet(model, it) { model.closeBundleDetail() } }
 
         // "More" overflow drawer — scrim (tap to dismiss) + bottom-sheet panel.
         if (model.showMore) {
@@ -367,35 +378,63 @@ private fun CatalogColumn(
     cartQty: (String) -> Long,
     wide: Boolean,
     onAdd: (MenuItemView) -> Unit,
+    bundles: List<BundleView>,
+    onBundleTap: (BundleView) -> Unit,
 ) {
     val c = sufrixColors()
+    val showCombos = bundles.isNotEmpty()
+    val combos = selectedCategory == kCombosCategory
     if (wide) {
         // Tablet/desktop: a vertical category rail beside the search + grid.
         Row(Modifier.fillMaxSize()) {
-            CategoryRail(categories, selectedCategory, onSelect)
+            CategoryRail(categories, selectedCategory, onSelect, showCombos)
             Box(Modifier.width(1.dp).fillMaxHeight().background(c.borderLight))
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
+                if (combos) {
+                    Box(Modifier.weight(1f).fillMaxWidth()) { BundleGrid(bundles, currency, onBundleTap) }
+                } else {
+                    SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
+                    }
                 }
             }
         }
     } else {
         // Phone: a horizontal underline-tab strip above the search + grid.
         Column(Modifier.fillMaxSize()) {
-            CategoryTabs(categories, selectedCategory, onSelect)
-            SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
+            CategoryTabs(categories, selectedCategory, onSelect, showCombos)
+            if (combos) {
+                Box(Modifier.weight(1f).fillMaxWidth()) { BundleGrid(bundles, currency, onBundleTap) }
+            } else {
+                SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
+                }
             }
+        }
+    }
+}
+
+/** The combo grid — bundle cards in the same adaptive layout as the item grid. */
+@Composable
+private fun BundleGrid(bundles: List<BundleView>, currency: String, onBundleTap: (BundleView) -> Unit) {
+    LazyVerticalGrid(
+        columns = MaxExtentCells(200.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(Space.lg),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        items(bundles, key = { it.id }) { b ->
+            BundleCard(b, currency) { onBundleTap(b) }
         }
     }
 }
 
 // ── Category navigation (phone underline tabs · wide vertical rail) ──────────────
 @Composable
-private fun CategoryTabs(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit) {
+private fun CategoryTabs(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit, showCombos: Boolean = false) {
     val c = sufrixColors()
     Column(Modifier.fillMaxWidth().background(c.surface)) {
         Row(
@@ -404,6 +443,7 @@ private fun CategoryTabs(cats: List<CategoryView>, selected: String?, onSelect: 
             horizontalArrangement = Arrangement.spacedBy(Space.lg),
         ) {
             CategoryTab(t("order.all"), selected == null) { onSelect(null) }
+            if (showCombos) CategoryTab(t("order.combos"), selected == kCombosCategory) { onSelect(kCombosCategory) }
             cats.filter { it.isActive }.forEach { cat ->
                 CategoryTab(cat.name, selected == cat.id) { onSelect(cat.id) }
             }
@@ -435,7 +475,7 @@ private fun CategoryTab(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CategoryRail(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit) {
+private fun CategoryRail(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit, showCombos: Boolean = false) {
     val c = sufrixColors()
     Column(
         Modifier.width(96.dp).fillMaxHeight().background(c.surface)
@@ -444,6 +484,7 @@ private fun CategoryRail(cats: List<CategoryView>, selected: String?, onSelect: 
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         RailTile(t("order.all"), selected == null) { onSelect(null) }
+        if (showCombos) RailTile(t("order.combos"), selected == kCombosCategory) { onSelect(kCombosCategory) }
         cats.filter { it.isActive }.forEach { cat ->
             RailTile(cat.name, selected == cat.id) { onSelect(cat.id) }
         }
@@ -575,7 +616,9 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
                 items(model.cartLines, key = { it.key }) { line ->
-                    val onEdit: (() -> Unit)? = { model.editCartLine(line) }
+                    // Bundles aren't re-editable in place (reconfigure by removing +
+                    // re-adding); only plain lines reopen the customization sheet.
+                    val onEdit: (() -> Unit)? = if (line.bundleId == null) { { model.editCartLine(line) } } else null
                     CartLineRow(
                         line, currency,
                         onDec = { model.setCartQty(line.key, line.qty - 1) },
@@ -593,6 +636,7 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
 @Composable
 private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit, onInc: () -> Unit, onEdit: (() -> Unit)? = null) {
     val c = sufrixColors()
+    val isBundle = line.bundleId != null
     val hasModifiers = line.sizeLabel != null || line.addons.isNotEmpty() || line.optionals.isNotEmpty()
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
@@ -604,8 +648,13 @@ private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit,
             Modifier.weight(1f).then(if (onEdit != null) Modifier.clickable { onEdit() } else Modifier),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(line.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
-            if (hasModifiers) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(line.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
+                if (isBundle) StatusChip(t("order.combos"), ChipTone.ACCENT)
+            }
+            if (isBundle) {
+                BundleBreakdown(line)
+            } else if (hasModifiers) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -619,6 +668,30 @@ private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit,
         }
         // The minus button removes the line at qty 1 (the remove affordance).
         QtyStepper(line.qty, onDec, onInc)
+    }
+}
+
+/** A bundle line lists its components (qty × name) with each component's chosen
+ *  addons/optionals as sub-pills. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BundleBreakdown(line: CartLineView) {
+    val c = sufrixColors()
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        line.bundleComponents.forEach { comp ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("${comp.qty}× ${comp.name}", color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 11.sp)
+                if (comp.addons.isNotEmpty() || comp.optionals.isNotEmpty()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        comp.addons.forEach { Pill(if (it.qty > 1) "${it.name} ×${it.qty}" else it.name, c.navy, c.navyBg) }
+                        comp.optionals.forEach { Pill(it.name, c.warning, c.warningBg) }
+                    }
+                }
+            }
+        }
     }
 }
 

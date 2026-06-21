@@ -10,6 +10,8 @@ import app.sufrix.core.CartTotals
 import app.sufrix.core.CheckoutInput
 import app.sufrix.core.CheckoutSplit
 import app.sufrix.core.AddonSelection
+import app.sufrix.core.BundleComponentSelection
+import app.sufrix.core.BundleView
 import app.sufrix.core.CategoryView
 import app.sufrix.core.ComputedRecipeLineView
 import app.sufrix.core.CoreException
@@ -254,6 +256,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         menuItems = runCatching { core.listMenuItems() }.getOrDefault(emptyList())
         paymentMethods = runCatching { core.listPaymentMethods() }.getOrDefault(emptyList())
         discounts = runCatching { core.listDiscounts() }.getOrDefault(emptyList())
+        loadBundles()
     }
 
     /** Apply or clear the cart discount (re-reads totals so the UI updates). */
@@ -513,6 +516,42 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         refreshPending()
         closeItemDetail()
     }
+
+    // ── bundles / combos ───────────────────────────────────────────────────────
+    /** Available bundles (status active + within their date/time window) — the
+     *  Combos section of the catalog. */
+    var bundles by mutableStateOf<List<BundleView>>(emptyList())
+        private set
+    /** Non-null = the bundle configuration sheet is open. */
+    var detailBundle by mutableStateOf<BundleView?>(null)
+
+    fun loadBundles() {
+        bundles = runCatching { core.availableBundles(nowRfc3339()) }.getOrDefault(emptyList())
+    }
+    fun openBundleDetail(b: BundleView) { detailBundle = b }
+    fun closeBundleDetail() { detailBundle = null }
+
+    /** Resolve a bundle component's [MenuItemView] and load its addons into
+     *  [itemAddons] so the per-component sheet (ItemDetailSheet) can render them. */
+    fun componentItem(itemId: String): MenuItemView? {
+        val item = menuItems.firstOrNull { it.id == itemId } ?: return null
+        itemAddons = runCatching { core.listItemAddons(itemId) }.getOrDefault(emptyList())
+        return item
+    }
+
+    /** Add a configured bundle to the cart — the core resolves each component's
+     *  charged extras and records one bundle line at the fixed bundle price. */
+    fun addBundle(bundleId: String, components: List<BundleComponentSelection>) {
+        runCatching { core.cartAddBundle(bundleId, components, 1L) }
+        loadCart()
+        refreshPending()
+        closeBundleDetail()
+    }
+
+    /** Local time as RFC3339 with a colon offset, so the core gates bundle windows
+     *  in the till's timezone (the till sits at the branch). OffsetDateTime.toString()
+     *  yields e.g. 2026-06-21T11:00:00+02:00, which chrono parses. */
+    private fun nowRfc3339(): String = java.time.OffsetDateTime.now().toString()
 
     // ── device setup (manager) ────────────────────────────────────────────────
     suspend fun authenticateManager(email: String, password: String) {
