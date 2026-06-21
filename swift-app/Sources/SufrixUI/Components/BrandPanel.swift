@@ -7,6 +7,7 @@ import SwiftUI
 struct BrandPanel: View {
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
+    @Environment(\.layoutDirection) private var dir
 
     var body: some View {
         ZStack {
@@ -15,7 +16,7 @@ struct BrandPanel: View {
             SufrixMark(size: 360)
                 .opacity(0.05)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .offset(x: 80, y: 80)
+                .offset(x: dir == .rightToLeft ? -80 : 80, y: 80)
                 .clipped()
 
             VStack(alignment: .leading, spacing: 0) {

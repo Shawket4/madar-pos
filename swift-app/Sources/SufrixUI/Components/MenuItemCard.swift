@@ -7,6 +7,7 @@ import SwiftUI
 
 struct MenuItemCard: View {
     @Environment(\.theme) private var theme
+    @Environment(\.layoutDirection) private var dir
     let item: MenuItemView
     /// Resolved category name — seeds the hue so a family shares a palette.
     let categoryName: String
@@ -47,7 +48,7 @@ struct MenuItemCard: View {
             Circle()
                 .strokeBorder(style.accent.opacity(0.16), lineWidth: 2)
                 .frame(width: 130, height: 130)
-                .offset(x: 46, y: 46)
+                .offset(x: dir == .rightToLeft ? -46 : 46, y: 46)
             Text(monogram)
                 .font(.system(size: 42, weight: .thin))
                 .foregroundStyle(style.accent.opacity(theme.isDark ? 0.7 : 0.55))

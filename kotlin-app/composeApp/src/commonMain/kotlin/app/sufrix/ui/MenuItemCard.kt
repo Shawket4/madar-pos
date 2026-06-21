@@ -21,6 +21,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -73,7 +75,8 @@ fun MenuItemCard(
             contentAlignment = Alignment.Center,
         ) {
             Box(
-                Modifier.size(130.dp).align(Alignment.BottomEnd).offset(x = 46.dp, y = 46.dp)
+                Modifier.size(130.dp).align(Alignment.BottomEnd)
+                    .offset(x = if (LocalLayoutDirection.current == LayoutDirection.Rtl) (-46).dp else 46.dp, y = 46.dp)
                     .border(2.dp, style.accent.copy(alpha = 0.16f), CircleShape),
             )
             Text(
