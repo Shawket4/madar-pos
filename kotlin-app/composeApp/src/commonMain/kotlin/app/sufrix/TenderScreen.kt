@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -31,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.core.DiscountView
+import app.sufrix.core.CheckoutSplit
 import app.sufrix.core.PaymentMethodView
 import app.sufrix.core.ReceiptView
 import app.sufrix.ui.AmountField
@@ -89,6 +92,9 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
     var tip by remember { mutableStateOf(0L) }
     var customerName by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    // Split a single bill across several methods (allocated amounts must sum to total).
+    var splitMode by remember { mutableStateOf(false) }
+    val splitAmounts = remember { mutableStateMapOf<String, Long>() }
 
     LaunchedEffect(Unit) {
         if (selected == null) {
@@ -102,7 +108,16 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
     // A tip on a cash order comes out of the same drawer → due with the bill.
     val dueCash = total + (if (isCash) tip else 0L)
     val change = (tendered - dueCash).coerceAtLeast(0L)
-    val canPlace = selected != null && !model.isPlacingOrder && (!isCash || tendered >= dueCash)
+
+    val splitAllocated = splitAmounts.values.sum()
+    val splitRemaining = total - splitAllocated
+    val splitLegs = splitAmounts.filter { it.value > 0 }.map { CheckoutSplit(it.key, it.value) }
+    val splitPrimary = splitAmounts.filter { it.value > 0 }.maxByOrNull { it.value }?.key
+    val canPlace = when {
+        model.isPlacingOrder -> false
+        splitMode -> splitAllocated == total && splitLegs.isNotEmpty()
+        else -> selected != null && (!isCash || tendered >= dueCash)
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.xl),
@@ -115,9 +130,36 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Text(t("order.payment_method"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-            model.paymentMethods.forEach { m ->
-                MethodChip(m.name, active = m.id == selected) { selected = m.id }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("order.payment_method"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Box(Modifier.weight(1f))
+                if (model.paymentMethods.size > 1) {
+                    Text(
+                        (if (splitMode) "● " else "▭ ") + t("order.split_payment"),
+                        color = if (splitMode) c.accent else c.textMuted,
+                        fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp,
+                        modifier = Modifier.clickable { splitMode = !splitMode },
+                    )
+                }
+            }
+            if (splitMode) {
+                model.paymentMethods.forEach { m ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        Text(m.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.width(92.dp))
+                        Box(Modifier.weight(1f)) {
+                            AmountField(amountMinor = splitAmounts[m.id] ?: 0L, onAmountMinor = { splitAmounts[m.id] = it }, currencyCode = currency)
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(t("order.split_remaining"), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                    Box(Modifier.weight(1f))
+                    Text(Money.format(splitRemaining, currency), color = if (splitRemaining == 0L) c.success else c.danger, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            } else {
+                model.paymentMethods.forEach { m ->
+                    MethodChip(m.name, active = m.id == selected) { selected = m.id }
+                }
             }
         }
 
@@ -143,7 +185,7 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
             AmountField(amountMinor = tip, onAmountMinor = { tip = it }, currencyCode = currency)
         }
 
-        if (isCash) {
+        if (isCash && !splitMode) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text(t("order.cash_received"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 AmountField(amountMinor = tendered, onAmountMinor = { tendered = it }, currencyCode = currency)
@@ -160,7 +202,7 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
             }
             SummaryRow(t("order.total"), Money.format(total, currency), emphasized = true)
             if (tip > 0) SummaryRow(t("order.tip"), Money.format(tip, currency))
-            if (isCash) SummaryRow(t("order.change"), Money.format(change, currency))
+            if (isCash && !splitMode) SummaryRow(t("order.change"), Money.format(change, currency))
         }
 
         model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
@@ -168,14 +210,25 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
         SufrixButton(
             t("order.place_order"),
             {
-                val id = selected ?: return@SufrixButton
                 scope.launch {
-                    model.placeOrder(
-                        id, if (isCash) tendered else 0L,
-                        tipMinor = tip,
-                        customerName = customerName.ifBlank { null },
-                        notes = notes.ifBlank { null },
-                    )
+                    if (splitMode) {
+                        val primary = splitPrimary ?: return@launch
+                        model.placeOrder(
+                            primary, 0L,
+                            tipMinor = tip,
+                            customerName = customerName.ifBlank { null },
+                            notes = notes.ifBlank { null },
+                            splits = splitLegs,
+                        )
+                    } else {
+                        val id = selected ?: return@launch
+                        model.placeOrder(
+                            id, if (isCash) tendered else 0L,
+                            tipMinor = tip,
+                            customerName = customerName.ifBlank { null },
+                            notes = notes.ifBlank { null },
+                        )
+                    }
                 }
             },
             loading = model.isPlacingOrder,
