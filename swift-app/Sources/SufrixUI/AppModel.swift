@@ -584,6 +584,24 @@ final class AppModel: ObservableObject {
         shiftHistory = (try? await core.listShifts()) ?? []
     }
 
+    // ── drafts / held orders ──────────────────────────────────────────────────────
+    @Published var showDrafts = false
+    @Published private(set) var drafts: [DraftView] = []
+
+    func loadDrafts() { drafts = (try? core.listDrafts()) ?? [] }
+    /// Park the current cart as a held order, auto-named by time of day.
+    func holdCart() {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        _ = try? core.holdCart(name: f.string(from: Date()))
+        loadCart(); loadDrafts()
+    }
+    func restoreDraft(_ id: String) {
+        cartLines = (try? core.restoreDraft(id: id)) ?? cartLines
+        cartDiscountId = (try? core.cartDiscountId()) ?? nil
+        refreshCartTotals(); loadDrafts()
+    }
+    func discardDraft(_ id: String) { _ = try? core.discardDraft(id: id); loadDrafts() }
+
     // ── device setup (manager) ──────────────────────────────────────────────────
 
     /// Step 1: a manager authenticates (online), then we load the org's branches

@@ -189,6 +189,8 @@ fn en(key: &str) -> Option<&'static str> {
         "shift.expected_cash" => "Expected cash",
         "shift.by_method" => "By method",
         "shift.print_report" => "Print report",
+        "drafts.title" => "Held orders",
+        "drafts.empty" => "No held orders.",
         // order history
         "history.title" => "Orders",
         "history.empty" => "No orders this shift yet.",
@@ -394,6 +396,8 @@ fn ar(key: &str) -> Option<&'static str> {
         "shift.expected_cash" => "النقد المتوقع",
         "shift.by_method" => "حسب الطريقة",
         "shift.print_report" => "طباعة التقرير",
+        "drafts.title" => "طلبات معلّقة",
+        "drafts.empty" => "لا توجد طلبات معلّقة.",
         "history.title" => "الطلبات",
         "history.empty" => "لا توجد طلبات في هذه الوردية بعد.",
         "history.queued" => "في الانتظار",

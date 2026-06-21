@@ -141,6 +141,12 @@ struct OrderView: View {
                     .frame(minWidth: 460, minHeight: 560)
                     .modalChrome(app, theme, t)
             }
+            // Held orders (drafts).
+            .sheet(isPresented: $app.showDrafts) {
+                DraftsView(app: app, onClose: { app.showDrafts = false })
+                    .frame(minWidth: 420, minHeight: 480)
+                    .modalChrome(app, theme, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -365,6 +371,9 @@ private struct MoreDrawer: View {
                 }
                 row(icon: "clock.arrow.circlepath", label: t("shifts.title"), tone: theme.colors.textPrimary) {
                     app.showMore = false; app.showShiftHistory = true
+                }
+                row(icon: "tray.full", label: t("drafts.title"), tone: theme.colors.textPrimary) {
+                    app.showMore = false; app.loadDrafts(); app.showDrafts = true
                 }
                 row(icon: "lock", label: t("order.close_shift"), tone: theme.colors.danger) {
                     app.showMore = false; app.errorMessage = nil; app.showCloseShift = true
@@ -646,7 +655,8 @@ private struct CartPanel: View {
                     }
                     .padding(Space.lg)
                 }
-                CartFooter(totals: app.cartTotals, currency: currency, onCheckout: onCheckout)
+                CartFooter(totals: app.cartTotals, currency: currency, onCheckout: onCheckout,
+                           onHold: { app.holdCart() })
             }
         }
         .background(theme.colors.bg)
@@ -814,6 +824,7 @@ private struct CartFooter: View {
     let totals: CartTotals
     let currency: String
     let onCheckout: () -> Void
+    var onHold: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: Space.sm) {
@@ -828,8 +839,20 @@ private struct CartFooter: View {
             }
             TotalRow(label: t("order.tax"), value: Money.format(totals.taxMinor, currency))
             TotalRow(label: t("order.total"), value: Money.format(totals.totalMinor, currency), emphasized: true)
-            SufrixButton(label: t("order.checkout"), icon: "creditcard") { onCheckout() }
-                .padding(.top, Space.xs)
+            HStack(spacing: Space.sm) {
+                if let onHold {
+                    Button { Haptics.selection(); onHold() } label: {
+                        Image(systemName: "tray.and.arrow.down").font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(theme.colors.accent)
+                            .frame(width: 50, height: 50)
+                            .background(theme.colors.accentBg)
+                            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                    }
+                    .buttonStyle(.pressable(scale: 0.97))
+                }
+                SufrixButton(label: t("order.checkout"), icon: "creditcard") { onCheckout() }
+            }
+            .padding(.top, Space.xs)
         }
         .animation(Motion.standard, value: totals.totalMinor)
         .padding(Space.lg)
