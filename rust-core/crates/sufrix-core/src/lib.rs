@@ -1700,6 +1700,65 @@ impl SufrixCore {
         Ok(self.render_receipt(receipt, store_name, currency, width))
     }
 
+    /// Project a synced order into a ReceiptView (no bytes) — for an on-screen
+    /// receipt preview before reprinting. Online (fetches the order).
+    pub async fn order_receipt_view(&self, order_id: String) -> Result<checkout::ReceiptView, CoreError> {
+        use sufrix_api::apis::orders_api;
+        let o = orders_api::get_order(&self.api.config(), orders_api::GetOrderParams { order_id })
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(orders::order_to_receipt(&o, &self.current_locale()))
+    }
+
+    /// A PAST shift's synced orders (history-screen expansion). Online read —
+    /// past shifts have no still-queued sales, so this is the server's list.
+    pub async fn list_orders_for_shift(
+        &self,
+        shift_id: String,
+    ) -> Result<Vec<orders::OrderSummaryView>, CoreError> {
+        use sufrix_api::apis::orders_api;
+        let branch_id = {
+            let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated { detail: "not signed in".into() })?;
+            s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
+                field: "branch_id".into(),
+                detail: "session has no branch".into(),
+            })?
+        };
+        let params = orders_api::ListOrdersParams {
+            branch_id: Some(branch_id),
+            shift_id: Some(shift_id),
+            updated_after: None,
+            page: None,
+            per_page: Some(200),
+            teller_name: None,
+            payment_method: None,
+            status: None,
+            from: None,
+            to: None,
+            order_type: None,
+            channel: None,
+            include_items: None,
+        };
+        let page = orders_api::list_orders(&self.api.config(), params)
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(page.data.iter().map(|o| orders::from_server(o)).collect())
+    }
+
+    /// A PAST shift's Z-report (history-screen reprint). Online read; no queued
+    /// cash to fold in for a closed shift.
+    pub async fn shift_report_for(&self, shift_id: String) -> Result<shift::ShiftReportView, CoreError> {
+        use sufrix_api::apis::shifts_api;
+        let report = shifts_api::get_shift_report(
+            &self.api.config(),
+            shifts_api::GetShiftReportParams { shift_id },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(shift::report_view(&report, 0))
+    }
+
     /// Void a synced order (mistake/refund). Queues an idempotent `void_order`
     /// command keyed `{order_id}:void` and tries to send now; works offline.
     /// History reflects it immediately via the pending-void overlay. Only synced

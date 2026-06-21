@@ -443,6 +443,32 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // ── receipt preview (history reprint) ─────────────────────────────────────
+    /// A past order projected to a ReceiptView, driving the preview sheet.
+    @Published var previewReceipt: ReceiptView?
+    /// Fetch + project a synced order so the teller can preview before reprinting.
+    func openOrderReceiptPreview(_ orderId: String) async {
+        previewReceipt = try? await core.orderReceiptView(orderId: orderId)
+    }
+    /// Print an arbitrary ReceiptView (the preview sheet's Print). Toast-driven.
+    func printReceiptView(_ receipt: ReceiptView) async {
+        let (host, port) = Self.parsePrinter(printerHost)
+        guard !host.isEmpty else {
+            showToast(t("receipt.no_printer"), icon: "exclamationmark.triangle", tone: .warning); return
+        }
+        let bytes = core.renderReceipt(
+            receipt: receipt, storeName: branchName, currency: session?.currencyCode ?? "", width: 32)
+        do {
+            try await core.sendToPrinter(host: host, port: port, bytes: bytes)
+            if receipt.isCash {
+                try? await core.sendToPrinter(host: host, port: port, bytes: core.cashDrawerKick())
+            }
+            showToast(t("receipt.printed"), icon: "checkmark.circle", tone: .success)
+        } catch {
+            showToast(t("receipt.print_failed"), icon: "xmark.circle", tone: .danger)
+        }
+    }
+
     /// Void a synced order (queues offline). Reloads history on success so the
     /// row flips to Voided. Returns whether it succeeded (the sheet dismisses).
     func voidOrder(orderId: String, reason: String, note: String?, restoreInventory: Bool = true) async -> Bool {
@@ -670,6 +696,34 @@ final class AppModel: ObservableObject {
     func loadShiftHistory() async {
         isLoadingShifts = true; defer { isLoadingShifts = false }
         shiftHistory = (try? await core.listShifts()) ?? []
+    }
+
+    /// A past shift's synced orders, lazily loaded on row expansion + cached.
+    @Published private(set) var shiftOrders: [String: [OrderSummaryView]] = [:]
+    @Published private(set) var loadingShiftOrders: Set<String> = []
+    func loadOrdersForShift(_ shiftId: String) async {
+        guard shiftOrders[shiftId] == nil else { return }
+        loadingShiftOrders.insert(shiftId)
+        defer { loadingShiftOrders.remove(shiftId) }
+        shiftOrders[shiftId] = (try? await core.listOrdersForShift(shiftId: shiftId)) ?? []
+    }
+
+    /// Fetch + print a PAST shift's Z-report (history per-row print). Toast-driven
+    /// so several rows can print independently without a shared spinner.
+    func reprintShiftReport(_ shiftId: String) async {
+        let (host, port) = Self.parsePrinter(printerHost)
+        guard !host.isEmpty else {
+            showToast(t("receipt.no_printer"), icon: "exclamationmark.triangle", tone: .warning); return
+        }
+        do {
+            let report = try await core.shiftReportFor(shiftId: shiftId)
+            let bytes = core.renderShiftReport(
+                report: report, storeName: branchName, currency: session?.currencyCode ?? "", width: 32)
+            try await core.sendToPrinter(host: host, port: port, bytes: bytes)
+            showToast(t("receipt.printed"), icon: "checkmark.circle", tone: .success)
+        } catch {
+            showToast(t("receipt.print_failed"), icon: "xmark.circle", tone: .danger)
+        }
     }
 
     // ── drafts / held orders ──────────────────────────────────────────────────────

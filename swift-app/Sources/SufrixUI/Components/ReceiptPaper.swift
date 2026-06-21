@@ -172,3 +172,52 @@ struct ReceiptPaper: View {
         return out.string(from: date)
     }
 }
+
+// A receipt is uniquely identified by its order id — lets it drive `.sufrixSheet(item:)`.
+extension ReceiptView: Identifiable {
+    public var id: String { localOrderId }
+}
+
+/// A sheet that previews a receipt (ReceiptPaper) with a Print action — used to
+/// preview a past order before reprinting it.
+struct ReceiptPreviewSheet: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let receipt: ReceiptView
+    let onClose: () -> Void
+    @State private var printing = false
+
+    private var currency: String { app.session?.currencyCode ?? "" }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(t("receipt.title")).font(.ui(18, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                Spacer()
+                Button { onClose() } label: {
+                    Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.colors.textMuted).frame(width: 32, height: 32)
+                        .background(theme.colors.surfaceAlt).clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, Space.lg).padding(.bottom, Space.md)
+
+            ScrollView {
+                ReceiptPaper(receipt: receipt, storeName: app.branchName, currency: currency)
+                    .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
+            }
+
+            VStack {
+                SufrixButton(label: t("receipt.print"), icon: "printer", loading: printing) {
+                    printing = true
+                    Task { await app.printReceiptView(receipt); printing = false }
+                }
+            }
+            .padding(Space.lg)
+            .background(theme.colors.surface)
+            .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+        }
+    }
+}

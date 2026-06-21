@@ -68,11 +68,11 @@ struct OrderHistoryView: View {
                 await app.loadOrderDetail(id)
             }
         }
-        .sheet(item: $voidTarget) { order in
-            VoidSheet(app: app, order: order, onDone: { voidTarget = nil })
-                .frame(minWidth: 440, minHeight: 520)
-                .environment(\.theme, theme)
-                .environment(\.localize, t)
+        .sufrixSheet(item: $voidTarget) { order, dismiss in
+            VoidSheet(app: app, order: order, onDone: dismiss)
+        }
+        .sufrixSheet(item: $app.previewReceipt, size: .large) { r, dismiss in
+            ReceiptPreviewSheet(app: app, receipt: r, onClose: dismiss)
         }
     }
 
@@ -165,7 +165,7 @@ struct OrderHistoryView: View {
                     if !item.queued && item.status != "voided" {
                         Button {
                             Haptics.selection()
-                            Task { await app.reprintOrder(item.id) }
+                            Task { await app.openOrderReceiptPreview(item.id) }
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "printer")
