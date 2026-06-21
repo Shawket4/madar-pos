@@ -90,6 +90,14 @@ fun CloseShiftScreen(model: AppModel) {
             ) {
                 model.shift?.let { SummaryCard(it, currency) }
                 CashCard(countedMinor, { countedMinor = it }, note, { note = it }, currency, !model.isBusy, model.shiftReport)
+                if (model.shiftReport != null) {
+                    SufrixButton(
+                        t("shift.print_report"),
+                        { scope.launch { model.printShiftReport() } },
+                        variant = BtnVariant.OUTLINE,
+                        loading = model.printState == PrintState.PRINTING,
+                    )
+                }
                 model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
                 SufrixButton(
                     t("order.close_shift"),

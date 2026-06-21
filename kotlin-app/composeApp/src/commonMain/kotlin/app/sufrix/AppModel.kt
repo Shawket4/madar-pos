@@ -329,6 +329,21 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         }
     }
 
+    /** Print the shift report (Z-report) — same printer path as the receipt. */
+    suspend fun printShiftReport() {
+        val report = shiftReport ?: return
+        val (host, port) = parsePrinter(printerHost)
+        if (host.isBlank()) { printState = PrintState.NO_PRINTER; return }
+        printState = PrintState.PRINTING
+        val bytes = core.renderShiftReport(report, branchName, session?.currencyCode ?: "", 32u)
+        printState = try {
+            core.sendToPrinter(host, port, bytes)
+            PrintState.PRINTED
+        } catch (e: Exception) {
+            PrintState.FAILED
+        }
+    }
+
     /** Split "host" / "host:port" → (host, port); default JetDirect port 9100. */
     private fun parsePrinter(raw: String): Pair<String, UShort> {
         val default: UShort = 9100.toUShort()
