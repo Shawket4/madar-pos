@@ -325,4 +325,235 @@ mod tests {
             change_given_minor: 0,
         });
     }
+
+    // ── additional golden vectors ────────────────────────────────────────────
+
+    #[test]
+    fn subtotal_sums_across_multiple_lines() {
+        // 3 lines: 1000×2 + 500×1 + 250×4 = 2000 + 500 + 1000 = 3500.
+        let b = price_cart(cart(
+            vec![line(1000, 2), line(500, 1), line(250, 4)],
+            DiscountKind::None,
+            0,
+            0.0,
+        ));
+        assert_eq!(b.subtotal_minor, 3500);
+        assert_eq!(b.total_minor, 3500);
+    }
+
+    #[test]
+    fn percentage_discount_rounds_half_up_at_minor_boundary() {
+        // subtotal 5 × 10% = (5*10)/100 = 0.5 → ties-away → 1 (not 0).
+        let b = price_cart(cart(vec![line(5, 1)], DiscountKind::Percentage, 10, 0.0));
+        assert_eq!(b.discount_minor, 1);
+        assert_eq!(b.taxable_minor, 4);
+        assert_eq!(b.total_minor, 4);
+    }
+
+    #[test]
+    fn percentage_discount_below_half_rounds_down() {
+        // subtotal 4 × 10% = (4*10)/100 = 0.4 → rounds to 0.
+        let b = price_cart(cart(vec![line(4, 1)], DiscountKind::Percentage, 10, 0.0));
+        assert_eq!(b.discount_minor, 0);
+        assert_eq!(b.total_minor, 4);
+    }
+
+    #[test]
+    fn percentage_discount_exactly_100_zeroes_total() {
+        let b = price_cart(cart(vec![line(1234, 3)], DiscountKind::Percentage, 100, 0.14));
+        assert_eq!(b.subtotal_minor, 3702);
+        assert_eq!(b.discount_minor, 3702); // 100% off → whole subtotal
+        assert_eq!(b.taxable_minor, 0);
+        assert_eq!(b.tax_minor, 0);
+        assert_eq!(b.total_minor, 0);
+    }
+
+    #[test]
+    fn percentage_discount_zero_value_is_no_discount() {
+        let b = price_cart(cart(vec![line(1000, 1)], DiscountKind::Percentage, 0, 0.14));
+        assert_eq!(b.discount_minor, 0);
+        assert_eq!(b.taxable_minor, 1000);
+        assert_eq!(b.tax_minor, 140);
+        assert_eq!(b.total_minor, 1140);
+    }
+
+    #[test]
+    fn fixed_discount_zero_value_is_no_discount() {
+        let b = price_cart(cart(vec![line(1000, 1)], DiscountKind::Fixed, 0, 0.0));
+        assert_eq!(b.discount_minor, 0);
+        assert_eq!(b.total_minor, 1000);
+    }
+
+    #[test]
+    fn fixed_discount_equal_to_subtotal_zeroes_total() {
+        let b = price_cart(cart(vec![line(1000, 1)], DiscountKind::Fixed, 1000, 0.14));
+        assert_eq!(b.discount_minor, 1000);
+        assert_eq!(b.taxable_minor, 0);
+        assert_eq!(b.tax_minor, 0);
+        assert_eq!(b.total_minor, 0);
+    }
+
+    #[test]
+    fn negative_discount_value_clamps_to_zero() {
+        // A stray negative fixed value must never INCREASE the total.
+        let b = price_cart(cart(vec![line(1000, 1)], DiscountKind::Fixed, -500, 0.0));
+        assert_eq!(b.discount_minor, 0);
+        assert_eq!(b.total_minor, 1000);
+        // Same guard on the percentage path (clamp lower bound is 0).
+        let b = price_cart(cart(vec![line(1000, 1)], DiscountKind::Percentage, -50, 0.0));
+        assert_eq!(b.discount_minor, 0);
+        assert_eq!(b.total_minor, 1000);
+    }
+
+    #[test]
+    fn tax_rounds_half_away_from_zero_at_minor_boundary() {
+        // taxable 5 × 0.10 = 0.5 → ties-away → 1.
+        let b = price_cart(cart(vec![line(5, 1)], DiscountKind::None, 0, 0.10));
+        assert_eq!(b.tax_minor, 1);
+        assert_eq!(b.total_minor, 6);
+    }
+
+    #[test]
+    fn tax_below_half_rounds_down_at_minor_boundary() {
+        // taxable 4 × 0.10 = 0.4 → rounds to 0.
+        let b = price_cart(cart(vec![line(4, 1)], DiscountKind::None, 0, 0.10));
+        assert_eq!(b.tax_minor, 0);
+        assert_eq!(b.total_minor, 4);
+    }
+
+    #[test]
+    fn change_is_tendered_minus_total_no_tip() {
+        let mut c = cart(vec![line(1000, 1)], DiscountKind::None, 0, 0.14);
+        c.amount_tendered = Some(2000);
+        let b = price_cart(c);
+        assert_eq!(b.total_minor, 1140);
+        assert_eq!(b.change_given_minor, 860); // 2000 - 1140
+    }
+
+    #[test]
+    fn change_exact_payment_is_zero() {
+        let mut c = cart(vec![line(1000, 1)], DiscountKind::None, 0, 0.0);
+        c.amount_tendered = Some(1000);
+        let b = price_cart(c);
+        assert_eq!(b.change_given_minor, 0);
+    }
+
+    #[test]
+    fn cash_tip_exceeding_overpayment_clamps_change_to_zero() {
+        // Tendered exact, then a cash tip → change can't go negative.
+        let mut c = cart(vec![line(1000, 1)], DiscountKind::None, 0, 0.0);
+        c.amount_tendered = Some(1000);
+        c.cash_tip = 200;
+        let b = price_cart(c);
+        assert_eq!(b.change_given_minor, 0); // (1000 - 1000 - 200).clamp(0, ..) = 0
+    }
+
+    #[test]
+    fn no_tender_means_no_change_even_with_cash_tip() {
+        // amount_tendered None (card path) → change is 0 regardless of cash_tip.
+        let mut c = cart(vec![line(1000, 1)], DiscountKind::None, 0, 0.0);
+        c.cash_tip = 200;
+        let b = price_cart(c);
+        assert_eq!(b.change_given_minor, 0);
+    }
+
+    #[test]
+    fn change_is_capped_at_the_change_ceiling() {
+        // A wildly-large tender must clamp to the CHANGE_CAP, never overflow.
+        let mut c = cart(vec![line(100, 1)], DiscountKind::None, 0, 0.0);
+        c.amount_tendered = Some(i64::MAX / 2);
+        let b = price_cart(c);
+        assert_eq!(b.change_given_minor, CHANGE_CAP);
+    }
+
+    #[test]
+    fn bundle_extras_scale_with_bundle_qty_not_component_qty() {
+        // Two bundle lines (qty 3) each with one component up-charge of 250.
+        let comp = BundleComponentSel {
+            addons: vec![AddonSel { price_modifier: 250, quantity: 1 }],
+            optionals: vec![],
+        };
+        let bundle = CartLine {
+            quantity: 3,
+            unit_price: 4000,
+            is_bundle: true,
+            addons: vec![],
+            optionals: vec![],
+            bundle_components: vec![comp],
+        };
+        let b = price_cart(cart(vec![bundle], DiscountKind::None, 0, 0.0));
+        // (4000 + 250) × 3 = 12_750.
+        assert_eq!(b.subtotal_minor, 12_750);
+    }
+
+    #[test]
+    fn bundle_ignores_top_level_addons_optionals() {
+        // For a bundle line, only bundle_components add money; the line's own
+        // addons/optionals are NOT charged (the line_total bundle branch).
+        let bundle = CartLine {
+            quantity: 1,
+            unit_price: 5000,
+            is_bundle: true,
+            addons: vec![AddonSel { price_modifier: 9999, quantity: 5 }], // ignored
+            optionals: vec![OptionalSel { price: 8888 }],                  // ignored
+            bundle_components: vec![BundleComponentSel { addons: vec![], optionals: vec![] }],
+        };
+        let b = price_cart(cart(vec![bundle], DiscountKind::None, 0, 0.0));
+        assert_eq!(b.subtotal_minor, 5000); // only the fixed base
+    }
+
+    #[test]
+    fn addon_quantity_multiplies_the_modifier() {
+        // A normal line: unit 1000 + addon(price 300 × qty 3) = 1900.
+        let l = CartLine {
+            quantity: 1,
+            unit_price: 1000,
+            is_bundle: false,
+            addons: vec![AddonSel { price_modifier: 300, quantity: 3 }],
+            optionals: vec![],
+            bundle_components: vec![],
+        };
+        let b = price_cart(cart(vec![l], DiscountKind::None, 0, 0.0));
+        assert_eq!(b.subtotal_minor, 1900);
+    }
+
+    #[test]
+    fn large_amounts_do_not_overflow_i64() {
+        // 1_000_000 minor (10k EGP) × 50 lines worth, 14% tax — well within i64.
+        let b = price_cart(cart(vec![line(1_000_000, 50)], DiscountKind::None, 0, 0.14));
+        assert_eq!(b.subtotal_minor, 50_000_000);
+        assert_eq!(b.tax_minor, 7_000_000);
+        assert_eq!(b.total_minor, 57_000_000);
+    }
+
+    #[test]
+    fn zero_unit_price_line_contributes_only_its_extras() {
+        // A free item with a paid optional: 0 base + 300 optional, qty 2 → 600.
+        let l = CartLine {
+            quantity: 2,
+            unit_price: 0,
+            is_bundle: false,
+            addons: vec![],
+            optionals: vec![OptionalSel { price: 300 }],
+            bundle_components: vec![],
+        };
+        let b = price_cart(cart(vec![l], DiscountKind::None, 0, 0.0));
+        assert_eq!(b.subtotal_minor, 600);
+    }
+
+    #[test]
+    fn full_golden_vector_discount_then_tax_then_change() {
+        // End-to-end: subtotal 2000, 10% discount → 200, taxable 1800, 14% tax →
+        // round(252.0)=252, total 2052, tendered 3000, cash tip 100 → change 848.
+        let mut c = cart(vec![line(1000, 2)], DiscountKind::Percentage, 10, 0.14);
+        c.amount_tendered = Some(3000);
+        c.cash_tip = 100;
+        let b = price_cart(c);
+        assert_eq!(b.subtotal_minor, 2000);
+        assert_eq!(b.discount_minor, 200);
+        assert_eq!(b.taxable_minor, 1800);
+        assert_eq!(b.tax_minor, 252);
+        assert_eq!(b.total_minor, 2052);
+        assert_eq!(b.change_given_minor, 848); // 3000 - 2052 - 100
+    }
 }

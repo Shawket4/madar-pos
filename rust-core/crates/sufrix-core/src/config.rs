@@ -42,3 +42,58 @@ impl SufrixConfig {
 pub fn default_config() -> SufrixConfig {
     SufrixConfig::from_env()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_env_db_path_is_empty_for_host_to_fill() {
+        // The host fills `db_path`; the env defaults must leave it blank
+        // (empty => in-memory store).
+        let c = SufrixConfig::from_env();
+        assert!(c.db_path.is_empty());
+    }
+
+    #[test]
+    fn from_env_defaults_locale_to_en() {
+        assert_eq!(SufrixConfig::from_env().locale, "en");
+    }
+
+    #[test]
+    fn from_env_base_url_is_an_http_url() {
+        // Either the baked-in SUFRIX_BASE_URL or the hard-coded fallback — both
+        // are absolute http(s) URLs.
+        let c = SufrixConfig::from_env();
+        assert!(c.base_url.starts_with("http"), "base_url = {}", c.base_url);
+    }
+
+    #[test]
+    fn from_env_environment_is_non_empty() {
+        // Baked-in SUFRIX_ENV or the "prod" fallback; never blank.
+        assert!(!SufrixConfig::from_env().environment.is_empty());
+    }
+
+    #[test]
+    fn default_config_equals_from_env_field_by_field() {
+        // `default_config` is the FFI wrapper over `from_env` — they must agree on
+        // every field so the host and Rust see the same defaults.
+        let a = default_config();
+        let b = SufrixConfig::from_env();
+        assert_eq!(a.base_url, b.base_url);
+        assert_eq!(a.environment, b.environment);
+        assert_eq!(a.db_path, b.db_path);
+        assert_eq!(a.locale, b.locale);
+    }
+
+    #[test]
+    fn config_is_cloneable_and_field_writable() {
+        // It's a plain Record: the host mutates fields directly (e.g. db_path).
+        let mut c = SufrixConfig::from_env();
+        c.db_path = "/tmp/sufrix.sqlite".to_string();
+        c.locale = "ar".to_string();
+        let cloned = c.clone();
+        assert_eq!(cloned.db_path, "/tmp/sufrix.sqlite");
+        assert_eq!(cloned.locale, "ar");
+    }
+}

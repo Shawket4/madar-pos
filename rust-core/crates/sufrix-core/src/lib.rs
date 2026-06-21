@@ -2010,6 +2010,75 @@ mod tests {
     }
 
     #[test]
+    fn backoff_edge_cases_clamp_attempts_and_stay_in_band() {
+        // attempts <= 0 are clamped to the first step (shift 0) → BASE band.
+        assert!((2_000..3_000).contains(&compute_backoff_ms(0, 7)));
+        assert!((2_000..3_000).contains(&compute_backoff_ms(-5, 7)));
+        // Jitter is bounded to [0, 1000) and added on top of the (capped) base.
+        let j = compute_backoff_ms(1, 7) - K_BASE_BACKOFF_MS;
+        assert!((0..1000).contains(&j));
+        // Same (attempts, seq) is deterministic — no RNG.
+        assert_eq!(compute_backoff_ms(3, 42), compute_backoff_ms(3, 42));
+        // The capped value never exceeds the max even with jitter added.
+        assert!(compute_backoff_ms(8, 999_999) <= K_MAX_BACKOFF_MS);
+    }
+
+    #[test]
+    fn rebase_dopt_shifts_a_present_timestamp_by_the_delta() {
+        let base = chrono::DateTime::parse_from_rfc3339("2026-06-20T12:00:00+00:00").unwrap();
+        let mut field = Some(Some(base));
+        rebase_dopt(&mut field, 60_000); // +1 minute
+        assert_eq!(field, Some(Some(base + chrono::Duration::minutes(1))));
+        // A negative delta walks it back.
+        rebase_dopt(&mut field, -120_000); // -2 minutes from the new value
+        assert_eq!(field, Some(Some(base - chrono::Duration::minutes(1))));
+    }
+
+    #[test]
+    fn rebase_dopt_zero_delta_is_a_noop() {
+        let base = chrono::DateTime::parse_from_rfc3339("2026-06-20T12:00:00+00:00").unwrap();
+        let mut field = Some(Some(base));
+        rebase_dopt(&mut field, 0);
+        assert_eq!(field, Some(Some(base)));
+    }
+
+    #[test]
+    fn rebase_dopt_tolerates_absent_double_option_levels() {
+        // Outer None (field omitted) — must not panic, stays None.
+        let mut none: Option<Option<chrono::DateTime<chrono::FixedOffset>>> = None;
+        rebase_dopt(&mut none, 60_000);
+        assert_eq!(none, None);
+        // Inner None (explicit null) — stays Some(None).
+        let mut inner_none: Option<Option<chrono::DateTime<chrono::FixedOffset>>> = Some(None);
+        rebase_dopt(&mut inner_none, 60_000);
+        assert_eq!(inner_none, Some(None));
+    }
+
+    #[test]
+    fn clock_skew_minutes_divides_seconds_truncating_toward_zero() {
+        let core = SufrixCore::from_env().unwrap();
+        // Default is 0.
+        assert_eq!(core.clock_skew_minutes(), 0);
+        // 125s → 2 min (truncated).
+        core.clock_skew_secs.store(125, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(core.clock_skew_minutes(), 2);
+        // Negative skew truncates toward zero too: -125s → -2 min.
+        core.clock_skew_secs.store(-125, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(core.clock_skew_minutes(), -2);
+        // Under a minute → 0.
+        core.clock_skew_secs.store(59, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(core.clock_skew_minutes(), 0);
+    }
+
+    #[test]
+    fn sync_status_reflects_outbox_counts_and_default_flags() {
+        // Signed out, empty outbox → all zero, offline, not auth-paused.
+        let core = SufrixCore::from_env().unwrap();
+        let s = core.sync_status().unwrap();
+        assert_eq!(s, SyncStatusView { pending: 0, failed: 0, online: false, auth_paused: false });
+    }
+
+    #[test]
     fn classify_send_maps_every_status_correctly() {
         let dead = |o: &SendOutcome| matches!(o, SendOutcome::Dead(_));
         let ack = |o: &SendOutcome| matches!(o, SendOutcome::Acked(_));

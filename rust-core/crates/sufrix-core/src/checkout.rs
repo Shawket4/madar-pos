@@ -649,4 +649,427 @@ mod tests {
         queue("o3", "Cash", 1000);
         assert_eq!(queued_cash_total(&store).unwrap(), 3280);
     }
+
+    // ── idempotency key ───────────────────────────────────────────────────────
+
+    #[test]
+    fn idempotency_key_is_the_local_order_id() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        let p = prep(&store, CASH, 2000).unwrap();
+        // The in-body idempotency key IS the client order id, and the receipt's
+        // local_order_id mirrors it (the outbox keys the row by the same UUID).
+        assert_eq!(p.command.request.idempotency_key, Some(Some(p.order_id)));
+        assert_eq!(p.receipt.local_order_id, p.order_id.to_string());
+    }
+
+    // ── split payments ────────────────────────────────────────────────────────
+
+    #[test]
+    fn split_payments_resolve_each_legs_raw_method_name() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 2000).unwrap();
+        let mut input = mk_input(CASH, 0);
+        input.splits = vec![
+            CheckoutSplit { payment_method_id: CASH.into(), amount_minor: 1000 },
+            CheckoutSplit { payment_method_id: CARD.into(), amount_minor: 1280 },
+        ];
+        let p = prepare(&store, "en", BRANCH, SHIFT, &input, 0.14, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        let legs = p.command.request.payment_splits.flatten().expect("splits set");
+        assert_eq!(legs.len(), 2);
+        assert_eq!(legs[0].method, "Cash"); // raw wire name, not id/label
+        assert_eq!(legs[0].amount, 1000);
+        assert_eq!(legs[1].method, "Card");
+        assert_eq!(legs[1].amount, 1280);
+    }
+
+    #[test]
+    fn split_legs_with_unknown_method_are_dropped() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 2000).unwrap();
+        let mut input = mk_input(CASH, 0);
+        input.splits = vec![
+            CheckoutSplit { payment_method_id: CASH.into(), amount_minor: 1000 },
+            CheckoutSplit { payment_method_id: "00000000-0000-0000-0000-0000000000ee".into(), amount_minor: 500 },
+        ];
+        let p = prepare(&store, "en", BRANCH, SHIFT, &input, 0.0, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        let legs = p.command.request.payment_splits.flatten().expect("at least one good leg");
+        assert_eq!(legs.len(), 1); // the ghost leg is filtered out
+        assert_eq!(legs[0].method, "Cash");
+    }
+
+    #[test]
+    fn no_splits_leaves_payment_splits_unset() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        let p = prep(&store, CASH, 2000).unwrap();
+        assert_eq!(p.command.request.payment_splits, None);
+    }
+
+    // ── tip on card leaves change untouched ───────────────────────────────────
+
+    #[test]
+    fn card_tip_does_not_reduce_cash_change() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        // Cash order (total 1140 @14%), tendered 1500, but the tip is paid on CARD
+        // → change stays 360 (1500 - 1140), not reduced by the tip.
+        let mut input = mk_input(CASH, 1500);
+        input.tip_minor = 200;
+        input.tip_payment_method_id = Some(CARD.into());
+        let p = prepare(&store, "en", BRANCH, SHIFT, &input, 0.14, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        assert_eq!(p.receipt.tip_minor, 200);
+        assert_eq!(p.receipt.change_minor, 360); // unaffected by the card tip
+        assert_eq!(p.command.request.tip_amount, Some(Some(200)));
+        assert_eq!(p.command.request.tip_payment_method, Some(Some("Card".into())));
+    }
+
+    #[test]
+    fn negative_tip_is_clamped_to_zero_and_not_recorded() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        let mut input = mk_input(CASH, 2000);
+        input.tip_minor = -500;
+        let p = prepare(&store, "en", BRANCH, SHIFT, &input, 0.0, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        assert_eq!(p.receipt.tip_minor, 0);
+        assert_eq!(p.command.request.tip_amount, None); // tip <= 0 → not set on the wire
+    }
+
+    // ── discount kinds carried verbatim onto the wire ─────────────────────────
+
+    fn seed_discounts(store: &Store) {
+        store
+            .kv_put(
+                menu::K_DISCOUNTS,
+                r#"[
+                  {"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z","dtype":"percentage","id":"00000000-0000-0000-0000-0000000000d1","is_active":true,"name":"10% off","name_translations":{},"org_id":"00000000-0000-0000-0000-0000000000ff","value":10},
+                  {"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z","dtype":"fixed","id":"00000000-0000-0000-0000-0000000000d2","is_active":true,"name":"250 off","name_translations":{},"org_id":"00000000-0000-0000-0000-0000000000ff","value":250}
+                ]"#,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn percentage_discount_is_recorded_on_the_wire_and_receipt() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        seed_discounts(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        cart::set_discount(&store, "00000000-0000-0000-0000-0000000000d1").unwrap();
+        let p = prepare(&store, "en", BRANCH, SHIFT, &mk_input(CASH, 2000), 0.14, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        let r = &p.command.request;
+        assert_eq!(r.discount_type, Some(Some("percentage".into())));
+        assert_eq!(r.discount_value, Some(Some(10)));
+        assert_eq!(r.discount_amount, Some(Some(100))); // 10% of 1000
+        assert_eq!(r.discount_id, Some(Some(uuid::Uuid::parse_str("00000000-0000-0000-0000-0000000000d1").unwrap())));
+        // subtotal 1000, discount 100, taxable 900, tax round(126), total 1026.
+        assert_eq!(r.subtotal, Some(Some(1000)));
+        assert_eq!(r.tax_amount, Some(Some(126)));
+        assert_eq!(r.total_amount, Some(Some(1026)));
+        assert_eq!(p.receipt.discount_minor, 100);
+        assert_eq!(p.receipt.total_minor, 1026);
+    }
+
+    #[test]
+    fn fixed_discount_is_recorded_on_the_wire() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        seed_discounts(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        cart::set_discount(&store, "00000000-0000-0000-0000-0000000000d2").unwrap();
+        let p = prepare(&store, "en", BRANCH, SHIFT, &mk_input(CASH, 2000), 0.0, "2026-06-20T12:00:00+00:00".into()).unwrap();
+        let r = &p.command.request;
+        assert_eq!(r.discount_type, Some(Some("fixed".into())));
+        assert_eq!(r.discount_value, Some(Some(250)));
+        assert_eq!(r.discount_amount, Some(Some(250)));
+        assert_eq!(r.total_amount, Some(Some(750))); // 1000 - 250, no tax
+    }
+
+    #[test]
+    fn no_discount_leaves_discount_fields_unset() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        let p = prep(&store, CASH, 2000).unwrap();
+        let r = &p.command.request;
+        assert_eq!(r.discount_type, None);
+        assert_eq!(r.discount_value, None);
+        assert_eq!(r.discount_amount, None);
+        assert_eq!(r.discount_id, None);
+    }
+
+    // ── queued_cash_total: signed cash_movement ops ───────────────────────────
+
+    #[test]
+    fn queued_cash_total_adds_signed_cash_movements() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        // One queued cash order (2000) plus a +500 pay-in and a -300 pay-out.
+        let mut req = models::CreateOrderRequest::new(
+            uuid::Uuid::new_v4(), vec![], "Cash".into(), uuid::Uuid::new_v4());
+        req.total_amount = Some(Some(2000));
+        store
+            .enqueue(&crate::store::NewOutboxOp {
+                id: "o1".into(),
+                op_type: "create_order".into(),
+                idempotency_key: "o1".into(),
+                payload: serde_json::to_string(&CheckoutCommand { request: req }).unwrap(),
+                event_at: "2026-06-20T12:00:00+00:00".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let mv = |id: &str, amount: i32| {
+            let mut r = models::CashMovementRequest::new(amount, "drawer".into());
+            r.client_ref = Some(Some(uuid::Uuid::new_v4()));
+            let cmd = crate::shift::CashMovementCommand { shift_id: "s1".into(), request: r };
+            store
+                .enqueue(&crate::store::NewOutboxOp {
+                    id: id.into(),
+                    op_type: "cash_movement".into(),
+                    idempotency_key: id.into(),
+                    payload: serde_json::to_string(&cmd).unwrap(),
+                    event_at: "2026-06-20T12:00:00+00:00".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+        };
+        mv("m1", 500); // pay-in
+        mv("m2", -300); // pay-out
+        // 2000 (cash order) + 500 - 300 = 2200.
+        assert_eq!(queued_cash_total(&store).unwrap(), 2200);
+    }
+
+    #[test]
+    fn queued_cash_total_ignores_unrelated_op_types() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        // An open_shift op (unrelated) must contribute nothing.
+        store
+            .enqueue(&crate::store::NewOutboxOp {
+                id: "open".into(),
+                op_type: "open_shift".into(),
+                idempotency_key: "open".into(),
+                payload: "{}".into(),
+                event_at: "2026-06-20T12:00:00+00:00".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(queued_cash_total(&store).unwrap(), 0);
+    }
+
+    // ── receipt projection: size / modifiers / bundle components ──────────────
+
+    fn cfg_addon(id: &str, kind: &str, price: i64) -> menu::AddonItemView {
+        menu::AddonItemView {
+            id: id.into(),
+            name: id.into(),
+            addon_type: kind.into(),
+            default_price_minor: price,
+            is_active: true,
+            ingredients: vec![],
+        }
+    }
+
+    fn cfg_item() -> menu::MenuItemView {
+        menu::MenuItemView {
+            id: "latte".into(),
+            name: "Latte".into(),
+            description: None,
+            category_id: None,
+            base_price_minor: 5000,
+            image_url: None,
+            is_active: true,
+            default_milk_addon_id: Some("oat".into()),
+            allowed_addon_ids: vec![],
+            sizes: vec![menu::ItemSizeView { id: "lg".into(), label: "Large".into(), price_minor: 6000, is_active: true }],
+            addon_slots: vec![],
+            optional_fields: vec![menu::OptionalFieldView {
+                id: "van".into(), name: "Vanilla".into(), price_minor: 300, is_active: true,
+                ingredient_name: None, ingredient_unit: None, quantity_used: None, org_ingredient_id: None,
+            }],
+            recipes: vec![],
+        }
+    }
+
+    fn cfg_catalog() -> Vec<menu::AddonItemView> {
+        vec![
+            cfg_addon("oat", "milk_type", 1500),    // default-milk base
+            cfg_addon("almond", "milk_type", 2000), // swap → +500
+            cfg_addon("shot", "extra", 800),        // additive → full
+        ]
+    }
+
+    #[test]
+    fn receipt_line_carries_size_addons_and_optionals() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        // Large + almond(+500 swap) + 2×shot(+800) + vanilla(+300).
+        let line = cart::resolve_line(
+            &cfg_item(),
+            &cfg_catalog(),
+            Some("Large".into()),
+            &[cart::AddonSelection { addon_item_id: "almond".into(), qty: 1 },
+              cart::AddonSelection { addon_item_id: "shot".into(), qty: 2 }],
+            &["van".into()],
+            1,
+            None,
+        );
+        cart::add_resolved(&store, line).unwrap();
+        let p = prep(&store, CASH, 20000).unwrap();
+        assert_eq!(p.receipt.lines.len(), 1);
+        let rl = &p.receipt.lines[0];
+        assert_eq!(rl.name, "Latte");
+        assert_eq!(rl.size_label.as_deref(), Some("Large"));
+        assert!(!rl.is_bundle);
+        // Two addons; the multi-qty one prints "name ×N".
+        assert_eq!(rl.addons.len(), 2);
+        let almond = rl.addons.iter().find(|a| a.name == "almond").unwrap();
+        assert_eq!(almond.price_minor, 500);
+        let shot = rl.addons.iter().find(|a| a.name.starts_with("shot")).unwrap();
+        assert_eq!(shot.name, "shot ×2");
+        assert_eq!(shot.price_minor, 800);
+        assert_eq!(rl.optionals.len(), 1);
+        assert_eq!(rl.optionals[0].name, "Vanilla");
+        assert_eq!(rl.optionals[0].price_minor, 300);
+        // line total = 6000 + 500 + 800*2 + 300 = 8400.
+        assert_eq!(rl.line_total_minor, 8400);
+        assert!(rl.components.is_empty());
+    }
+
+    fn cfg_bundle() -> menu::BundleView {
+        menu::BundleView {
+            id: "b1".into(),
+            name: "Morning Combo".into(),
+            description: None,
+            price_minor: 10000,
+            image_url: None,
+            is_available: true,
+            available_from_date: None,
+            available_until_date: None,
+            available_from_time: None,
+            available_until_time: None,
+            components: vec![],
+        }
+    }
+
+    #[test]
+    fn receipt_bundle_line_carries_components_with_their_modifiers() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        let comp = cart::BundleComponentSelection {
+            item_id: "latte".into(),
+            size_label: Some("Large".into()),
+            qty: 1,
+            addons: vec![cart::AddonSelection { addon_item_id: "almond".into(), qty: 1 }],
+            optional_field_ids: vec!["van".into()],
+        };
+        let line = cart::resolve_bundle_line(&cfg_bundle(), &[cfg_item()], &cfg_catalog(), &[comp], 1);
+        cart::add_resolved(&store, line).unwrap();
+        let p = prep(&store, CASH, 20000).unwrap();
+        let rl = &p.receipt.lines[0];
+        assert!(rl.is_bundle);
+        assert_eq!(rl.name, "Morning Combo");
+        // Bundle lines carry no top-level addons/optionals — only components.
+        assert!(rl.addons.is_empty());
+        assert!(rl.optionals.is_empty());
+        assert_eq!(rl.components.len(), 1);
+        let c = &rl.components[0];
+        assert_eq!(c.name, "Latte");
+        assert_eq!(c.size_label.as_deref(), Some("Large"));
+        assert_eq!(c.addons.len(), 1);
+        assert_eq!(c.addons[0].name, "almond");
+        assert_eq!(c.addons[0].price_minor, 500);
+        assert_eq!(c.optionals.len(), 1);
+        assert_eq!(c.optionals[0].name, "Vanilla");
+        // line total = 10000 fixed + 500 almond delta + 300 vanilla = 10800.
+        assert_eq!(rl.line_total_minor, 10800);
+    }
+
+    // The wire (CreateOrderRequest) parses cart ids as UUIDs, so the wire-shape
+    // test needs UUID ids (the receipt projection above only copies strings).
+    const BUNDLE_UUID: &str = "00000000-0000-0000-0000-0000000000b1";
+    const ITEM_UUID: &str = "00000000-0000-0000-0000-0000000000a1";
+    const ALMOND_UUID: &str = "00000000-0000-0000-0000-0000000000a2";
+    const VAN_UUID: &str = "00000000-0000-0000-0000-0000000000a3";
+
+    fn uuid_item() -> menu::MenuItemView {
+        let mut it = cfg_item();
+        it.id = ITEM_UUID.into();
+        it.default_milk_addon_id = None; // no milk base → almond charges full (simpler)
+        it.optional_fields = vec![menu::OptionalFieldView {
+            id: VAN_UUID.into(), name: "Vanilla".into(), price_minor: 300, is_active: true,
+            ingredient_name: None, ingredient_unit: None, quantity_used: None, org_ingredient_id: None,
+        }];
+        it
+    }
+
+    fn uuid_catalog() -> Vec<menu::AddonItemView> {
+        vec![cfg_addon(ALMOND_UUID, "extra", 800)] // additive → full 800
+    }
+
+    fn uuid_bundle() -> menu::BundleView {
+        let mut b = cfg_bundle();
+        b.id = BUNDLE_UUID.into();
+        b
+    }
+
+    #[test]
+    fn bundle_wire_item_carries_components_and_clears_top_level_modifiers() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        let comp = cart::BundleComponentSelection {
+            item_id: ITEM_UUID.into(),
+            size_label: Some("Large".into()),
+            qty: 2,
+            addons: vec![cart::AddonSelection { addon_item_id: ALMOND_UUID.into(), qty: 1 }],
+            optional_field_ids: vec![VAN_UUID.into()],
+        };
+        let line = cart::resolve_bundle_line(&uuid_bundle(), &[uuid_item()], &uuid_catalog(), &[comp], 1);
+        cart::add_resolved(&store, line).unwrap();
+        let p = prep(&store, CASH, 20000).unwrap();
+        let item = &p.command.request.items[0];
+        // Bundle id set, top-level addons/optionals empty, components present.
+        assert_eq!(item.bundle_id, Some(Some(uuid::Uuid::parse_str(BUNDLE_UUID).unwrap())));
+        assert!(item.addons.is_empty());
+        assert!(item.optional_field_ids.is_empty());
+        let comps = item.bundle_components.as_ref().expect("bundle_components set");
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].quantity, 2);
+        assert_eq!(comps[0].size_label, Some(Some("Large".into())));
+        // The component's chosen addon rode through with its charged price.
+        let cadd = comps[0].addons.as_ref().expect("component addons");
+        assert_eq!(cadd.len(), 1);
+        assert_eq!(cadd[0].unit_price, Some(Some(800)));
+        let copt = comps[0].optional_field_ids.as_ref().expect("component optional ids");
+        assert_eq!(copt.len(), 1);
+    }
+
+    #[test]
+    fn normal_wire_item_carries_size_and_unit_price() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        let line = cart::resolve_line(
+            &uuid_item(),
+            &uuid_catalog(),
+            Some("Large".into()),
+            &[],
+            &[],
+            1,
+            None,
+        );
+        cart::add_resolved(&store, line).unwrap();
+        let p = prep(&store, CASH, 20000).unwrap();
+        let item = &p.command.request.items[0];
+        assert_eq!(item.menu_item_id, Some(Some(uuid::Uuid::parse_str(ITEM_UUID).unwrap())));
+        assert_eq!(item.size_label, Some(Some("Large".into())));
+        assert_eq!(item.unit_price, Some(Some(6000))); // Large size price recorded verbatim
+        assert_eq!(item.bundle_id, None);
+    }
 }

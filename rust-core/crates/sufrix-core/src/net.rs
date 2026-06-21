@@ -250,4 +250,185 @@ mod tests {
             panic!("expected validation");
         }
     }
+
+    // ── extract_error_message: alternate envelope keys & malformed bodies ─────
+
+    #[test]
+    fn extract_error_message_reads_message_and_detail_keys() {
+        // `error` is preferred, then `message`, then `detail`.
+        assert_eq!(extract_error_message(r#"{"message":"middleware says no"}"#).as_deref(), Some("middleware says no"));
+        assert_eq!(extract_error_message(r#"{"detail":"422 detail"}"#).as_deref(), Some("422 detail"));
+        // `error` wins when several are present.
+        assert_eq!(
+            extract_error_message(r#"{"error":"first","message":"second"}"#).as_deref(),
+            Some("first"),
+        );
+    }
+
+    #[test]
+    fn extract_error_message_is_none_for_non_envelope_bodies() {
+        assert!(extract_error_message("").is_none());
+        assert!(extract_error_message("plain text").is_none());
+        assert!(extract_error_message("{}").is_none()); // valid JSON, no known key
+        assert!(extract_error_message(r#"{"error":123}"#).is_none()); // non-string value
+        assert!(extract_error_message("[1,2,3]").is_none()); // not an object
+    }
+
+    // ── status_to_error: the full classification table ───────────────────────
+
+    #[test]
+    fn status_to_error_403_surfaces_message_in_action() {
+        // A network 403 has no resource/action pair; the server message rides in
+        // `action` and `resource` is the generic "api".
+        match status_to_error(403, r#"{"error":"insufficient role"}"#) {
+            CoreError::Forbidden { resource, action } => {
+                assert_eq!(resource, "api");
+                assert_eq!(action, "insufficient role");
+            }
+            other => panic!("expected Forbidden, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn status_to_error_422_is_validation() {
+        assert!(matches!(status_to_error(422, r#"{"error":"bad field"}"#), CoreError::Validation { .. }));
+    }
+
+    #[test]
+    fn status_to_error_401_carries_message_in_detail() {
+        match status_to_error(401, r#"{"error":"token expired"}"#) {
+            CoreError::Unauthenticated { detail } => assert_eq!(detail, "token expired"),
+            other => panic!("expected Unauthenticated, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn status_to_error_500_and_above_is_transient() {
+        assert!(matches!(status_to_error(500, "{}"), CoreError::Transient { .. }));
+        assert!(matches!(status_to_error(502, "{}"), CoreError::Transient { .. }));
+        assert!(matches!(status_to_error(504, "{}"), CoreError::Transient { .. }));
+    }
+
+    #[test]
+    fn status_to_error_other_4xx_is_server_with_status_and_reason() {
+        // 404 isn't special-cased here → Server, carrying the status + canonical
+        // reason as the code, and the parsed message as the detail.
+        match status_to_error(404, r#"{"error":"missing"}"#) {
+            CoreError::Server { status, code, detail } => {
+                assert_eq!(status, 404);
+                assert_eq!(code, "Not Found");
+                assert_eq!(detail, "missing");
+            }
+            other => panic!("expected Server, got {other:?}"),
+        }
+        // 409 likewise (already covered for the matches!, here we check fields).
+        match status_to_error(409, "not json") {
+            CoreError::Server { status, code, detail } => {
+                assert_eq!(status, 409);
+                assert_eq!(code, "Conflict");
+                assert_eq!(detail, "Conflict"); // falls back to reason
+            }
+            other => panic!("expected Server, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn status_to_error_unknown_status_uses_generic_reason() {
+        // 499 has no canonical reason → "error" string for both code and detail.
+        match status_to_error(499, "not json") {
+            CoreError::Server { status, code, detail } => {
+                assert_eq!(status, 499);
+                assert_eq!(code, "error");
+                assert_eq!(detail, "error");
+            }
+            other => panic!("expected Server, got {other:?}"),
+        }
+    }
+
+    // ── map_api_error: ApiError<T> → CoreError ────────────────────────────────
+
+    #[test]
+    fn map_api_error_response_error_classifies_by_status() {
+        let resp = sufrix_api::apis::ResponseContent::<()> {
+            status: reqwest::StatusCode::UNAUTHORIZED,
+            content: r#"{"error":"nope"}"#.into(),
+            entity: None,
+        };
+        assert!(matches!(map_api_error(ApiError::ResponseError(resp)), CoreError::Unauthenticated { .. }));
+
+        let resp = sufrix_api::apis::ResponseContent::<()> {
+            status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            content: "boom".into(),
+            entity: None,
+        };
+        assert!(matches!(map_api_error(ApiError::ResponseError(resp)), CoreError::Transient { .. }));
+    }
+
+    #[test]
+    fn map_api_error_serde_is_internal_decode_error() {
+        // A 2xx body we can't decode is wire drift / our bug, never the user's.
+        let serde_err = serde_json::from_str::<i32>("not a number").unwrap_err();
+        match map_api_error::<()>(ApiError::Serde(serde_err)) {
+            CoreError::Internal { detail } => assert!(detail.starts_with("decode:")),
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_api_error_io_is_transient() {
+        let io = std::io::Error::new(std::io::ErrorKind::TimedOut, "read timed out");
+        assert!(matches!(map_api_error::<()>(ApiError::Io(io)), CoreError::Transient { .. }));
+    }
+
+    // ── parse_http_date: trimming, timezone token, partial dates ──────────────
+
+    #[test]
+    fn parse_http_date_trims_surrounding_whitespace() {
+        assert_eq!(parse_http_date("  Thu, 01 Jan 1970 00:00:00 GMT  "), Some(0));
+    }
+
+    #[test]
+    fn parse_http_date_known_imf_fixdate() {
+        // 2026-06-21T10:00:00Z. Epoch = 1_771_668_000 (deterministic, recomputed
+        // via chrono below to avoid a magic constant drifting).
+        let expected = chrono::NaiveDate::from_ymd_opt(2026, 6, 21)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+        // chrono validates the %a weekday against the date — 2026-06-21 is a Sunday.
+        assert_eq!(parse_http_date("Sun, 21 Jun 2026 10:00:00 GMT"), Some(expected));
+    }
+
+    #[test]
+    fn parse_http_date_rejects_non_gmt_and_garbage() {
+        assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 UTC"), None); // not GMT token
+        assert_eq!(parse_http_date("1970-01-01T00:00:00Z"), None); // ISO, not IMF
+        assert_eq!(parse_http_date(""), None);
+    }
+
+    // ── reason() ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn reason_maps_known_and_unknown_statuses() {
+        assert_eq!(reason(200), "OK");
+        assert_eq!(reason(404), "Not Found");
+        assert_eq!(reason(418), "I'm a teapot");
+        assert_eq!(reason(299), "error"); // no canonical reason
+        assert_eq!(reason(0), "error"); // not a valid status code
+    }
+
+    // ── ApiClient::config defaults ────────────────────────────────────────────
+
+    #[test]
+    fn config_carries_base_path_user_agent_and_no_bearer_by_default() {
+        let c = ApiClient::new("http://example.test".into()).unwrap();
+        let cfg = c.config();
+        assert_eq!(cfg.base_path, "http://example.test");
+        assert!(cfg.user_agent.as_deref().unwrap().starts_with("sufrix-core/"));
+        assert!(cfg.bearer_access_token.is_none());
+        assert!(cfg.basic_auth.is_none());
+        assert!(cfg.api_key.is_none());
+    }
 }
