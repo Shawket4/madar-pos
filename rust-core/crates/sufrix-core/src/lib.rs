@@ -106,6 +106,9 @@ pub struct SufrixCore {
     session: RwLock<Option<session::SessionState>>,
     /// The host's secure-bytes vault for the session blob (Keychain/Keystore).
     token_store: Mutex<Option<Box<dyn session::TokenStore>>>,
+    /// Server-vs-device clock skew in SECONDS, refreshed by `refresh_connectivity`
+    /// (from the server `Date` header). Drives the clock-skew banner.
+    clock_skew_secs: std::sync::atomic::AtomicI64,
 }
 
 #[uniffi::export]
@@ -125,6 +128,7 @@ impl SufrixCore {
             api,
             session: RwLock::new(None),
             token_store: Mutex::new(None),
+            clock_skew_secs: std::sync::atomic::AtomicI64::new(0),
         }))
     }
 
@@ -748,6 +752,13 @@ impl SufrixCore {
         })
     }
 
+    /// Server-vs-device clock skew in MINUTES (server minus device, refreshed by
+    /// `refresh_connectivity`). The host shows a banner past a threshold so the
+    /// teller fixes the clock before offline work is mis-timestamped.
+    pub fn clock_skew_minutes(&self) -> i32 {
+        (self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed) / 60) as i32
+    }
+
     /// Live shift stats (sales total + order count) for the action-bar pill,
     /// derived from the orders the host already loaded via `list_shift_orders`
     /// (synced + queued), voided excluded. Pure — no extra network.
@@ -1199,6 +1210,32 @@ impl SufrixCore {
     pub async fn retry_outbox(&self) -> Result<(), CoreError> {
         self.store.requeue_dead()?;
         self.drain_outbox().await
+    }
+
+    /// The connectivity heartbeat: ping the backend, update the live `online`
+    /// flag + clock skew, and drain the outbox on success. The host calls this on
+    /// foreground + on a timer so the offline/clock-skew banners and the sync
+    /// chip reflect reality without waiting for the next deliberate action.
+    /// Returns the new online state.
+    pub async fn refresh_connectivity(&self) -> bool {
+        match self.api.ping().await {
+            Ok(skew) => {
+                if let Some(s) = skew {
+                    self.clock_skew_secs.store(s, std::sync::atomic::Ordering::Relaxed);
+                }
+                if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    sess.snapshot.online = true;
+                }
+                let _ = self.drain_outbox().await; // best-effort
+                true
+            }
+            Err(_) => {
+                if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    sess.snapshot.online = false;
+                }
+                false
+            }
+        }
     }
 
     /// The current shift's orders — the still-queued sales (from the outbox,

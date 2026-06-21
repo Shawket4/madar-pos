@@ -103,6 +103,25 @@ impl ApiClient {
         }
     }
 
+    /// Ping the backend to refresh reachability + read its clock. ANY HTTP
+    /// response (even 4xx) means we reached the server → online; only a transport
+    /// failure errs. Returns the server-vs-device skew in SECONDS when the
+    /// response carries a parseable `Date` header (for the clock-skew banner).
+    pub async fn ping(&self) -> CoreResult<Option<i64>> {
+        let mut rb = self.http.request(reqwest::Method::GET, &self.base_url);
+        if let Some(token) = self.bearer.read().unwrap_or_else(|e| e.into_inner()).clone() {
+            rb = rb.bearer_auth(token);
+        }
+        let resp = rb.send().await.map_err(|e| classify_reqwest(&e))?;
+        let skew = resp
+            .headers()
+            .get(reqwest::header::DATE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_http_date)
+            .map(|server_epoch| server_epoch - chrono::Utc::now().timestamp());
+        Ok(skew)
+    }
+
     /// A `Configuration` for a normal call, carrying the current bearer token.
     pub fn config(&self) -> Configuration {
         Configuration {
@@ -170,6 +189,14 @@ fn extract_error_message(body: &str) -> Option<String> {
     None
 }
 
+/// Parse an HTTP `Date` header (RFC 7231 IMF-fixdate, e.g.
+/// "Tue, 21 Jun 2026 10:00:00 GMT") to a UTC epoch second.
+fn parse_http_date(s: &str) -> Option<i64> {
+    chrono::NaiveDateTime::parse_from_str(s.trim(), "%a, %d %b %Y %H:%M:%S GMT")
+        .ok()
+        .map(|dt| dt.and_utc().timestamp())
+}
+
 fn reason(status: u16) -> &'static str {
     reqwest::StatusCode::from_u16(status)
         .ok()
@@ -190,6 +217,14 @@ mod tests {
         assert_eq!(c.config().bearer_access_token.as_deref(), Some("tok"));
         c.set_bearer(None);
         assert!(!c.has_bearer());
+    }
+
+    #[test]
+    fn parses_http_date_header_to_epoch() {
+        // "Thu, 01 Jan 1970 00:00:00 GMT" = epoch 0.
+        assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:01:00 GMT"), Some(60));
+        assert_eq!(parse_http_date("not a date"), None);
     }
 
     #[test]
