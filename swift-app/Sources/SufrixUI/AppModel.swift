@@ -220,6 +220,12 @@ final class AppModel: ObservableObject {
     /// Dismiss the receipt confirmation (back to the catalog).
     func dismissReceipt() { receipt = nil; printState = .idle }
 
+    /// Total quantity of an item already in the cart, summed across its config
+    /// variants — drives the catalog card's in-cart badge.
+    func cartQtyForItem(_ itemId: String) -> Int64 {
+        cartLines.filter { $0.itemId == itemId }.reduce(0) { $0 + $1.qty }
+    }
+
     /// Render the current receipt in the core and stream it to the configured
     /// network printer (best-effort; unverifiable without hardware). All the
     /// layout/bytes live in the core — this only moves them onto the wire.

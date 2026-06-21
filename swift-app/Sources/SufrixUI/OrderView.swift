@@ -127,9 +127,14 @@ struct OrderView: View {
             SearchField(text: $search, placeholder: t("order.search"))
                 .padding(.horizontal, Space.lg)
                 .padding(.bottom, Space.sm)
-            ItemGridOrEmpty(items: visibleItems, currency: currency, searching: !search.isEmpty) { item in
-                if app.hasOptions(item) { app.openItemDetail(item) } else { app.addToCart(item) }
-            }
+            ItemGridOrEmpty(
+                items: visibleItems, currency: currency, searching: !search.isEmpty,
+                categoryName: { id in app.categories.first { $0.id == id }?.name ?? "" },
+                cartQty: { itemId in app.cartQtyForItem(itemId) },
+                onAdd: { item in
+                    if app.hasOptions(item) { app.openItemDetail(item) } else { app.addToCart(item) }
+                }
+            )
         }
         .frame(maxWidth: .infinity)
     }
@@ -279,9 +284,12 @@ private struct ItemGridOrEmpty: View {
     let items: [MenuItemView]
     let currency: String
     let searching: Bool
+    let categoryName: (String?) -> String
+    let cartQty: (String) -> Int64
     let onAdd: (MenuItemView) -> Void
 
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: Space.md)]
+    // Width-driven columns (≈150–200pt cells) so landscape never yields giant cards.
+    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 10)]
 
     var body: some View {
         if items.isEmpty {
@@ -295,72 +303,19 @@ private struct ItemGridOrEmpty: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: Space.md) {
+                LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(items, id: \.id) { item in
-                        ItemCard(item: item, currency: currency) { onAdd(item) }
+                        MenuItemCard(
+                            item: item,
+                            categoryName: categoryName(item.categoryId),
+                            currency: currency,
+                            inCartQty: cartQty(item.id)
+                        ) { onAdd(item) }
                     }
                 }
                 .padding(Space.lg)
             }
         }
-    }
-}
-
-private struct ItemCard: View {
-    @Environment(\.theme) private var theme
-    let item: MenuItemView
-    let currency: String
-    let onAdd: () -> Void
-
-    var body: some View {
-        Button {
-            Haptics.impact()
-            onAdd()
-        } label: {
-            VStack(alignment: .leading, spacing: Space.sm) {
-                Monogram(name: item.name)
-                Text(item.name)
-                    .font(.ui(14, .semibold))
-                    .foregroundStyle(theme.colors.textPrimary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(Money.format(item.basePriceMinor, currency))
-                    .font(.money(14, .bold))
-                    .foregroundStyle(theme.colors.accent)
-            }
-            .padding(Space.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.colors.surface)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radii.md, style: .continuous)
-                    .strokeBorder(theme.colors.border, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
-        }
-        .buttonStyle(.pressable)
-    }
-}
-
-/// A branded image stand-in — the item's initial on a tinted tile. (Real menu
-/// images get an async loader in a later polish phase, added to both platforms.)
-private struct Monogram: View {
-    @Environment(\.theme) private var theme
-    let name: String
-
-    private var initial: String {
-        String(name.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased()
-    }
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-            .fill(theme.colors.accentBg)
-            .aspectRatio(1.4, contentMode: .fit)
-            .overlay(
-                Text(initial.isEmpty ? "•" : initial)
-                    .font(.ui(28, .heavy))
-                    .foregroundStyle(theme.colors.accent.opacity(0.7))
-            )
     }
 }
 

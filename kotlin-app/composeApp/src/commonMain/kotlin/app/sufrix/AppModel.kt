@@ -266,6 +266,10 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Dismiss the receipt confirmation (back to the catalog). */
     fun dismissReceipt() { receipt = null; printState = PrintState.IDLE }
 
+    /** Total quantity of an item already in the cart, summed across its config
+     *  variants — drives the catalog card's in-cart badge. */
+    fun cartQtyForItem(itemId: String): Long = cartLines.filter { it.itemId == itemId }.sumOf { it.qty }
+
     /** Set the network printer address (Settings); persisted in the host vault. */
     fun setPrinterHost(value: String) {
         printerHost = value

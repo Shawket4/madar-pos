@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -53,6 +51,8 @@ import app.sufrix.core.CategoryView
 import app.sufrix.core.MenuItemView
 import app.sufrix.core.ShiftView
 import app.sufrix.ui.ChipTone
+import app.sufrix.ui.MaxExtentCells
+import app.sufrix.ui.MenuItemCard
 import app.sufrix.ui.Money
 import app.sufrix.ui.NoticeBanner
 import app.sufrix.ui.Radii
@@ -104,7 +104,12 @@ fun OrderScreen(model: AppModel) {
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxHeight()) {
-                        CatalogColumn(model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it }, { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) })
+                        CatalogColumn(
+                            model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it },
+                            categoryName = { id -> model.categories.firstOrNull { it.id == id }?.name ?: "" },
+                            cartQty = { itemId -> model.cartQtyForItem(itemId) },
+                            onAdd = { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) },
+                        )
                     }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(c.border))
                     Box(Modifier.width(340.dp).fillMaxHeight()) {
@@ -113,7 +118,12 @@ fun OrderScreen(model: AppModel) {
                 }
             } else {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    CatalogColumn(model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it }, { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) })
+                    CatalogColumn(
+                        model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it },
+                        categoryName = { id -> model.categories.firstOrNull { it.id == id }?.name ?: "" },
+                        cartQty = { itemId -> model.cartQtyForItem(itemId) },
+                        onAdd = { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) },
+                    )
                 }
                 CartBar(model, currency) { showCart = true }
             }
@@ -251,6 +261,8 @@ private fun CatalogColumn(
     onSelect: (String?) -> Unit,
     search: String,
     onSearch: (String) -> Unit,
+    categoryName: (String?) -> String,
+    cartQty: (String) -> Long,
     onAdd: (MenuItemView) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -260,7 +272,7 @@ private fun CatalogColumn(
             Modifier.padding(horizontal = Space.lg).padding(bottom = Space.sm),
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            ItemGridOrEmpty(items, currency, searching = search.isNotBlank(), onAdd)
+            ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, onAdd)
         }
     }
 }
@@ -301,7 +313,14 @@ private fun CategoryChip(label: String, active: Boolean, onClick: () -> Unit) {
 
 // ── Item grid ───────────────────────────────────────────────────────────────────
 @Composable
-private fun ItemGridOrEmpty(items: List<MenuItemView>, currency: String, searching: Boolean, onAdd: (MenuItemView) -> Unit) {
+private fun ItemGridOrEmpty(
+    items: List<MenuItemView>,
+    currency: String,
+    searching: Boolean,
+    categoryName: (String?) -> String,
+    cartQty: (String) -> Long,
+    onAdd: (MenuItemView) -> Unit,
+) {
     val c = sufrixColors()
     if (items.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -315,47 +334,16 @@ private fun ItemGridOrEmpty(items: List<MenuItemView>, currency: String, searchi
         }
     } else {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 150.dp),
+            columns = MaxExtentCells(200.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(Space.lg),
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
-            verticalArrangement = Arrangement.spacedBy(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(items, key = { it.id }) { item -> ItemCard(item, currency) { onAdd(item) } }
-        }
-    }
-}
-
-@Composable
-private fun ItemCard(item: MenuItemView, currency: String, onAdd: () -> Unit) {
-    val c = sufrixColors()
-    val haptic = LocalHapticFeedback.current
-    val interaction = remember { MutableInteractionSource() }
-    Column(
-        Modifier.fillMaxWidth().pressScale(interaction).clip(RoundedCornerShape(Radii.md))
-            .background(c.surface).border(1.dp, c.border, RoundedCornerShape(Radii.md))
-            .clickable(interactionSource = interaction, indication = null) {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onAdd()
+            items(items, key = { it.id }) { item ->
+                MenuItemCard(item, categoryName(item.categoryId), currency, cartQty(item.id)) { onAdd(item) }
             }
-            .padding(Space.md),
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        Monogram(item.name)
-        Text(item.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2)
-        Text(Money.format(item.basePriceMinor, currency), color = c.accent, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-    }
-}
-
-/// A branded image stand-in — the item's initial on a tinted tile.
-@Composable
-private fun Monogram(name: String) {
-    val c = sufrixColors()
-    val initial = name.trim().take(1).uppercase().ifEmpty { "•" }
-    Box(
-        Modifier.fillMaxWidth().aspectRatio(1.4f).clip(RoundedCornerShape(Radii.sm)).background(c.accentBg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(initial, color = c.accent.copy(alpha = 0.7f), fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 28.sp)
+        }
     }
 }
 
