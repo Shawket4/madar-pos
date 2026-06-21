@@ -1,6 +1,7 @@
-// Cash In/Out + Past Shifts — two online-only manager screens reached from the
+// Cash In/Out + Past Shifts — two manager screens reached from the
 // "More" drawer. Cash movements record a signed pay-in / pay-out against the open
-// shift (never queued); Past Shifts lists the branch's shift history. All data +
+// shift — OFFLINE-FIRST (queued through the durable outbox, idempotent on a
+// client_ref); Past Shifts lists the branch's shift history. All data +
 // rules live in the core; these views collect input and render. Mirror of the
 // Flutter cash-movements + shift-history screens.
 import SwiftUI
