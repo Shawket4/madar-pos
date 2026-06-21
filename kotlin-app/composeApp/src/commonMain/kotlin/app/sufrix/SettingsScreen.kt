@@ -119,10 +119,26 @@ fun SettingsScreen(model: AppModel) {
                         Text(disclosureGlyph(), color = c.textMuted, fontSize = 18.sp)
                     }
                 }
+                LaunchedEffect(Unit) { model.loadDiagnostics() }
                 Card(t("settings.diagnostics")) {
                     InfoRow(t("settings.version"), model.core.version())
                     InfoRow(t("settings.server"), model.core.baseUrl())
                     InfoRow(t("settings.pending"), "${model.pendingCount}")
+                    if (model.diagnostics.isNotEmpty()) {
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(t("settings.recent_warnings"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Box(Modifier.weight(1f))
+                            Text(t("settings.clear"), color = c.accent, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                                modifier = Modifier.clickable { model.clearDiagnostics() })
+                        }
+                        model.diagnostics.take(15).forEach { e ->
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(e.message, color = if (e.level == "error") c.danger else c.warning, fontFamily = SufrixFont, fontSize = 12.sp)
+                                Text(e.at, color = c.textMuted, fontFamily = SufrixFont, fontSize = 10.sp)
+                            }
+                        }
+                    }
                 }
                 SufrixButton(
                     t("settings.sign_out"),

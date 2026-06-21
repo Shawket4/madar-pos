@@ -614,6 +614,11 @@ final class AppModel: ObservableObject {
     }
 
     /// Local time as RFC3339 with a colon offset, so the core gates bundle
+    // ── diagnostics (Settings → recent sync warnings) ────────────────────────────
+    @Published private(set) var diagnostics: [DiagLogView] = []
+    func loadDiagnostics() { diagnostics = core.recentLogs() }
+    func clearDiagnostics() { core.clearLogs(); diagnostics = [] }
+
     /// windows in the till's timezone (the till sits at the branch).
     static func nowRFC3339() -> String {
         let f = ISO8601DateFormatter()

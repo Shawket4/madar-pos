@@ -18,6 +18,7 @@ import app.sufrix.core.ComputedRecipeLineView
 import app.sufrix.core.CoreException
 import app.sufrix.core.DiscountView
 import app.sufrix.core.DeliveryOrderView
+import app.sufrix.core.DiagLogView
 import app.sufrix.core.DraftView
 import app.sufrix.core.ItemAddonView
 import app.sufrix.core.LoginMode
@@ -694,6 +695,12 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         } catch (e: CoreException) { error = humanMessage(e); false }
         finally { isBusy = false }
     }
+
+    // ── diagnostics (Settings → recent sync warnings) ─────────────────────────────
+    var diagnostics by mutableStateOf<List<DiagLogView>>(emptyList())
+        private set
+    fun loadDiagnostics() { diagnostics = core.recentLogs() }
+    fun clearDiagnostics() { core.clearLogs(); diagnostics = emptyList() }
 
     // ── item customization ───────────────────────────────────────────────────────
     /** Non-null = the customization sheet is open for this item. */

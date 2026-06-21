@@ -116,6 +116,25 @@ pub struct SufrixCore {
     /// `true` after a drain hit a 401: the outbox is parked (no retry budget
     /// burned, no heartbeat hammering) until the next successful login clears it.
     auth_paused: std::sync::atomic::AtomicBool,
+    /// A small in-memory ring buffer of diagnostic warnings (sync dead-letters,
+    /// cascade failures, auth parks) — surfaced in Settings → Diagnostics so a
+    /// teller/manager can see WHY something is stuck without a debugger.
+    diag: Mutex<std::collections::VecDeque<DiagEntry>>,
+}
+
+/// One diagnostic log line.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct DiagLogView {
+    pub at: String,
+    pub level: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug)]
+struct DiagEntry {
+    at: String,
+    level: String,
+    message: String,
 }
 
 #[uniffi::export]
@@ -137,6 +156,7 @@ impl SufrixCore {
             token_store: Mutex::new(None),
             clock_skew_secs: std::sync::atomic::AtomicI64::new(0),
             auth_paused: std::sync::atomic::AtomicBool::new(false),
+            diag: Mutex::new(std::collections::VecDeque::new()),
         }))
     }
 
@@ -311,6 +331,16 @@ impl SufrixCore {
         (user_id, Some(skew_ms))
     }
 
+    /// Append a diagnostic line (capped ring buffer of 200) — surfaced in
+    /// Settings → Diagnostics. Best-effort; never fails the caller.
+    fn push_diag(&self, level: &str, message: impl Into<String>) {
+        let mut g = self.diag.lock().unwrap_or_else(|e| e.into_inner());
+        g.push_back(DiagEntry { at: chrono::Utc::now().to_rfc3339(), level: level.into(), message: message.into() });
+        while g.len() > 200 {
+            g.pop_front();
+        }
+    }
+
     /// Drain the durable outbox — the single place outbox writes hit the network.
     /// Ports the Flutter offline-queue engine (offline_queue.dart) so a device
     /// can run months offline and replay safely:
@@ -352,6 +382,7 @@ impl SufrixCore {
                         // The prerequisite permanently failed — this op can never
                         // succeed alone. Cascade the failure instead of looping.
                         self.store.mark_dead(item.seq, "a required earlier action failed to sync")?;
+                        self.push_diag("error", format!("{} failed: a required earlier action failed to sync", item.op_type));
                         continue;
                     }
                     _ => {} // acked / discarded → safe to proceed
@@ -367,6 +398,7 @@ impl SufrixCore {
                 // Permanent rejection — surface in the stuck list, never silently drop.
                 SendOutcome::Dead(err) => {
                     self.store.mark_dead(item.seq, &err)?;
+                    self.push_diag("error", format!("{} rejected: {err}", item.op_type));
                     // A rejected open leaves the teller selling against a phantom
                     // shift — clear the optimistic local shift.
                     if item.op_type == "open_shift"
@@ -380,6 +412,7 @@ impl SufrixCore {
                 SendOutcome::AuthExpired => {
                     self.store.mark_retry_no_count(item.seq, now_ms() + K_NETWORK_RETRY_MS)?;
                     self.auth_paused.store(true, Relaxed);
+                    self.push_diag("warn", "sync paused — session expired; sign in again to resume");
                     return Ok(());
                 }
                 // Connectivity blip — reschedule WITHOUT consuming retry budget,
@@ -987,6 +1020,21 @@ impl SufrixCore {
             failed: self.store.dead_count()?,
             online: self.current_session().map(|s| s.online).unwrap_or(false),
         })
+    }
+
+    /// Recent diagnostic warnings (newest first) — the Settings → Diagnostics
+    /// feed. Captures sync dead-letters, cascade failures, and auth parks.
+    pub fn recent_logs(&self) -> Vec<DiagLogView> {
+        let g = self.diag.lock().unwrap_or_else(|e| e.into_inner());
+        g.iter()
+            .rev()
+            .map(|e| DiagLogView { at: e.at.clone(), level: e.level.clone(), message: e.message.clone() })
+            .collect()
+    }
+
+    /// Clear the diagnostics feed.
+    pub fn clear_logs(&self) {
+        self.diag.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     /// Server-vs-device clock skew in MINUTES (server minus device, refreshed by
@@ -1981,6 +2029,21 @@ mod tests {
 
     fn srv(status: u16) -> CoreError {
         CoreError::Server { status, code: "x".into(), detail: "boom".into() }
+    }
+
+    #[test]
+    fn diag_ring_buffer_caps_and_orders_newest_first() {
+        let core = SufrixCore::from_env().unwrap();
+        assert!(core.recent_logs().is_empty());
+        for i in 0..250 {
+            core.push_diag("warn", format!("m{i}"));
+        }
+        let logs = core.recent_logs();
+        assert_eq!(logs.len(), 200); // capped at 200
+        assert_eq!(logs[0].message, "m249"); // newest first
+        assert_eq!(logs[0].level, "warn");
+        core.clear_logs();
+        assert!(core.recent_logs().is_empty());
     }
 
     #[test]

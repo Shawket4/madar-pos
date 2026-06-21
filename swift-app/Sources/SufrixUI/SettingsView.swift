@@ -136,7 +136,29 @@ struct SettingsView: View {
             infoRow(t("settings.version"), app.core.version())
             infoRow(t("settings.server"), app.core.baseUrl())
             infoRow(t("settings.pending"), "\(app.pendingCount)")
+            if !app.diagnostics.isEmpty {
+                Divider().background(theme.colors.border)
+                HStack {
+                    Text(t("settings.recent_warnings"))
+                        .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
+                    Spacer()
+                    Button { app.clearDiagnostics() } label: {
+                        Text(t("settings.clear")).font(.ui(12, .semibold)).foregroundStyle(theme.colors.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
+                ForEach(Array(app.diagnostics.prefix(15).enumerated()), id: \.offset) { _, e in
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(e.message).font(.ui(12))
+                            .foregroundStyle(e.level == "error" ? theme.colors.danger : theme.colors.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(e.at).font(.ui(10)).foregroundStyle(theme.colors.textMuted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
+        .task { app.loadDiagnostics() }
     }
 
     // MARK: - Parts
