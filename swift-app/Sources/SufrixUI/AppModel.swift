@@ -282,6 +282,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Print the shift report (Z-report) — same printer path as the receipt.
+    func printShiftReport() async {
+        guard let report = shiftReport else { return }
+        let (host, port) = Self.parsePrinter(printerHost)
+        guard !host.isEmpty else { printState = .noPrinter; return }
+        printState = .printing
+        let bytes = core.renderShiftReport(
+            report: report,
+            storeName: branchName,
+            currency: session?.currencyCode ?? "",
+            width: 32
+        )
+        do {
+            try await core.sendToPrinter(host: host, port: port, bytes: bytes)
+            printState = .printed
+        } catch {
+            printState = .failed
+        }
+    }
+
     /// Split "host" / "host:port" → (host, port); default JetDirect port 9100.
     private static func parsePrinter(_ raw: String) -> (String, UInt16) {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)

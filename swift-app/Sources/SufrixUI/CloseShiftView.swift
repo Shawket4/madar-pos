@@ -23,6 +23,12 @@ struct CloseShiftView: View {
                     VStack(spacing: Space.lg) {
                         if let s = app.shift { summaryCard(s) }
                         cashCard
+                        if app.shiftReport != nil {
+                            SufrixButton(label: t("shift.print_report"), icon: "printer", variant: .outline,
+                                         loading: app.printState == .printing) {
+                                Task { await app.printShiftReport() }
+                            }
+                        }
                         if let error = app.errorMessage {
                             NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
                         }
