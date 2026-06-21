@@ -48,6 +48,13 @@ private struct OpenShiftForm: View {
     @Environment(\.localize) private var t
     @Binding var openingMinor: Int64
     var showLogo: Bool
+    @State private var reason = ""
+
+    private var currency: String { app.session?.currencyCode ?? "" }
+    /// The count deviates from the carried-over closing → a reason is required.
+    private var needsReason: Bool {
+        app.suggestedOpeningCashMinor > 0 && openingMinor != app.suggestedOpeningCashMinor
+    }
 
     var body: some View {
         // spacing 0 + explicit per-gap padding → deliberate hierarchy (the hero
@@ -74,15 +81,24 @@ private struct OpenShiftForm: View {
                 Text(t("shift.opening_cash"))
                     .font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
                     .frame(maxWidth: .infinity)
-                AmountField(amountMinor: $openingMinor,
-                            currencyCode: app.session?.currencyCode ?? "",
-                            autofocus: true)
-                Text(t("shift.opening_hint"))
+                AmountField(amountMinor: $openingMinor, currencyCode: currency, autofocus: true)
+
+                // Carried-over suggestion (previous declared closing).
+                if app.suggestedOpeningCashMinor > 0 { carryoverHint }
+
+                // Discrepancy reason — only when the count deviates from carryover.
+                if needsReason {
+                    SufrixTextField(placeholder: t("shift.opening_reason_label"),
+                                    text: $reason, icon: "exclamationmark.bubble")
+                }
+
+                Text(needsReason ? t("shift.opening_reason_hint") : t("shift.opening_hint"))
                     .font(.ui(12)).foregroundStyle(theme.colors.textMuted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.top, Space.xxl)
+            .animation(Motion.standard, value: needsReason)
 
             // ── Error (next to the action that triggers it) ───────────────────
             if let error = app.errorMessage {
@@ -92,7 +108,7 @@ private struct OpenShiftForm: View {
 
             // ── Primary action ───────────────────────────────────────────────
             SufrixButton(label: t("shift.open_button"), icon: "lock.open", loading: app.isBusy) {
-                Task { await app.openShift(openingCashMinor: openingMinor) }
+                submit()
             }
             .padding(.top, app.errorMessage == nil ? Space.xl : Space.md)
 
@@ -100,5 +116,43 @@ private struct OpenShiftForm: View {
             SufrixButton(label: t("shift.switch_teller"), variant: .ghost) { app.signOut() }
                 .padding(.top, Space.sm)
         }
+        .task {
+            app.clearError()
+            await app.loadOpenShiftPrefill()
+        }
+        .onChange(of: app.suggestedOpeningCashMinor) { suggested in
+            // Prefill the count once, only while still untouched.
+            if openingMinor == 0 && suggested > 0 { openingMinor = suggested }
+        }
+    }
+
+    /// Validate the discrepancy reason, then open the shift.
+    private func submit() {
+        if needsReason && reason.trimmingCharacters(in: .whitespaces).isEmpty {
+            app.flagError(t("shift.opening_reason_required"))
+            return
+        }
+        let editReason = needsReason ? reason : nil
+        Task { await app.openShift(openingCashMinor: openingMinor, editReason: editReason) }
+    }
+
+    /// The carried-over opening-cash suggestion (previous declared closing).
+    private var carryoverHint: some View {
+        HStack(spacing: Space.sm) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 13)).foregroundStyle(theme.colors.textMuted)
+            Text(t("shift.suggested_from_close"))
+                .font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
+            Spacer(minLength: Space.sm)
+            Text(Money.format(app.suggestedOpeningCashMinor, currency))
+                .font(.money(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
+        }
+        .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+        .background(theme.colors.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                .strokeBorder(theme.colors.border, lineWidth: 1)
+        )
     }
 }

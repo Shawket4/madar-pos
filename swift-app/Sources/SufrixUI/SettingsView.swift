@@ -16,6 +16,9 @@ struct SettingsView: View {
                 header
                 ScrollView {
                     VStack(spacing: Space.lg) {
+                        if let error = app.errorMessage {
+                            NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .warning)
+                        }
                         appearanceCard
                         languageCard
                         printerCard
@@ -23,8 +26,13 @@ struct SettingsView: View {
                         diagnosticsCard
                         SufrixButton(label: t("settings.sign_out"),
                                      icon: "rectangle.portrait.and.arrow.right", variant: .danger) {
-                            app.signOut()
-                            onClose()
+                            // Sign-out (→ login) requires a closed drawer first.
+                            if app.hasOpenShift {
+                                app.flagError(t("settings.sign_out_shift_open"))
+                            } else {
+                                app.signOut()
+                                onClose()
+                            }
                         }
                     }
                     .frame(maxWidth: 480)
@@ -33,6 +41,7 @@ struct SettingsView: View {
                 }
             }
         }
+        .onAppear { app.clearError() }
     }
 
     private var header: some View {
@@ -73,8 +82,13 @@ struct SettingsView: View {
         card(t("settings.device")) {
             Button {
                 Haptics.selection()
-                app.beginReconfigure()
-                onClose()
+                // Reconfiguring re-provisions the device — only with a closed drawer.
+                if app.hasOpenShift {
+                    app.flagError(t("settings.reconfigure_shift_open"))
+                } else {
+                    app.beginReconfigure()
+                    onClose()
+                }
             } label: {
                 HStack {
                     Image(systemName: "building.2").foregroundStyle(theme.colors.textMuted)

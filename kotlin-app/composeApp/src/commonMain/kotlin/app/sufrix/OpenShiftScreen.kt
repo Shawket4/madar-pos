@@ -1,6 +1,7 @@
 package app.sufrix
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -29,12 +33,15 @@ import androidx.compose.ui.unit.sp
 import app.sufrix.ui.AmountField
 import app.sufrix.ui.BtnVariant
 import app.sufrix.ui.ChipTone
+import app.sufrix.ui.Money
 import app.sufrix.ui.NoticeBanner
+import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
 import app.sufrix.ui.StatusChip
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixMark
+import app.sufrix.ui.SufrixTextField
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
 import kotlinx.coroutines.launch
@@ -69,6 +76,28 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
     val c = sufrixColors()
     val scope = rememberCoroutineScope()
     var openingMinor by remember { mutableStateOf(0L) }
+    var reason by remember { mutableStateOf("") }
+    val currency = model.session?.currencyCode ?: ""
+    val suggested = model.suggestedOpeningCashMinor
+    // The count deviates from the carried-over closing → a reason is required.
+    val needsReason = suggested > 0L && openingMinor != suggested
+
+    // Prime the prefill on entry; seed the count once while still untouched.
+    LaunchedEffect(Unit) {
+        model.clearError()
+        model.loadOpenShiftPrefill()
+    }
+    LaunchedEffect(suggested) {
+        if (openingMinor == 0L && suggested > 0L) openingMinor = suggested
+    }
+
+    fun submit() {
+        if (needsReason && reason.isBlank()) {
+            model.flagError(t("shift.opening_reason_required"))
+        } else {
+            scope.launch { model.openShift(openingMinor, if (needsReason) reason else null) }
+        }
+    }
 
     Column(
         Modifier.widthIn(max = 400.dp).fillMaxWidth().verticalScroll(rememberScrollState())
@@ -103,12 +132,33 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
             AmountField(
                 amountMinor = openingMinor,
                 onAmountMinor = { openingMinor = it },
-                currencyCode = model.session?.currencyCode ?: "",
+                currencyCode = currency,
                 autofocus = true,
             )
+
+            // Carried-over suggestion (previous declared closing).
+            if (suggested > 0L) {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
+                        .border(1.dp, c.border, RoundedCornerShape(Radii.sm))
+                        .padding(horizontal = Space.md, vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(t("shift.suggested_from_close"), color = c.textSecondary, fontFamily = SufrixFont, fontSize = 12.sp)
+                    Box(Modifier.weight(1f))
+                    Text(Money.format(suggested, currency), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                }
+            }
+
+            // Discrepancy reason — only when the count deviates from carryover.
+            if (needsReason) {
+                SufrixTextField(reason, { reason = it }, t("shift.opening_reason_label"))
+            }
+
             Text(
-                t("shift.opening_hint"), color = c.textMuted, fontFamily = SufrixFont, fontSize = 12.sp,
-                textAlign = TextAlign.Center,
+                if (needsReason) t("shift.opening_reason_hint") else t("shift.opening_hint"),
+                color = c.textMuted, fontFamily = SufrixFont, fontSize = 12.sp, textAlign = TextAlign.Center,
             )
         }
 
@@ -120,7 +170,7 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
         // ── Primary action ────────────────────────────────────────────────────
         SufrixButton(
             t("shift.open_button"),
-            { scope.launch { model.openShift(openingMinor) } },
+            { submit() },
             modifier = Modifier.padding(top = if (model.error == null) Space.xl else Space.md),
             loading = model.isBusy,
         )

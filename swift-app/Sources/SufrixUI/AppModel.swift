@@ -34,6 +34,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var branches: [BranchView] = []
     /// The device's current shift (drives OpenShift ↔ Order routing).
     @Published private(set) var shift: ShiftView?
+    /// Carried-over opening-cash suggestion (previous declared closing, minor
+    /// units; 0 = none). Prefills the open-shift count field.
+    @Published private(set) var suggestedOpeningCashMinor: Int64 = 0
     /// Branch-effective catalog (cached; reads always succeed offline).
     @Published private(set) var categories: [CategoryView] = []
     @Published private(set) var menuItems: [MenuItemView] = []
@@ -120,15 +123,39 @@ final class AppModel: ObservableObject {
     }
 
     // ── shift ─────────────────────────────────────────────────────────────────
-    /// Open a shift with the counted opening cash (minor units). The core writes
-    /// it locally + queues the command (works offline); routing flips to Order.
-    func openShift(openingCashMinor: Int64) async {
+    /// `true` while a shift is OPEN — gates sign-out / device-reconfigure, which
+    /// must wait until the drawer is closed and reconciled.
+    var hasOpenShift: Bool { shift?.isOpen ?? false }
+
+    /// Surface a guidance/validation message in the active screen's error slot.
+    func flagError(_ message: String) { errorMessage = message }
+    /// Clear the current error (on screen entry / next user action).
+    func clearError() { errorMessage = nil }
+
+    /// Open a shift with the counted opening cash (minor units). `editReason` is
+    /// required by the UI only when the count deviates from the carried-over
+    /// closing; the server re-derives the deviation authoritatively. The core
+    /// writes locally + queues the command (works offline); routing flips to Order.
+    func openShift(openingCashMinor: Int64, editReason: String? = nil) async {
         isBusy = true; errorMessage = nil
         defer { isBusy = false }
         do {
-            shift = try await core.openShift(openingCashMinor: openingCashMinor)
+            shift = try await core.openShift(openingCashMinor: openingCashMinor, editReason: editReason)
         } catch {
             errorMessage = humanMessage(error)
+        }
+    }
+
+    /// Prime the open-shift screen: refresh the server prefill when online (so the
+    /// carried-over opening-cash suggestion is current), then read it from the
+    /// core. Safe + cheap offline (reads the locally-cached suggestion).
+    func loadOpenShiftPrefill() async {
+        // Show the locally-cached suggestion instantly…
+        suggestedOpeningCashMinor = (try? core.suggestedOpeningCashMinor()) ?? 0
+        // …then refresh it from the server (last synced declared closing).
+        if session?.online == true {
+            _ = try? await core.refreshShift()
+            suggestedOpeningCashMinor = (try? core.suggestedOpeningCashMinor()) ?? 0
         }
     }
 

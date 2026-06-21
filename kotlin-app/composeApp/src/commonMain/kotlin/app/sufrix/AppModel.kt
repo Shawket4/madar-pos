@@ -87,6 +87,10 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** The device's current shift (drives OpenShift ↔ Order routing). */
     var shift by mutableStateOf<ShiftView?>(null)
         private set
+    /** Carried-over opening-cash suggestion (previous declared closing, minor
+     *  units; 0 = none). Prefills the open-shift count field. */
+    var suggestedOpeningCashMinor by mutableStateOf(0L)
+        private set
     /** Branch-effective catalog (cached; reads always succeed offline). */
     var categories by mutableStateOf<List<CategoryView>>(emptyList())
         private set
@@ -164,17 +168,42 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
             return core.appRoute(isBranchConfigured, reconfiguring)
         }
 
-    /** Open a shift with the counted opening cash (minor units). Works offline. */
-    suspend fun openShift(openingCashMinor: Long) {
+    /** `true` while a shift is OPEN — gates sign-out / device-reconfigure. */
+    val hasOpenShift: Boolean get() = shift?.isOpen ?: false
+
+    /** Surface a guidance/validation message in the active screen's error slot. */
+    fun flagError(message: String) { error = message }
+    /** Clear the current error (on screen entry / next user action). */
+    fun clearError() { error = null }
+
+    /**
+     * Open a shift with the counted opening cash (minor units). `editReason` is
+     * required by the UI only when the count deviates from the carried-over
+     * closing; the server re-derives the deviation. Works offline.
+     */
+    suspend fun openShift(openingCashMinor: Long, editReason: String? = null) {
         isBusy = true; error = null
         try {
-            shift = core.openShift(openingCashMinor)
+            shift = core.openShift(openingCashMinor, editReason)
         } catch (e: CoreException) {
             error = humanMessage(e)
         } catch (e: Exception) {
             error = e.message ?: core.tr("err.generic")
         } finally {
             isBusy = false
+        }
+    }
+
+    /** Prime the open-shift screen: refresh the server prefill when online, then
+     *  read the carried-over opening-cash suggestion from the core (cheap + safe
+     *  offline — reads the locally-cached suggestion). */
+    suspend fun loadOpenShiftPrefill() {
+        // Show the locally-cached suggestion instantly…
+        suggestedOpeningCashMinor = runCatching { core.suggestedOpeningCashMinor() }.getOrDefault(0L)
+        // …then refresh it from the server (last synced declared closing).
+        if (session?.online == true) {
+            runCatching { core.refreshShift() }
+            suggestedOpeningCashMinor = runCatching { core.suggestedOpeningCashMinor() }.getOrDefault(0L)
         }
     }
 

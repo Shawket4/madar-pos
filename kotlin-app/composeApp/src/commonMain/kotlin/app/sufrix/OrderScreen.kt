@@ -54,6 +54,7 @@ import app.sufrix.core.MenuItemView
 import app.sufrix.core.ShiftView
 import app.sufrix.ui.ChipTone
 import app.sufrix.ui.Money
+import app.sufrix.ui.NoticeBanner
 import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
 import app.sufrix.ui.StatusChip
@@ -95,6 +96,11 @@ fun OrderScreen(model: AppModel) {
         val wide = maxWidth >= 760.dp
         Column(Modifier.fillMaxSize()) {
             OrderTopBar(model)
+            model.error?.let {
+                Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
+                    NoticeBanner(it, ChipTone.DANGER)
+                }
+            }
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -222,7 +228,12 @@ private fun OrderTopBar(model: AppModel) {
                     interactionSource = interaction, indication = null,
                 ) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    model.signOut()
+                    // You can't sign out mid-shift — close the drawer first.
+                    if (model.hasOpenShift) {
+                        model.flagError(model.t("settings.sign_out_shift_open"))
+                    } else {
+                        model.signOut()
+                    }
                 },
             )
         }

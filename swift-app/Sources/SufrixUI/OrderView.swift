@@ -36,6 +36,11 @@ struct OrderView: View {
                 theme.colors.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     OrderTopBar(app: app)
+                    if let error = app.errorMessage {
+                        NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
+                            .padding(.horizontal, Space.lg)
+                            .padding(.top, Space.sm)
+                    }
                     if wide {
                         HStack(spacing: 0) {
                             catalogColumn
@@ -191,7 +196,12 @@ private struct OrderTopBar: View {
             .buttonStyle(.pressable)
             Button {
                 Haptics.selection()
-                app.signOut()
+                // You can't sign out mid-shift — close the drawer first.
+                if app.hasOpenShift {
+                    app.flagError(t("settings.sign_out_shift_open"))
+                } else {
+                    app.signOut()
+                }
             } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
                     .font(.system(size: 15, weight: .semibold))

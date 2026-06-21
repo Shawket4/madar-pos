@@ -3,9 +3,12 @@ package app.sufrix.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
@@ -26,7 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToLong
@@ -44,15 +46,27 @@ fun AmountField(
 ) {
     val c = sufrixColors()
     var text by remember { mutableStateOf(if (amountMinor == 0L) "" else minorToText(amountMinor)) }
+    // The last value WE emitted — lets us tell an external change (a carried-over
+    // prefill arriving async) from the teller's own typing, with no focus races.
+    var lastEmitted by remember { mutableStateOf(amountMinor) }
     var focused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(autofocus) {
         if (autofocus) runCatching { focusRequester.requestFocus() }
     }
+    LaunchedEffect(amountMinor) {
+        if (amountMinor != lastEmitted) {
+            text = if (amountMinor == 0L) "" else minorToText(amountMinor)
+            lastEmitted = amountMinor
+        }
+    }
 
-    Column(
+    // One contained row: a muted currency prefix on the left, the big tabular
+    // amount filling the rest (was a tiny label stacked over a 34sp number).
+    Row(
         modifier
             .fillMaxWidth()
+            .height(64.dp)
             .clip(RoundedCornerShape(Radii.md))
             .background(c.surface)
             .border(
@@ -60,40 +74,40 @@ fun AmountField(
                 if (focused) c.accent else c.border,
                 RoundedCornerShape(Radii.md),
             )
-            .padding(vertical = Space.lg, horizontal = Space.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = Space.lg),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
         Text(
             currencyCode.uppercase(),
             color = c.textMuted, fontFamily = SufrixFont,
-            fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+            fontWeight = FontWeight.Bold, fontSize = 15.sp,
         )
-        BasicTextField(
-            value = text,
-            onValueChange = { newValue ->
-                text = newValue
-                onAmountMinor(toMinor(newValue))
-            },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onFocusChanged { focused = it.isFocused },
-            textStyle = TextStyle(
-                color = c.textPrimary, fontFamily = SufrixFont,
-                fontWeight = FontWeight.Black, fontSize = 34.sp, textAlign = TextAlign.Center,
-            ),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            cursorBrush = SolidColor(c.accent),
-            decorationBox = { inner ->
-                if (text.isEmpty()) {
-                    Text(
-                        "0.00", color = c.textMuted, fontFamily = SufrixFont,
-                        fontWeight = FontWeight.Black, fontSize = 34.sp,
-                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                inner()
-            },
-        )
+        Box(Modifier.weight(1f).wrapContentHeight()) {
+            if (text.isEmpty()) {
+                Text(
+                    "0.00", color = c.textMuted, fontFamily = SufrixFont,
+                    fontWeight = FontWeight.Black, fontSize = 28.sp,
+                )
+            }
+            BasicTextField(
+                value = text,
+                onValueChange = { newValue ->
+                    text = newValue
+                    val m = toMinor(newValue)
+                    lastEmitted = m
+                    onAmountMinor(m)
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onFocusChanged { focused = it.isFocused },
+                textStyle = TextStyle(
+                    color = c.textPrimary, fontFamily = SufrixFont,
+                    fontWeight = FontWeight.Black, fontSize = 28.sp,
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                cursorBrush = SolidColor(c.accent),
+            )
+        }
     }
 }
 

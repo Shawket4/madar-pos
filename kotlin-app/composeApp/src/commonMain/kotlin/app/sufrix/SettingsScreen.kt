@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.ui.BtnVariant
+import app.sufrix.ui.ChipTone
+import app.sufrix.ui.NoticeBanner
 import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
 import app.sufrix.ui.SufrixButton
@@ -40,6 +43,7 @@ import app.sufrix.ui.t
 @Composable
 fun SettingsScreen(model: AppModel) {
     val c = sufrixColors()
+    LaunchedEffect(Unit) { model.clearError() }
     Column(Modifier.fillMaxSize().background(c.bg)) {
         Column(Modifier.fillMaxWidth().background(c.surface)) {
             Row(
@@ -58,6 +62,7 @@ fun SettingsScreen(model: AppModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 480.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
+                model.error?.let { NoticeBanner(it, ChipTone.WARNING) }
                 Card(t("settings.appearance")) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Chip(Modifier.weight(1f), t("settings.theme_light"), model.themeMode == ThemeMode.LIGHT) { model.setThemeMode(ThemeMode.LIGHT) }
@@ -76,7 +81,14 @@ fun SettingsScreen(model: AppModel) {
                 }
                 Card(t("settings.device")) {
                     Row(
-                        Modifier.fillMaxWidth().clickable { model.beginReconfigure(); model.showSettings = false },
+                        Modifier.fillMaxWidth().clickable {
+                            // Re-provisioning is only allowed with a closed drawer.
+                            if (model.hasOpenShift) {
+                                model.flagError(t("settings.reconfigure_shift_open"))
+                            } else {
+                                model.beginReconfigure(); model.showSettings = false
+                            }
+                        },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(t("settings.reconfigure"), color = c.textPrimary, fontFamily = SufrixFont, fontSize = 14.sp)
@@ -89,7 +101,18 @@ fun SettingsScreen(model: AppModel) {
                     InfoRow(t("settings.server"), model.core.baseUrl())
                     InfoRow(t("settings.pending"), "${model.pendingCount}")
                 }
-                SufrixButton(t("settings.sign_out"), { model.signOut(); model.showSettings = false }, variant = BtnVariant.DANGER)
+                SufrixButton(
+                    t("settings.sign_out"),
+                    {
+                        // Sign-out (→ login) requires a closed drawer first.
+                        if (model.hasOpenShift) {
+                            model.flagError(t("settings.sign_out_shift_open"))
+                        } else {
+                            model.signOut(); model.showSettings = false
+                        }
+                    },
+                    variant = BtnVariant.DANGER,
+                )
             }
         }
     }
