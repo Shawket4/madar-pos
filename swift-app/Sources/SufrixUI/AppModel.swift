@@ -62,6 +62,10 @@ final class AppModel: ObservableObject {
         didSet {
             core.setLocale(locale: locale)
             UserDefaults.standard.set(locale, forKey: Self.localeKey)
+            // The cached catalog views were projected under the OLD locale; re-read
+            // them (offline, from the mirror) so item/category/payment labels switch
+            // language immediately — `*_translations` re-resolve on this read.
+            reprojectCatalog()
         }
     }
     /// Drives the settings screen (presented over the order screen).
@@ -188,12 +192,19 @@ final class AppModel: ObservableObject {
         if session?.online == true {
             try? await core.refreshCatalog()
         }
+        reprojectCatalog()
+        loadCart()
+        refreshPending()
+    }
+
+    /// Re-read the catalog projections from the local mirror under the current
+    /// locale (no network). Used by `loadCatalog` and on a locale change so the
+    /// labels follow the language without a re-fetch.
+    func reprojectCatalog() {
         categories = (try? core.listCategories()) ?? []
         menuItems = (try? core.listMenuItems()) ?? []
         paymentMethods = (try? core.listPaymentMethods()) ?? []
         discounts = (try? core.listDiscounts()) ?? []
-        loadCart()
-        refreshPending()
     }
 
     /// Apply or clear the cart discount (re-reads totals so the UI updates).

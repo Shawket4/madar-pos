@@ -129,11 +129,14 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         loadShift()
     }
 
-    /** Change the UI locale (en/ar); re-resolves strings + RTL, persists. */
+    /** Change the UI locale (en/ar); re-resolves strings + RTL, persists. The
+     *  cached catalog was projected under the old locale, so re-read it (offline,
+     *  from the mirror) to switch item/category/payment labels immediately. */
     fun setLocale(value: String) {
         core.setLocale(value)
         locale = value
         vault.locale = value
+        reprojectCatalog()
     }
 
     val isSignedIn: Boolean get() = session != null
@@ -234,12 +237,19 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
      *  effort), then read the local mirror (always succeeds, even offline). */
     suspend fun loadCatalog() {
         if (session?.online == true) runCatching { core.refreshCatalog() }
+        reprojectCatalog()
+        loadCart()
+        refreshPending()
+    }
+
+    /** Re-read the catalog projections from the local mirror under the current
+     *  locale (no network). Used by loadCatalog and on a locale change so the
+     *  labels follow the language without a re-fetch. */
+    fun reprojectCatalog() {
         categories = runCatching { core.listCategories() }.getOrDefault(emptyList())
         menuItems = runCatching { core.listMenuItems() }.getOrDefault(emptyList())
         paymentMethods = runCatching { core.listPaymentMethods() }.getOrDefault(emptyList())
         discounts = runCatching { core.listDiscounts() }.getOrDefault(emptyList())
-        loadCart()
-        refreshPending()
     }
 
     /** Apply or clear the cart discount (re-reads totals so the UI updates). */
