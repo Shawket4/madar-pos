@@ -28,12 +28,40 @@ pub struct CheckoutCommand {
     pub request: models::CreateOrderRequest,
 }
 
-/// One line on the receipt the host shows after placing an order.
+/// A priced modifier on a receipt line (an addon or a chosen optional). The
+/// layout prints `+ name` and, when `price_minor > 0`, the charge. Mirrors the
+/// Flutter receipt's addon/optional rows.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct ReceiptModifierView {
+    pub name: String,
+    pub price_minor: i64,
+}
+
+/// One component of a bundle line on the receipt, with its own modifiers —
+/// printed indented under the bundle header (Flutter `bundleComponents`).
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct ReceiptComponentView {
+    pub name: String,
+    pub size_label: Option<String>,
+    pub addons: Vec<ReceiptModifierView>,
+    pub optionals: Vec<ReceiptModifierView>,
+}
+
+/// One line on the receipt the host shows after placing an order. Carries the
+/// full modifier/bundle breakdown so the printed receipt matches Flutter's
+/// `printer_service.dart` item block exactly.
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
 pub struct ReceiptLineView {
     pub name: String,
     pub qty: i64,
+    /// Size variant ("(Large)"), printed inline after the name when present.
+    pub size_label: Option<String>,
     pub line_total_minor: i64,
+    /// A bundle/combo line — its breakdown is in `components`, not `addons`.
+    pub is_bundle: bool,
+    pub addons: Vec<ReceiptModifierView>,
+    pub optionals: Vec<ReceiptModifierView>,
+    pub components: Vec<ReceiptComponentView>,
 }
 
 /// The order confirmation / receipt summary.
@@ -42,6 +70,13 @@ pub struct ReceiptView {
     /// Client-generated order id (the outbox idempotency key). The server id
     /// lands later via sync; this identifies the order locally meanwhile.
     pub local_order_id: String,
+    /// Human order number (server-assigned). `None` for a freshly-queued sale
+    /// that hasn't synced — the layout falls back to the short local id then.
+    pub order_number: Option<i64>,
+    /// Cross-channel order reference (e.g. delivery ticket id), printed when set.
+    pub order_ref: Option<String>,
+    /// `true` when the order is voided — prints a `*** VOIDED ***` stamp.
+    pub is_voided: bool,
     pub lines: Vec<ReceiptLineView>,
     /// Localized payment-method label for display.
     pub payment_label: String,
@@ -49,12 +84,29 @@ pub struct ReceiptView {
     /// Discount applied before tax (0 when none). Shown on the printed receipt.
     pub discount_minor: i64,
     pub tax_minor: i64,
+    /// Delivery fee (0 for dine-in). Adds a line and forces a subtotal row.
+    pub delivery_fee_minor: i64,
     pub total_minor: i64,
     /// Gratuity added on top of the total (0 when none).
     pub tip_minor: i64,
     pub amount_tendered_minor: i64,
     pub change_minor: i64,
     pub is_cash: bool,
+    /// Customer name (dine-in pickup or delivery); printed when present.
+    pub customer_name: Option<String>,
+    /// Teller who rang the sale; printed in the footer when present.
+    pub teller_name: Option<String>,
+    /// Delivery block — populated only for delivery orders. When `is_delivery`,
+    /// the header prints a `*** DELIVERY — {channel} ***` flag and the address
+    /// block prints between the meta and item sections.
+    pub is_delivery: bool,
+    pub delivery_channel: Option<String>,
+    pub customer_phone: Option<String>,
+    pub delivery_address: Option<String>,
+    pub delivery_zone: Option<String>,
+    pub delivery_ref: Option<String>,
+    pub payment_hint: Option<String>,
+    pub delivery_notes: Option<String>,
     /// `true` when the order is still queued (offline); `false` once it's been
     /// sent to the server. The host hints "saved — will sync" vs "sent".
     pub queued_offline: bool,
@@ -282,24 +334,84 @@ pub(crate) fn prepare(
 
     let receipt = ReceiptView {
         local_order_id: order_id.to_string(),
-        lines: lines
-            .iter()
-            .map(|l| ReceiptLineView { name: l.name.clone(), qty: l.qty, line_total_minor: l.line_total_minor })
-            .collect(),
+        order_number: None, // server-assigned on sync
+        order_ref: None,
+        is_voided: false,
+        lines: lines.iter().map(receipt_line_from_cart).collect(),
         payment_label,
         subtotal_minor: priced.subtotal_minor,
         discount_minor: priced.discount_minor,
         tax_minor: priced.tax_minor,
+        delivery_fee_minor: 0,
         total_minor: priced.total_minor,
         tip_minor,
         amount_tendered_minor: if is_cash { amount_tendered_minor } else { 0 },
         change_minor: priced.change_given_minor,
         is_cash,
+        customer_name: input.customer_name.clone().filter(|s| !s.trim().is_empty()),
+        teller_name: None, // the FFI fills this from the session
+        is_delivery: false,
+        delivery_channel: None,
+        customer_phone: None,
+        delivery_address: None,
+        delivery_zone: None,
+        delivery_ref: None,
+        payment_hint: None,
+        delivery_notes: None,
         queued_offline: true, // the FFI flips this to false if the drain sends it now
         created_at: now_rfc3339.clone(),
     };
 
     Ok(Prepared { order_id, command: CheckoutCommand { request }, receipt, event_at: now_rfc3339 })
+}
+
+/// Project a cart line into its printable receipt line — bundle-aware, carrying
+/// the full modifier breakdown so the receipt matches the order.
+fn receipt_line_from_cart(l: &cart::CartLineView) -> ReceiptLineView {
+    let addons = l
+        .addons
+        .iter()
+        .map(|a| ReceiptModifierView {
+            name: if a.qty > 1 { format!("{} ×{}", a.name, a.qty) } else { a.name.clone() },
+            price_minor: a.price_modifier_minor,
+        })
+        .collect();
+    let optionals = l
+        .optionals
+        .iter()
+        .map(|o| ReceiptModifierView { name: o.name.clone(), price_minor: o.price_minor })
+        .collect();
+    let components = l
+        .bundle_components
+        .iter()
+        .map(|c| ReceiptComponentView {
+            name: c.name.clone(),
+            size_label: c.size_label.clone().filter(|s| !s.is_empty()),
+            addons: c
+                .addons
+                .iter()
+                .map(|a| ReceiptModifierView {
+                    name: if a.qty > 1 { format!("{} ×{}", a.name, a.qty) } else { a.name.clone() },
+                    price_minor: a.price_modifier_minor,
+                })
+                .collect(),
+            optionals: c
+                .optionals
+                .iter()
+                .map(|o| ReceiptModifierView { name: o.name.clone(), price_minor: o.price_minor })
+                .collect(),
+        })
+        .collect();
+    ReceiptLineView {
+        name: l.name.clone(),
+        qty: l.qty,
+        size_label: l.size_label.clone().filter(|s| !s.is_empty()),
+        line_total_minor: l.line_total_minor,
+        is_bundle: l.bundle_id.is_some(),
+        addons,
+        optionals,
+        components,
+    }
 }
 
 /// Wire `AddonInput`s from cart addons — the CHARGED unit price recorded

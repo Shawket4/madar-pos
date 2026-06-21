@@ -478,12 +478,25 @@ impl SufrixCore {
             width,
             labels: receipt::ReceiptLabels {
                 order: tr("receipt.order"),
+                reference: tr("receipt.ref"),
+                voided: tr("receipt.voided"),
+                delivery: tr("receipt.delivery"),
+                channel_in_mall: tr("delivery.in_mall"),
+                channel_outside: tr("delivery.outside"),
+                customer: tr("receipt.customer"),
+                phone: tr("receipt.phone"),
+                address: tr("receipt.address"),
+                zone: tr("receipt.zone"),
+                delivery_ref: tr("receipt.delivery_ref"),
+                payment_hint: tr("receipt.payment_hint"),
+                notes: tr("receipt.notes"),
                 subtotal: tr("order.subtotal"),
                 discount: tr("order.discount"),
                 tax: tr("order.tax"),
+                delivery_fee: tr("receipt.delivery_fee"),
                 total: tr("order.total"),
-                paid: tr("order.cash_received"),
-                change: tr("order.change"),
+                payment: tr("receipt.payment"),
+                teller: tr("receipt.teller"),
                 queued: tr("order.queued_hint"),
                 thank_you: tr("receipt.thank_you"),
             },
@@ -1151,7 +1164,7 @@ impl SufrixCore {
         &self,
         input: checkout::CheckoutInput,
     ) -> Result<checkout::ReceiptView, CoreError> {
-        let (branch_id, tax_rate) = {
+        let (branch_id, tax_rate, teller_name) = {
             let g = self.session.read().unwrap_or_else(|e| e.into_inner());
             let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
                 detail: "not signed in".into(),
@@ -1160,7 +1173,7 @@ impl SufrixCore {
                 field: "branch_id".into(),
                 detail: "session has no branch".into(),
             })?;
-            (branch, s.snapshot.tax_rate)
+            (branch, s.snapshot.tax_rate, s.snapshot.display_name.clone())
         };
         let shift = shift::current(&self.store)?
             .filter(|s| s.is_open)
@@ -1197,6 +1210,7 @@ impl SufrixCore {
         let still_pending = self.store.pending()?.iter().any(|i| i.id == order_id);
         let mut receipt = prepared.receipt;
         receipt.queued_offline = still_pending;
+        receipt.teller_name = Some(teller_name).filter(|s| !s.trim().is_empty());
         Ok(receipt)
     }
 
@@ -1316,7 +1330,7 @@ impl SufrixCore {
         let o = orders_api::get_order(&self.api.config(), orders_api::GetOrderParams { order_id })
             .await
             .map_err(net::map_api_error)?;
-        let receipt = orders::order_to_receipt(&o);
+        let receipt = orders::order_to_receipt(&o, &self.current_locale());
         Ok(self.render_receipt(receipt, store_name, currency, width))
     }
 

@@ -112,30 +112,136 @@ pub(crate) fn order_detail_view(o: &models::OrderFull) -> OrderDetailView {
     }
 }
 
-/// Project a fetched order into a printable receipt (reprint from history).
-pub(crate) fn order_to_receipt(o: &models::OrderFull) -> crate::checkout::ReceiptView {
-    crate::checkout::ReceiptView {
-        local_order_id: o.id.to_string(),
-        lines: o
-            .items
-            .iter()
-            .map(|it| crate::checkout::ReceiptLineView {
+/// Project a fetched order into a printable receipt (reprint from history) —
+/// the full breakdown (modifiers, bundle components, delivery block) so a
+/// reprint is byte-identical to the original. `locale` localizes the address
+/// "Unit"/"Floor" prefixes.
+pub(crate) fn order_to_receipt(o: &models::OrderFull, locale: &str) -> crate::checkout::ReceiptView {
+    use crate::checkout::{ReceiptComponentView, ReceiptLineView, ReceiptModifierView};
+
+    let lines = o
+        .items
+        .iter()
+        .map(|it| {
+            let addons = it
+                .addons
+                .iter()
+                .map(|a| ReceiptModifierView {
+                    name: if a.quantity > 1 { format!("{} ×{}", a.addon_name, a.quantity) } else { a.addon_name.clone() },
+                    price_minor: a.unit_price as i64,
+                })
+                .collect();
+            let optionals = it
+                .optionals
+                .iter()
+                .map(|op| ReceiptModifierView { name: op.field_name.clone(), price_minor: op.price as i64 })
+                .collect();
+            let components = it
+                .bundle_components
+                .as_ref()
+                .map(|cs| {
+                    cs.iter()
+                        .map(|c| ReceiptComponentView {
+                            name: c.item_name.clone(),
+                            size_label: c.size_label.clone().flatten().filter(|s| !s.is_empty()),
+                            addons: c
+                                .addons
+                                .iter()
+                                .map(|a| ReceiptModifierView {
+                                    name: if a.quantity > 1 {
+                                        format!("{} ×{}", a.addon_name, a.quantity)
+                                    } else {
+                                        a.addon_name.clone()
+                                    },
+                                    price_minor: a.unit_price as i64,
+                                })
+                                .collect(),
+                            optionals: c
+                                .optionals
+                                .iter()
+                                .map(|op| ReceiptModifierView { name: op.field_name.clone(), price_minor: op.price as i64 })
+                                .collect(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            ReceiptLineView {
                 name: it.item_name.clone(),
                 qty: it.quantity as i64,
+                size_label: it.size_label.clone().filter(|s| !s.is_empty()),
                 line_total_minor: it.line_total as i64,
-            })
-            .collect(),
+                is_bundle: it.bundle_id.is_some(),
+                addons,
+                optionals,
+                components,
+            }
+        })
+        .collect();
+
+    let is_delivery = o.order_type == "delivery";
+    let dinfo = o.delivery.clone().flatten();
+    let delivery_address = dinfo.as_ref().and_then(|d| compose_address(d, locale));
+
+    crate::checkout::ReceiptView {
+        local_order_id: o.id.to_string(),
+        order_number: Some(o.order_number as i64),
+        order_ref: o.order_ref.clone().filter(|s| !s.is_empty()),
+        is_voided: o.status == "voided",
+        lines,
         payment_label: o.payment_method.clone(),
         subtotal_minor: o.subtotal as i64,
         discount_minor: o.discount_amount as i64,
         tax_minor: o.tax_amount as i64,
+        delivery_fee_minor: o.delivery_fee as i64,
         total_minor: o.total_amount as i64,
         tip_minor: o.tip_amount.unwrap_or(0) as i64,
         amount_tendered_minor: o.amount_tendered.unwrap_or(0) as i64,
         change_minor: o.change_given.unwrap_or(0) as i64,
         is_cash: o.amount_tendered.is_some(),
+        customer_name: o.customer_name.clone().filter(|s| !s.is_empty()),
+        teller_name: Some(o.teller_name.clone()).filter(|s| !s.is_empty()),
+        is_delivery,
+        delivery_channel: if is_delivery {
+            o.delivery_channel.clone().filter(|s| !s.is_empty())
+        } else {
+            None
+        },
+        customer_phone: dinfo.as_ref().map(|d| d.customer_phone.clone()).filter(|s| !s.is_empty()),
+        delivery_address,
+        delivery_zone: dinfo.as_ref().and_then(|d| d.zone_name.clone().flatten()).filter(|s| !s.is_empty()),
+        delivery_ref: dinfo.as_ref().and_then(|d| d.delivery_ref.clone().flatten()).filter(|s| !s.is_empty()),
+        payment_hint: dinfo.as_ref().and_then(|d| d.payment_method_hint.clone().flatten()).filter(|s| !s.is_empty()),
+        delivery_notes: dinfo.as_ref().and_then(|d| d.delivery_notes.clone().flatten()).filter(|s| !s.is_empty()),
         queued_offline: false,
         created_at: o.created_at.to_rfc3339(),
+    }
+}
+
+/// Compose a one-line delivery address from its parts, in Flutter's order:
+/// place name, address line, unit, floor, landmark — comma-joined, skipping
+/// blanks. `None` when nothing is set.
+fn compose_address(d: &models::OrderDeliveryInfo, locale: &str) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    let push = |parts: &mut Vec<String>, v: &Option<Option<String>>| {
+        if let Some(s) = v.clone().flatten() {
+            if !s.trim().is_empty() {
+                parts.push(s);
+            }
+        }
+    };
+    push(&mut parts, &d.place_name);
+    push(&mut parts, &d.address_line);
+    if let Some(u) = d.unit_number.clone().flatten().filter(|s| !s.trim().is_empty()) {
+        parts.push(format!("{} {}", crate::i18n::tr(locale, "delivery.unit"), u));
+    }
+    if let Some(f) = d.floor.clone().flatten().filter(|s| !s.trim().is_empty()) {
+        parts.push(format!("{} {}", crate::i18n::tr(locale, "delivery.floor"), f));
+    }
+    push(&mut parts, &d.landmark);
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(", "))
     }
 }
 
