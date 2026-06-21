@@ -187,6 +187,16 @@ fun OrderScreen(model: AppModel) {
             OrderHistoryScreen(model)
         }
 
+        // Cash In/Out — full-screen over the order screen.
+        if (model.showCashMovements) {
+            CashMovementsScreen(model)
+        }
+
+        // Past shifts — full-screen over the order screen.
+        if (model.showShiftHistory) {
+            ShiftHistoryScreen(model)
+        }
+
         // Settings — full-screen over the order screen.
         if (model.showSettings) {
             SettingsScreen(model)
@@ -236,6 +246,12 @@ private fun MoreDrawer(model: AppModel, modifier: Modifier = Modifier) {
             }
         }
         Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            MoreRow("¤", t("cash.title"), c.textPrimary) {
+                model.showMore = false; model.error = null; model.showCashMovements = true
+            }
+            MoreRow("↺", t("shifts.title"), c.textPrimary) {
+                model.showMore = false; model.showShiftHistory = true
+            }
             MoreRow("🔒", t("order.close_shift"), c.danger) {
                 model.showMore = false; model.error = null; model.showCloseShift = true
             }

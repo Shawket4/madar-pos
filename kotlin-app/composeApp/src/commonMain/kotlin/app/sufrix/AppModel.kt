@@ -7,6 +7,7 @@ import app.sufrix.core.AppRoute
 import app.sufrix.core.BranchView
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
+import app.sufrix.core.CashMovementView
 import app.sufrix.core.CheckoutInput
 import app.sufrix.core.CheckoutSplit
 import app.sufrix.core.AddonSelection
@@ -26,6 +27,7 @@ import app.sufrix.core.PaymentMethodView
 import app.sufrix.core.ReceiptView
 import app.sufrix.core.SessionSnapshot
 import app.sufrix.core.ShiftReportView
+import app.sufrix.core.ShiftSummaryView
 import app.sufrix.core.ShiftView
 import app.sufrix.core.SufrixCore
 import app.sufrix.core.TokenStore
@@ -441,6 +443,49 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         } finally {
             isBusy = false
         }
+    }
+
+    // ── cash movements + shift history (online) ──────────────────────────────────
+    var showCashMovements by mutableStateOf(false)
+    var showShiftHistory by mutableStateOf(false)
+    var cashMovements by mutableStateOf<List<CashMovementView>>(emptyList())
+        private set
+    var shiftHistory by mutableStateOf<List<ShiftSummaryView>>(emptyList())
+        private set
+    var isLoadingCash by mutableStateOf(false)
+        private set
+    var isLoadingShifts by mutableStateOf(false)
+        private set
+
+    /** The open shift's cash movements (online read). */
+    suspend fun loadCashMovements() {
+        isLoadingCash = true
+        cashMovements = runCatching { core.listCashMovements() }.getOrDefault(emptyList())
+        isLoadingCash = false
+    }
+
+    /** Record a pay-in (amount > 0) or pay-out (amount < 0). Reloads the list on
+     *  success; surfaces the error otherwise. Returns whether it succeeded. */
+    suspend fun recordCashMovement(amountMinor: Long, note: String): Boolean {
+        isBusy = true; error = null
+        return try {
+            core.recordCashMovement(amountMinor, note)
+            loadCashMovements()
+            true
+        } catch (e: CoreException) {
+            error = humanMessage(e); false
+        } catch (e: Exception) {
+            error = e.message ?: core.tr("err.generic"); false
+        } finally {
+            isBusy = false
+        }
+    }
+
+    /** Past shifts for the branch (online read). */
+    suspend fun loadShiftHistory() {
+        isLoadingShifts = true
+        shiftHistory = runCatching { core.listShifts() }.getOrDefault(emptyList())
+        isLoadingShifts = false
     }
 
     // ── cart ───────────────────────────────────────────────────────────────────
