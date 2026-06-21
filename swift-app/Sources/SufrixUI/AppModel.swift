@@ -669,6 +669,52 @@ final class AppModel: ObservableObject {
     }
     func discardDraft(_ id: String) { _ = try? core.discardDraft(id: id); loadDrafts() }
 
+    // ── delivery orders (online; teller works the live branch queue) ──────────────
+    @Published var showDelivery = false
+    @Published private(set) var deliveryOrders: [DeliveryOrderView] = []
+    @Published private(set) var isLoadingDelivery = false
+    /// Active-only filter (hide delivered/cancelled) vs the full queue.
+    @Published var deliveryActiveOnly = true {
+        didSet { Task { await loadDeliveryOrders() } }
+    }
+
+    private var activeStatusFilter: String { "received,confirmed,preparing,ready,out_for_delivery" }
+
+    /// The branch delivery queue (online). Active-only by default.
+    func loadDeliveryOrders() async {
+        isLoadingDelivery = true; defer { isLoadingDelivery = false }
+        let status: String? = deliveryActiveOnly ? activeStatusFilter : nil
+        do { deliveryOrders = try await core.listDeliveryOrders(status: status) }
+        catch { errorMessage = humanMessage(error) }
+    }
+    /// Advance one lifecycle step (Confirm → Preparing → … → Delivered).
+    func advanceDelivery(_ o: DeliveryOrderView) async {
+        isBusy = true; errorMessage = nil; defer { isBusy = false }
+        do { _ = try await core.deliveryAdvanceStatus(id: o.id, current: o.status); await loadDeliveryOrders() }
+        catch { errorMessage = humanMessage(error) }
+    }
+    /// Add extra prep time (multiples of 5).
+    func addDeliveryPrep(_ o: DeliveryOrderView, minutes: Int32 = 5) async {
+        do { _ = try await core.deliverySetPrepTime(id: o.id, extraMinutes: minutes); await loadDeliveryOrders() }
+        catch { errorMessage = humanMessage(error) }
+    }
+    /// Cancel a delivery order (optionally restocking ingredients).
+    func cancelDelivery(_ o: DeliveryOrderView, reason: String?, restoreInventory: Bool) async -> Bool {
+        isBusy = true; errorMessage = nil; defer { isBusy = false }
+        do { _ = try await core.deliveryCancel(id: o.id, reason: reason, restoreInventory: restoreInventory); await loadDeliveryOrders(); return true }
+        catch { errorMessage = humanMessage(error); return false }
+    }
+    /// Finalize into a real sale on the open shift, charged to a payment method.
+    func finalizeDelivery(_ o: DeliveryOrderView, paymentMethodId: String) async -> Bool {
+        isBusy = true; errorMessage = nil; defer { isBusy = false }
+        do {
+            let res = try await core.deliveryFinalize(id: o.id, paymentMethodId: paymentMethodId)
+            await loadDeliveryOrders()
+            showToast(t("delivery.finalized") + (res.orderRef.map { " · \($0)" } ?? ""), icon: "checkmark.circle", tone: .success)
+            return true
+        } catch { errorMessage = humanMessage(error); return false }
+    }
+
     // ── device setup (manager) ──────────────────────────────────────────────────
 
     /// Step 1: a manager authenticates (online), then we load the org's branches

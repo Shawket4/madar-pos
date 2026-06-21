@@ -153,6 +153,11 @@ struct OrderView: View {
                     .frame(minWidth: 420, minHeight: 480)
                     .modalChrome(app, theme, t)
             }
+            .sheet(isPresented: $app.showDelivery) {
+                DeliveryView(app: app, onClose: { app.showDelivery = false })
+                    .frame(minWidth: 480, minHeight: 560)
+                    .modalChrome(app, theme, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -388,6 +393,9 @@ private struct MoreDrawer: View {
                 }
                 row(icon: "tray.full", label: t("drafts.title"), tone: theme.colors.textPrimary) {
                     app.showMore = false; app.loadDrafts(); app.showDrafts = true
+                }
+                row(icon: "bicycle", label: t("delivery.title"), tone: theme.colors.textPrimary) {
+                    app.showMore = false; app.errorMessage = nil; app.showDelivery = true
                 }
                 row(icon: "lock", label: t("order.close_shift"), tone: theme.colors.danger) {
                     app.showMore = false; app.errorMessage = nil; app.showCloseShift = true
