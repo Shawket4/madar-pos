@@ -15,6 +15,10 @@ struct TenderView: View {
     @State private var tipMinor: Int64 = 0
     @State private var customerName = ""
     @State private var notes = ""
+    /// Split a single bill across several payment methods (the teller allocates
+    /// an amount per method that must sum to the total).
+    @State private var splitMode = false
+    @State private var splitAmounts: [String: Int64] = [:] // methodId → allocated
 
     private var currency: String { app.session?.currencyCode ?? "" }
     private var method: PaymentMethodView? { app.paymentMethods.first { $0.id == selectedMethod } }
@@ -24,8 +28,25 @@ struct TenderView: View {
     private var tipCash: Int64 { isCash ? tipMinor : 0 }
     private var dueCash: Int64 { total + tipCash }
     private var changeMinor: Int64 { max(0, tenderedMinor - dueCash) }
+
+    // ── split payment ──
+    private var splitAllocated: Int64 { splitAmounts.values.reduce(0, +) }
+    private var splitRemaining: Int64 { total - splitAllocated }
+    private var splitLegs: [CheckoutSplit] {
+        splitAmounts.compactMap { id, amt in amt > 0 ? CheckoutSplit(paymentMethodId: id, amountMinor: amt) : nil }
+    }
+    /// The biggest leg is recorded as the order's primary method.
+    private var splitPrimary: String? {
+        splitAmounts.filter { $0.value > 0 }.max { $0.value < $1.value }?.key
+    }
+    private func splitBinding(_ id: String) -> Binding<Int64> {
+        Binding(get: { splitAmounts[id] ?? 0 }, set: { splitAmounts[id] = $0 })
+    }
+
     private var canPlace: Bool {
-        selectedMethod != nil && !app.isPlacingOrder && (!isCash || tenderedMinor >= dueCash)
+        if app.isPlacingOrder { return false }
+        if splitMode { return splitAllocated == total && !splitLegs.isEmpty }
+        return selectedMethod != nil && (!isCash || tenderedMinor >= dueCash)
     }
 
     var body: some View {
@@ -48,6 +69,40 @@ struct TenderView: View {
         d.dtype == "percentage" ? "\(d.name) \(d.value)%" : d.name
     }
 
+    private func place() async {
+        let name = customerName.isEmpty ? nil : customerName
+        let note = notes.isEmpty ? nil : notes
+        if splitMode {
+            guard let primary = splitPrimary else { return }
+            await app.placeOrder(paymentMethodId: primary, amountTenderedMinor: 0, tipMinor: tipMinor,
+                                 customerName: name, notes: note, splits: splitLegs)
+        } else {
+            guard let id = selectedMethod else { return }
+            await app.placeOrder(paymentMethodId: id, amountTenderedMinor: isCash ? tenderedMinor : 0,
+                                 tipMinor: tipMinor, customerName: name, notes: note)
+        }
+    }
+
+    /// Per-method amount entry + a live remaining indicator (must reach 0).
+    private var splitAllocator: some View {
+        VStack(spacing: Space.sm) {
+            ForEach(app.paymentMethods, id: \.id) { m in
+                HStack(spacing: Space.sm) {
+                    Text(m.name).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
+                        .frame(width: 92, alignment: .leading)
+                    AmountField(amountMinor: splitBinding(m.id), currencyCode: currency)
+                }
+            }
+            HStack {
+                Text(t("order.split_remaining")).font(.ui(12, .medium)).foregroundStyle(theme.colors.textSecondary)
+                Spacer()
+                Text(Money.format(splitRemaining, currency))
+                    .font(.money(13, .bold))
+                    .foregroundStyle(splitRemaining == 0 ? theme.colors.success : theme.colors.danger)
+            }
+        }
+    }
+
     private var tenderForm: some View {
         ScrollView {
             VStack(spacing: Space.xl) {
@@ -62,12 +117,30 @@ struct TenderView: View {
                 }
 
                 VStack(alignment: .leading, spacing: Space.sm) {
-                    Text(t("order.payment_method"))
-                        .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: Space.sm)], spacing: Space.sm) {
-                        ForEach(app.paymentMethods, id: \.id) { m in
-                            MethodChip(label: m.name, active: m.id == selectedMethod) {
-                                selectedMethod = m.id
+                    HStack {
+                        Text(t("order.payment_method"))
+                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
+                        Spacer()
+                        if app.paymentMethods.count > 1 {
+                            Button { Haptics.selection(); withAnimation(Motion.standard) { splitMode.toggle() } } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: splitMode ? "checkmark.circle.fill" : "rectangle.split.2x1")
+                                    Text(t("order.split_payment"))
+                                }
+                                .font(.ui(11, .semibold))
+                                .foregroundStyle(splitMode ? theme.colors.accent : theme.colors.textMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    if splitMode {
+                        splitAllocator
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: Space.sm)], spacing: Space.sm) {
+                            ForEach(app.paymentMethods, id: \.id) { m in
+                                MethodChip(label: m.name, active: m.id == selectedMethod) {
+                                    selectedMethod = m.id
+                                }
                             }
                         }
                     }
@@ -102,7 +175,7 @@ struct TenderView: View {
                     AmountField(amountMinor: $tipMinor, currencyCode: currency)
                 }
 
-                if isCash {
+                if isCash && !splitMode {
                     VStack(alignment: .leading, spacing: Space.sm) {
                         Text(t("order.cash_received"))
                             .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
@@ -123,7 +196,7 @@ struct TenderView: View {
                     if tipMinor > 0 {
                         SummaryRow(label: t("order.tip"), value: Money.format(tipMinor, currency))
                     }
-                    if isCash {
+                    if isCash && !splitMode {
                         SummaryRow(label: t("order.change"), value: Money.format(changeMinor, currency))
                     }
                 }
@@ -133,16 +206,7 @@ struct TenderView: View {
                 }
 
                 SufrixButton(label: t("order.place_order"), icon: "checkmark", loading: app.isPlacingOrder) {
-                    guard let id = selectedMethod else { return }
-                    Task {
-                        await app.placeOrder(
-                            paymentMethodId: id,
-                            amountTenderedMinor: isCash ? tenderedMinor : 0,
-                            tipMinor: tipMinor,
-                            customerName: customerName.isEmpty ? nil : customerName,
-                            notes: notes.isEmpty ? nil : notes
-                        )
-                    }
+                    Task { await place() }
                 }
                 .opacity(canPlace ? 1 : 0.5)
                 .allowsHitTesting(canPlace)
