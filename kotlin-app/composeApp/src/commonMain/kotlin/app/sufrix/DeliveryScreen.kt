@@ -151,7 +151,6 @@ fun DeliveryScreen(model: AppModel) {
 }
 
 @Composable
-@Composable
 private fun AcceptingChip(label: String, channel: String, mode: String, enabled: Boolean, scope: kotlinx.coroutines.CoroutineScope, model: AppModel) {
     // Dashboard-disabled channels can't be opened; show them muted.
     val tone = if (!enabled) ChipTone.NEUTRAL else when (mode) {

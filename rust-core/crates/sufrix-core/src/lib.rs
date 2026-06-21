@@ -983,6 +983,9 @@ pub struct SyncStatusView {
     pub pending: u32,
     pub failed: u32,
     pub online: bool,
+    /// `true` when the outbox is parked on a 401 — the host prompts a re-login
+    /// to resume syncing (nothing drains until then).
+    pub auth_paused: bool,
 }
 
 // ── sync center (outbox visibility + retry/discard) ──────────────────────────
@@ -1019,6 +1022,7 @@ impl SufrixCore {
             pending: self.store.pending_count()?,
             failed: self.store.dead_count()?,
             online: self.current_session().map(|s| s.online).unwrap_or(false),
+            auth_paused: self.auth_paused.load(std::sync::atomic::Ordering::Relaxed),
         })
     }
 

@@ -50,6 +50,11 @@ struct OrderView: View {
                             .padding(.horizontal, Space.lg)
                             .padding(.top, Space.sm)
                     }
+                    if app.syncAuthPaused {
+                        NoticeBanner(icon: "lock.circle", text: t("chrome.auth_paused"), tone: .danger)
+                            .padding(.horizontal, Space.lg)
+                            .padding(.top, Space.sm)
+                    }
                     if abs(app.clockSkewMinutes) >= 5 {
                         NoticeBanner(icon: "clock.badge.exclamationmark",
                                      text: "\(t("chrome.clock_skew")) (\(abs(app.clockSkewMinutes))m)", tone: .warning)

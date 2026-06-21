@@ -417,6 +417,9 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Server-vs-device clock skew in minutes (drives the clock-skew banner). */
     var clockSkewMinutes by mutableStateOf(0)
         private set
+    /** Outbox parked on a 401 — the host prompts a re-login to resume syncing. */
+    var syncAuthPaused by mutableStateOf(false)
+        private set
 
     /** Refresh the sync chrome signals (chip counts + online) in one local read. */
     fun refreshPending() {
@@ -424,6 +427,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
             pendingCount = it.pending.toInt()
             syncFailed = it.failed.toInt()
             isOnline = it.online
+            syncAuthPaused = it.authPaused
         }
     }
     /** Connectivity heartbeat — ping (updates online + skew + drains), then

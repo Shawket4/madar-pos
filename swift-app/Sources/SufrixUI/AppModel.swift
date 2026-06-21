@@ -365,6 +365,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var isOnline: Bool = true
     /// Server-vs-device clock skew in minutes (drives the clock-skew banner).
     @Published private(set) var clockSkewMinutes: Int = 0
+    /// Outbox parked on a 401 — the host prompts a re-login to resume syncing.
+    @Published private(set) var syncAuthPaused: Bool = false
 
     /// Refresh the sync chrome signals (chip counts + online) in one local read.
     func refreshPending() {
@@ -372,6 +374,7 @@ final class AppModel: ObservableObject {
             pendingCount = Int(s.pending)
             syncFailed = Int(s.failed)
             isOnline = s.online
+            syncAuthPaused = s.authPaused
         }
     }
     /// The connectivity heartbeat — pings the server (updating online + clock

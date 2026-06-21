@@ -161,6 +161,11 @@ fun OrderScreen(model: AppModel) {
                     NoticeBanner(t("chrome.offline_banner"), ChipTone.WARNING)
                 }
             }
+            if (model.syncAuthPaused) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
+                    NoticeBanner(t("chrome.auth_paused"), ChipTone.DANGER)
+                }
+            }
             if (kotlin.math.abs(model.clockSkewMinutes) >= 5) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
                     NoticeBanner("${t("chrome.clock_skew")} (${kotlin.math.abs(model.clockSkewMinutes)}m)", ChipTone.WARNING)
