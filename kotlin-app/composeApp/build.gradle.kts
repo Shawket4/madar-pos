@@ -28,14 +28,20 @@ kotlin {
             // The generated UniFFI binding (app/sufrix/core/sufrix_core.kt) lives
             // in commonMain and needs JNA at runtime.
             implementation(libs.jna)
+            // Coil 3 — async network images (menu-item photos). The network engine
+            // (okhttp) is added per JVM target; the fetcher auto-registers via the
+            // ServiceLoader, so the default ImageLoader handles http(s) URLs.
+            implementation(libs.coil.compose)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             // Android needs the JNA aar (bundles the per-ABI .so loader).
             implementation("${libs.jna.get().module}:${libs.versions.jna.get()}@aar")
+            implementation(libs.coil.network.okhttp)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
+            implementation(libs.coil.network.okhttp)
         }
     }
 }

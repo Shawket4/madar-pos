@@ -52,6 +52,18 @@ struct MenuItemCard: View {
                 .font(.system(size: 42, weight: .thin))
                 .foregroundStyle(style.accent.opacity(theme.isDark ? 0.7 : 0.55))
                 .kerning(1.5)
+            // Real photo (when present) covers the gradient/monogram once loaded;
+            // while loading or on failure it's transparent, so the gradient shows.
+            if let urlStr = item.imageUrl, let url = URL(string: urlStr) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().scaledToFill()
+                    default: Color.clear
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+            }
             if inCartQty > 0 {
                 Text("\(inCartQty)")
                     .font(.ui(12, .heavy))

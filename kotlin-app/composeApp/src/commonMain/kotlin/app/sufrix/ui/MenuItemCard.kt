@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.core.MenuItemView
+import coil3.compose.AsyncImage
 import kotlin.math.ceil
 
 // The catalog's product card — category-hued gradient hero (monogram + a soft
@@ -79,6 +81,17 @@ fun MenuItemCard(
                 color = style.accent.copy(alpha = if (c.isDark) 0.7f else 0.55f),
                 fontFamily = SufrixFont, fontWeight = FontWeight.Light, fontSize = 42.sp,
             )
+            // Real photo (when present) covers the gradient/monogram once loaded;
+            // while loading or on failure Coil draws nothing, so the gradient shows.
+            val url = item.imageUrl
+            if (!url.isNullOrBlank()) {
+                AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
             if (inCartQty > 0) {
                 Box(
                     Modifier.align(Alignment.TopEnd).padding(7.dp)
