@@ -181,6 +181,13 @@ fn en(key: &str) -> Option<&'static str> {
         "shifts.declared" => "Declared",
         "shifts.discrepancy" => "Discrepancy",
         "shifts.open_now" => "Open",
+        // Z-report (printed shift report)
+        "shift.report_title" => "Shift Report",
+        "shift.payments" => "Payments",
+        "shift.cash_moves" => "Cash in/out",
+        "shift.expected_cash" => "Expected cash",
+        "shift.by_method" => "By method",
+        "shift.print_report" => "Print report",
         // order history
         "history.title" => "Orders",
         "history.empty" => "No orders this shift yet.",
@@ -376,6 +383,13 @@ fn ar(key: &str) -> Option<&'static str> {
         "shifts.declared" => "المعلن",
         "shifts.discrepancy" => "الفرق",
         "shifts.open_now" => "مفتوحة",
+        // Z-report (printed shift report)
+        "shift.report_title" => "تقرير الوردية",
+        "shift.payments" => "المدفوعات",
+        "shift.cash_moves" => "إيداع/سحب",
+        "shift.expected_cash" => "النقد المتوقع",
+        "shift.by_method" => "حسب الطريقة",
+        "shift.print_report" => "طباعة التقرير",
         "history.title" => "الطلبات",
         "history.empty" => "لا توجد طلبات في هذه الوردية بعد.",
         "history.queued" => "في الانتظار",

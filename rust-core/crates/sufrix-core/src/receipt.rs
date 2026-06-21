@@ -12,6 +12,7 @@
 //! the contract this module pins down is the bytes, not the delivery.
 
 use crate::checkout::ReceiptView;
+use crate::shift::ShiftReportView;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Align {
@@ -121,6 +122,73 @@ pub fn layout(receipt: &ReceiptView, ctx: &EscPosCtx) -> Vec<Line> {
     out
 }
 
+// ── shift report (Z-report) ──────────────────────────────────────────────────
+
+/// Localized labels for the Z-report — resolved once by the FFI caller.
+pub struct ShiftReportLabels {
+    pub title: String,
+    pub opening: String,
+    pub payments: String,
+    pub cash_moves: String,
+    pub expected: String,
+    pub voided: String,
+    pub by_method: String,
+}
+
+/// Render the shift report (Z-report) to ESC/POS bytes.
+pub fn escpos_shift_report(
+    report: &ShiftReportView,
+    store: &str,
+    currency: &str,
+    width: u32,
+    labels: &ShiftReportLabels,
+) -> Vec<u8> {
+    encode(&layout_shift_report(report, store, currency, width, labels))
+}
+
+/// Build the Z-report's visible lines — pure, no bytes. Golden-tested.
+pub fn layout_shift_report(
+    report: &ShiftReportView,
+    store: &str,
+    currency: &str,
+    width: u32,
+    labels: &ShiftReportLabels,
+) -> Vec<Line> {
+    let w = (width.max(16)) as usize;
+    let cur = currency;
+    let mut out: Vec<Line> = Vec::new();
+
+    out.push(Line { text: store.to_string(), align: Align::Center, bold: true, size: Size::Double });
+    out.push(Line::centered(labels.title.clone()));
+    out.push(Line::plain(divider(w)));
+
+    // Drawer reconciliation.
+    out.push(Line::plain(row(&labels.opening, &money(report.opening_cash_minor, cur), w)));
+    out.push(Line::plain(row(&labels.payments, &money(report.net_payments_minor, cur), w)));
+    if report.cash_movements_net_minor != 0 {
+        out.push(Line::plain(row(&labels.cash_moves, &money(report.cash_movements_net_minor, cur), w)));
+    }
+    out.push(Line {
+        text: row(&labels.expected, &money(report.expected_cash_minor, cur), w),
+        align: Align::Left,
+        bold: true,
+        size: Size::Normal,
+    });
+    out.push(Line::plain(divider(w)));
+
+    // Payment breakdown — "method (n orders)" left, total right.
+    out.push(Line::plain(labels.by_method.clone()));
+    for pl in &report.payment_lines {
+        let left = format!("{} ({})", pl.method, pl.order_count);
+        out.push(Line::plain(row(&left, &money(pl.total_minor, cur), w)));
+    }
+    if report.voided_amount_minor > 0 {
+        out.push(Line::plain(divider(w)));
+        out.push(Line::plain(row(&labels.voided, &money(report.voided_amount_minor, cur), w)));
+    }
+    out
+}
+
 // ── ESC/POS byte protocol ────────────────────────────────────────────────────
 const ESC: u8 = 0x1B;
 const GS: u8 = 0x1D;
@@ -203,6 +271,43 @@ fn short_id(id: &str) -> String {
 mod tests {
     use super::*;
     use crate::checkout::{ReceiptLineView, ReceiptView};
+
+    #[test]
+    fn shift_report_layout_has_drawer_lines_and_methods() {
+        let report = ShiftReportView {
+            expected_cash_minor: 15000,
+            opening_cash_minor: 10000,
+            total_payments_minor: 8000,
+            net_payments_minor: 8000,
+            voided_amount_minor: 500,
+            cash_movements_net_minor: -2000,
+            payment_lines: vec![crate::shift::ShiftReportPaymentLine {
+                method: "Cash".into(),
+                is_cash: true,
+                order_count: 3,
+                total_minor: 5000,
+            }],
+            from_server: true,
+        };
+        let labels = ShiftReportLabels {
+            title: "Shift Report".into(),
+            opening: "Opening".into(),
+            payments: "Payments".into(),
+            cash_moves: "Cash".into(),
+            expected: "Expected".into(),
+            voided: "Voided".into(),
+            by_method: "By method".into(),
+        };
+        let lines = layout_shift_report(&report, "Cafe Sufrix", "EGP", 32, &labels);
+        let joined: String = lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n");
+        assert!(joined.contains("Cafe Sufrix"));
+        assert!(joined.contains("Opening"));
+        assert!(joined.contains("Cash (3)")); // method + order count
+        // The expected-cash line is emphasized (bold).
+        assert!(lines.iter().any(|l| l.bold && l.text.contains("Expected")));
+        // A cash-movement line appears because the net is non-zero.
+        assert!(joined.contains("Cash") && joined.contains("20.00")); // -2000 minor
+    }
 
     fn ctx() -> EscPosCtx {
         EscPosCtx {

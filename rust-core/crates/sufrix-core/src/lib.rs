@@ -486,6 +486,29 @@ impl SufrixCore {
         };
         receipt::escpos(&receipt, &ctx)
     }
+
+    /// Render the shift report (Z-report) to ESC/POS bytes — same printer path
+    /// as `render_receipt`; pair with `send_to_printer`.
+    pub fn render_shift_report(
+        &self,
+        report: shift::ShiftReportView,
+        store_name: String,
+        currency: String,
+        width: u32,
+    ) -> Vec<u8> {
+        let loc = self.current_locale();
+        let tr = |k: &str| i18n::tr(&loc, k);
+        let labels = receipt::ShiftReportLabels {
+            title: tr("shift.report_title"),
+            opening: tr("shifts.opening"),
+            payments: tr("shift.payments"),
+            cash_moves: tr("shift.cash_moves"),
+            expected: tr("shift.expected_cash"),
+            voided: tr("history.voided"),
+            by_method: tr("shift.by_method"),
+        };
+        receipt::escpos_shift_report(&report, &store_name, &currency, width, &labels)
+    }
 }
 
 // ── catalog reads (sync; serve the local mirror, always succeed offline) ─────
