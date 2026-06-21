@@ -123,9 +123,24 @@ pub struct ShiftReportView {
     pub net_payments_minor: i64,
     pub voided_amount_minor: i64,
     pub cash_movements_net_minor: i64,
+    /// Pay-in / pay-out drawer totals (separate, not just the net) — Z-report depth.
+    pub cash_in_minor: i64,
+    pub cash_out_minor: i64,
     pub payment_lines: Vec<ShiftReportPaymentLine>,
+    /// Each individual cash movement (newest-first), for the itemised drawer block.
+    pub cash_movements: Vec<ShiftReportCashLine>,
     /// `false` = offline fallback (no server figures, just opening + queued).
     pub from_server: bool,
+}
+
+/// One itemised cash-drawer movement on the report. `amount_minor` is signed
+/// (positive = pay-in, negative = pay-out).
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct ShiftReportCashLine {
+    pub amount_minor: i64,
+    pub note: String,
+    pub moved_by_name: String,
+    pub created_at: String,
 }
 
 /// Project the server report, adding still-queued cash sales to expected cash.
@@ -137,6 +152,8 @@ pub(crate) fn report_view(report: &models::ShiftReportResponse, queued_cash: i64
         net_payments_minor: report.net_payments,
         voided_amount_minor: report.voided_amount,
         cash_movements_net_minor: report.cash_movements_net,
+        cash_in_minor: report.cash_movements_in,
+        cash_out_minor: report.cash_movements_out,
         payment_lines: report
             .payment_summary
             .iter()
@@ -147,20 +164,40 @@ pub(crate) fn report_view(report: &models::ShiftReportResponse, queued_cash: i64
                 total_minor: p.total,
             })
             .collect(),
+        cash_movements: report
+            .cash_movements
+            .iter()
+            .map(|m| ShiftReportCashLine {
+                amount_minor: m.amount as i64,
+                note: m.note.clone(),
+                moved_by_name: m.moved_by_name.clone(),
+                created_at: m.created_at.to_rfc3339(),
+            })
+            .collect(),
         from_server: true,
     }
 }
 
-/// Offline fallback: expected = opening cash + still-queued cash sales.
-pub(crate) fn offline_report_view(opening_cash_minor: i64, queued_cash: i64) -> ShiftReportView {
+/// Offline fallback: expected = opening cash + still-queued cash sales; the
+/// drawer block is reconstructed from the still-queued cash movements.
+pub(crate) fn offline_report_view(
+    opening_cash_minor: i64,
+    queued_cash: i64,
+    movements: Vec<ShiftReportCashLine>,
+) -> ShiftReportView {
+    let cash_in: i64 = movements.iter().filter(|m| m.amount_minor > 0).map(|m| m.amount_minor).sum();
+    let cash_out: i64 = movements.iter().filter(|m| m.amount_minor < 0).map(|m| -m.amount_minor).sum();
     ShiftReportView {
         expected_cash_minor: opening_cash_minor + queued_cash,
         opening_cash_minor,
         total_payments_minor: 0,
         net_payments_minor: 0,
         voided_amount_minor: 0,
-        cash_movements_net_minor: 0,
+        cash_movements_net_minor: cash_in - cash_out,
+        cash_in_minor: cash_in,
+        cash_out_minor: cash_out,
         payment_lines: vec![],
+        cash_movements: movements,
         from_server: false,
     }
 }
@@ -361,11 +398,20 @@ mod tests {
 
     #[test]
     fn offline_report_view_is_opening_plus_queued() {
-        let v = offline_report_view(50000, 2280);
+        let moves = vec![
+            ShiftReportCashLine { amount_minor: 5000, note: "float".into(), moved_by_name: "Mona".into(), created_at: "t".into() },
+            ShiftReportCashLine { amount_minor: -1500, note: "supplier".into(), moved_by_name: "Mona".into(), created_at: "t".into() },
+        ];
+        let v = offline_report_view(50000, 2280, moves);
         assert_eq!(v.expected_cash_minor, 52280);
         assert_eq!(v.opening_cash_minor, 50000);
         assert!(!v.from_server);
         assert!(v.payment_lines.is_empty());
+        // Pay-in / pay-out split derived from the queued movements.
+        assert_eq!(v.cash_in_minor, 5000);
+        assert_eq!(v.cash_out_minor, 1500);
+        assert_eq!(v.cash_movements_net_minor, 3500);
+        assert_eq!(v.cash_movements.len(), 2);
     }
 
     #[test]

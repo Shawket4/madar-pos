@@ -241,6 +241,8 @@ pub struct ShiftReportLabels {
     pub opening: String,
     pub payments: String,
     pub cash_moves: String,
+    pub cash_in: String,
+    pub cash_out: String,
     pub expected: String,
     pub voided: String,
     pub by_method: String,
@@ -273,11 +275,14 @@ pub fn layout_shift_report(
     out.push(Line::centered(labels.title.clone()));
     out.push(Line::plain(divider(w)));
 
-    // Drawer reconciliation.
+    // Drawer reconciliation — opening, sales, then pay-in / pay-out separately.
     out.push(Line::plain(row(&labels.opening, &money(report.opening_cash_minor, cur), w)));
     out.push(Line::plain(row(&labels.payments, &money(report.net_payments_minor, cur), w)));
-    if report.cash_movements_net_minor != 0 {
-        out.push(Line::plain(row(&labels.cash_moves, &money(report.cash_movements_net_minor, cur), w)));
+    if report.cash_in_minor > 0 {
+        out.push(Line::plain(row(&labels.cash_in, &money(report.cash_in_minor, cur), w)));
+    }
+    if report.cash_out_minor > 0 {
+        out.push(Line::plain(row(&labels.cash_out, &money(-report.cash_out_minor, cur), w)));
     }
     out.push(Line {
         text: row(&labels.expected, &money(report.expected_cash_minor, cur), w),
@@ -285,6 +290,16 @@ pub fn layout_shift_report(
         bold: true,
         size: Size::Normal,
     });
+
+    // Itemised cash movements (each pay-in/out with its note).
+    if !report.cash_movements.is_empty() {
+        out.push(Line::plain(divider(w)));
+        out.push(Line::plain(labels.cash_moves.clone()));
+        for m in &report.cash_movements {
+            let label = if m.note.trim().is_empty() { m.moved_by_name.clone() } else { m.note.clone() };
+            out.push(Line::plain(row(&format!("  {label}"), &money(m.amount_minor, cur), w)));
+        }
+    }
     out.push(Line::plain(divider(w)));
 
     // Payment breakdown — "method (n orders)" left, total right.
@@ -401,20 +416,28 @@ mod tests {
             total_payments_minor: 8000,
             net_payments_minor: 8000,
             voided_amount_minor: 500,
-            cash_movements_net_minor: -2000,
+            cash_movements_net_minor: 1000,
+            cash_in_minor: 3000,
+            cash_out_minor: 2000,
             payment_lines: vec![crate::shift::ShiftReportPaymentLine {
                 method: "Cash".into(),
                 is_cash: true,
                 order_count: 3,
                 total_minor: 5000,
             }],
+            cash_movements: vec![
+                crate::shift::ShiftReportCashLine { amount_minor: 3000, note: "float".into(), moved_by_name: "Mona".into(), created_at: "t".into() },
+                crate::shift::ShiftReportCashLine { amount_minor: -2000, note: "".into(), moved_by_name: "Mona".into(), created_at: "t".into() },
+            ],
             from_server: true,
         };
         let labels = ShiftReportLabels {
             title: "Shift Report".into(),
             opening: "Opening".into(),
             payments: "Payments".into(),
-            cash_moves: "Cash".into(),
+            cash_moves: "Cash moves".into(),
+            cash_in: "Cash in".into(),
+            cash_out: "Cash out".into(),
             expected: "Expected".into(),
             voided: "Voided".into(),
             by_method: "By method".into(),
@@ -426,8 +449,11 @@ mod tests {
         assert!(joined.contains("Cash (3)")); // method + order count
         // The expected-cash line is emphasized (bold).
         assert!(lines.iter().any(|l| l.bold && l.text.contains("Expected")));
-        // A cash-movement line appears because the net is non-zero.
-        assert!(joined.contains("Cash") && joined.contains("20.00")); // -2000 minor
+        // Separate pay-in / pay-out totals.
+        assert!(lines.iter().any(|l| l.text.starts_with("Cash in") && l.text.ends_with("30.00 EGP")));
+        assert!(lines.iter().any(|l| l.text.starts_with("Cash out") && l.text.ends_with("-20.00 EGP")));
+        // Itemised movements: the noted one shows its note, the blank one the name.
+        assert!(joined.contains("float") && joined.contains("Mona"));
     }
 
     fn ctx() -> EscPosCtx {

@@ -90,6 +90,7 @@ fun CloseShiftScreen(model: AppModel) {
             ) {
                 model.shift?.let { SummaryCard(it, currency) }
                 CashCard(countedMinor, { countedMinor = it }, note, { note = it }, currency, !model.isBusy, model.shiftReport)
+                model.shiftReport?.let { ReportCard(it, currency) }
                 if (model.shiftReport != null) {
                     SufrixButton(
                         t("shift.print_report"),
@@ -170,6 +171,34 @@ private fun DiscrepancyBanner(declared: Long, expected: Long, currency: String) 
     ) {
         Text(glyph, color = color, fontSize = 14.sp)
         Text(label, color = color, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+    }
+}
+
+/** The Z-report breakdown: per-method sales (with counts), drawer pay-in/out,
+ *  voided total, and the itemised cash movements. */
+@Composable
+private fun ReportCard(r: ShiftReportView, currency: String) {
+    val c = sufrixColors()
+
+    @Composable
+    fun row(label: String, value: String, tone: androidx.compose.ui.graphics.Color? = null, muted: Boolean = false) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = if (muted) c.textMuted else c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = if (muted) 11.sp else 13.sp)
+            Box(Modifier.weight(1f))
+            Text(value, color = tone ?: if (muted) c.textMuted else c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = if (muted) 11.sp else 13.sp)
+        }
+    }
+
+    Card {
+        CardHeader("▥", t("shift.report_title"))
+        r.paymentLines.forEach { row("${it.method} · ${it.orderCount}", Money.format(it.totalMinor, currency)) }
+        if (r.paymentLines.isNotEmpty()) Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        if (r.cashInMinor > 0) row(t("shift.cash_in"), Money.format(r.cashInMinor, currency))
+        if (r.cashOutMinor > 0) row(t("shift.cash_out"), "−${Money.format(r.cashOutMinor, currency)}")
+        if (r.voidedAmountMinor > 0) row(t("history.voided"), Money.format(r.voidedAmountMinor, currency), tone = c.danger)
+        r.cashMovements.forEach { m ->
+            row("  ${m.note.ifBlank { m.movedByName }}", (if (m.amountMinor < 0) "−" else "") + Money.format(kotlin.math.abs(m.amountMinor), currency), muted = true)
+        }
     }
 }
 

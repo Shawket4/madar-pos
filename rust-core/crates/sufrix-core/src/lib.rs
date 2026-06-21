@@ -723,6 +723,8 @@ impl SufrixCore {
             opening: tr("shifts.opening"),
             payments: tr("shift.payments"),
             cash_moves: tr("shift.cash_moves"),
+            cash_in: tr("shift.cash_in"),
+            cash_out: tr("shift.cash_out"),
             expected: tr("shift.expected_cash"),
             voided: tr("history.voided"),
             by_method: tr("shift.by_method"),
@@ -1327,7 +1329,23 @@ impl SufrixCore {
                 return Ok(shift::report_view(&report, queued_cash));
             }
         }
-        Ok(shift::offline_report_view(shift.opening_cash_minor, queued_cash))
+        // Offline: reconstruct the drawer block from the still-queued movements.
+        let teller = self.current_session().map(|s| s.display_name).unwrap_or_default();
+        let movements: Vec<shift::ShiftReportCashLine> = self
+            .store
+            .list_active()?
+            .into_iter()
+            .filter(|i| i.op_type == "cash_movement" && i.shift_id.as_deref() == Some(shift.id.as_str()))
+            .filter_map(|i| {
+                serde_json::from_str::<shift::CashMovementCommand>(&i.payload).ok().map(|cmd| shift::ShiftReportCashLine {
+                    amount_minor: cmd.request.amount as i64,
+                    note: cmd.request.note,
+                    moved_by_name: teller.clone(),
+                    created_at: i.event_at.clone(),
+                })
+            })
+            .collect();
+        Ok(shift::offline_report_view(shift.opening_cash_minor, queued_cash, movements))
     }
 
     /// Record a cash-drawer movement against the open shift — pay-IN when

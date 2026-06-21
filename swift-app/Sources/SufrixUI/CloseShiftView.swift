@@ -23,6 +23,7 @@ struct CloseShiftView: View {
                     VStack(spacing: Space.lg) {
                         if let s = app.shift { summaryCard(s) }
                         cashCard
+                        if let r = app.shiftReport { reportCard(r) }
                         if app.shiftReport != nil {
                             SufrixButton(label: t("shift.print_report"), icon: "printer", variant: .outline,
                                          loading: app.printState == .printing) {
@@ -101,6 +102,40 @@ struct CloseShiftView: View {
                 discrepancyBanner(declared: countedMinor, expected: r.expectedCashMinor)
             }
             SufrixTextField(placeholder: t("shift.cash_note"), text: $note, icon: "note.text", disabled: app.isBusy)
+        }
+    }
+
+    /// The Z-report breakdown: per-method sales (with order counts), drawer
+    /// pay-in/out, voided total, and the itemised cash movements.
+    private func reportCard(_ r: ShiftReportView) -> some View {
+        Card {
+            CardHeader(icon: "list.bullet.rectangle", title: t("shift.report_title"))
+            VStack(spacing: Space.sm) {
+                ForEach(Array(r.paymentLines.enumerated()), id: \.offset) { _, p in
+                    reportRow("\(p.method) · \(p.orderCount)", Money.format(p.totalMinor, currency))
+                }
+                if !r.paymentLines.isEmpty { Divider().background(theme.colors.border) }
+                if r.cashInMinor > 0 { reportRow(t("shift.cash_in"), Money.format(r.cashInMinor, currency)) }
+                if r.cashOutMinor > 0 { reportRow(t("shift.cash_out"), "−\(Money.format(r.cashOutMinor, currency))") }
+                if r.voidedAmountMinor > 0 {
+                    reportRow(t("history.voided"), Money.format(r.voidedAmountMinor, currency), tone: theme.colors.danger)
+                }
+                ForEach(Array(r.cashMovements.enumerated()), id: \.offset) { _, m in
+                    reportRow("  \(m.note.isEmpty ? m.movedByName : m.note)",
+                              (m.amountMinor < 0 ? "−" : "") + Money.format(abs(m.amountMinor), currency),
+                              muted: true)
+                }
+            }
+        }
+    }
+
+    private func reportRow(_ label: String, _ value: String, tone: Color? = nil, muted: Bool = false) -> some View {
+        HStack {
+            Text(label).font(.ui(muted ? 11 : 13, .medium))
+                .foregroundStyle(muted ? theme.colors.textMuted : theme.colors.textSecondary)
+            Spacer()
+            Text(value).font(.money(muted ? 11 : 13, .semibold))
+                .foregroundStyle(tone ?? (muted ? theme.colors.textMuted : theme.colors.textPrimary))
         }
     }
 
