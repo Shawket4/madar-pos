@@ -1,9 +1,12 @@
 package app.sufrix
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -486,10 +489,11 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit, onInc: () -> Unit, onEdit: (() -> Unit)? = null) {
     val c = sufrixColors()
-    val summary = configSummary(line)
+    val hasModifiers = line.sizeLabel != null || line.addons.isNotEmpty() || line.optionals.isNotEmpty()
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
             .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).padding(Space.md),
@@ -498,10 +502,19 @@ private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit,
     ) {
         Column(
             Modifier.weight(1f).then(if (onEdit != null) Modifier.clickable { onEdit() } else Modifier),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(line.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
-            if (summary != null) Text(summary, color = c.textSecondary, fontFamily = SufrixFont, fontSize = 11.sp, maxLines = 2)
+            if (hasModifiers) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    line.sizeLabel?.let { Pill(it, c.textSecondary, c.surfaceAlt) }
+                    line.addons.forEach { Pill(if (it.qty > 1) "${it.name} ×${it.qty}" else it.name, c.navy, c.navyBg) }
+                    line.optionals.forEach { Pill(it.name, c.warning, c.warningBg) }
+                }
+            }
             Text(Money.format(line.lineTotalMinor, currency), color = c.accent, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
         // The minus button removes the line at qty 1 (the remove affordance).
@@ -509,14 +522,13 @@ private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit,
     }
 }
 
-/** "Large · Oat milk · Extra shot ×2 · Vanilla" — the line's config, compact. */
-private fun configSummary(line: CartLineView): String? {
-    val parts = buildList {
-        line.sizeLabel?.let { add(it) }
-        line.addons.forEach { add(if (it.qty > 1) "${it.name} ×${it.qty}" else it.name) }
-        line.optionals.forEach { add(it.name) }
-    }
-    return if (parts.isEmpty()) null else parts.joinToString(" · ")
+/** A compact modifier chip in the cart row (size / addon / optional). */
+@Composable
+private fun Pill(text: String, fg: Color, bg: Color) {
+    Text(
+        text, color = fg, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 10.sp,
+        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(bg).padding(horizontal = 7.dp, vertical = 2.dp),
+    )
 }
 
 @Composable
@@ -577,10 +589,14 @@ private fun TotalRow(label: String, value: String, emphasized: Boolean = false) 
             fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Medium, fontSize = if (emphasized) 16.sp else 14.sp,
         )
         Box(Modifier.weight(1f))
-        Text(
-            value, color = if (emphasized) c.textPrimary else c.textSecondary, fontFamily = SufrixFont,
-            fontWeight = if (emphasized) FontWeight.Black else FontWeight.SemiBold, fontSize = if (emphasized) 18.sp else 14.sp,
-        )
+        if (emphasized) {
+            // The grand total animates on change (mirrors the Flutter slide+fade).
+            Crossfade(targetState = value, label = "total") { v ->
+                Text(v, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 18.sp)
+            }
+        } else {
+            Text(value, color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        }
     }
 }
 

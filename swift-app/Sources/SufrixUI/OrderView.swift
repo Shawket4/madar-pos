@@ -481,22 +481,16 @@ private struct CartLineRow: View {
     let onInc: () -> Void
     var onEdit: (() -> Void)? = nil
 
-    private var configSummary: String? {
-        var parts: [String] = []
-        if let s = line.sizeLabel { parts.append(s) }
-        parts += line.addons.map { $0.qty > 1 ? "\($0.name) ×\($0.qty)" : $0.name }
-        parts += line.optionals.map { $0.name }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    private var hasModifiers: Bool {
+        line.sizeLabel != nil || !line.addons.isEmpty || !line.optionals.isEmpty
     }
 
     var body: some View {
         HStack(spacing: Space.md) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(line.name).font(.ui(14, .semibold))
                     .foregroundStyle(theme.colors.textPrimary).lineLimit(1)
-                if let summary = configSummary {
-                    Text(summary).font(.ui(11)).foregroundStyle(theme.colors.textSecondary).lineLimit(2)
-                }
+                if hasModifiers { modifierPills }
                 Text(Money.format(line.lineTotalMinor, currency))
                     .font(.money(13, .bold)).foregroundStyle(theme.colors.accent)
             }
@@ -514,6 +508,56 @@ private struct CartLineRow: View {
                 .strokeBorder(theme.colors.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+    }
+
+    private var modifierPills: some View {
+        FlowLayout(spacing: 4) {
+            if let s = line.sizeLabel {
+                pill(s, fg: theme.colors.textSecondary, bg: theme.colors.surfaceAlt)
+            }
+            ForEach(line.addons, id: \.addonItemId) { a in
+                pill(a.qty > 1 ? "\(a.name) ×\(a.qty)" : a.name, fg: theme.colors.navy, bg: theme.colors.navyBg)
+            }
+            ForEach(line.optionals, id: \.optionalFieldId) { o in
+                pill(o.name, fg: theme.colors.warning, bg: theme.colors.warningBg)
+            }
+        }
+    }
+
+    private func pill(_ text: String, fg: Color, bg: Color) -> some View {
+        Text(text)
+            .font(.ui(10, .semibold)).foregroundStyle(fg)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(bg)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+    }
+}
+
+/// A minimal wrapping (flow) layout — pills/chips that wrap to the next line.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for v in subviews {
+            let size = v.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            x += size.width + spacing
+            rowHeight = Swift.max(rowHeight, size.height)
+        }
+        return CGSize(width: proposal.width ?? x, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for v in subviews {
+            let size = v.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > bounds.width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            v.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), anchor: .topLeading, proposal: .unspecified)
+            x += size.width + spacing
+            rowHeight = Swift.max(rowHeight, size.height)
+        }
     }
 }
 
@@ -579,6 +623,7 @@ private struct CartFooter: View {
             SufrixButton(label: t("order.checkout"), icon: "creditcard") { onCheckout() }
                 .padding(.top, Space.xs)
         }
+        .animation(Motion.standard, value: totals.totalMinor)
         .padding(Space.lg)
         .background(theme.colors.surface)
         .overlay(alignment: .top) {
@@ -602,6 +647,7 @@ private struct TotalRow: View {
             Text(value)
                 .font(.money(emphasized ? 18 : 14, emphasized ? .heavy : .semibold))
                 .foregroundStyle(emphasized ? theme.colors.textPrimary : theme.colors.textSecondary)
+                .contentTransition(.numericText())
         }
     }
 }
