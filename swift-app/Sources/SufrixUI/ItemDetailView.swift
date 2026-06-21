@@ -25,6 +25,11 @@ struct ItemDetailView: View {
     @State private var showAll = false
     /// The recipe section is revealed by the header recipe button (Flutter chip).
     @State private var showRecipe = false
+    /// Per-group search query (groupId → text), shown only when a group has many
+    /// addons so a long list stays scannable. Mirrors the dashboard's filter.
+    @State private var addonSearch: [String: String] = [:]
+    /// Search query for the optional-fields section (same >4 rule as the groups).
+    @State private var optionalSearch = ""
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -158,7 +163,7 @@ struct ItemDetailView: View {
                 header
                 ScrollView {
                     VStack(alignment: .leading, spacing: Space.lg) {
-                        if showRecipe { recipeSection }
+                        if showRecipe && !computedRecipe.isEmpty { recipeSection }
                         if !item.sizes.isEmpty { sizeSection }
                         ForEach(groups) { groupCard($0) }
                         if showAll || hasHiddenAddonTypes { showAllToggle }
@@ -174,22 +179,31 @@ struct ItemDetailView: View {
         .onAppear(perform: seed)
     }
 
-    private func group(forAddon addonId: String) -> Group? {
-        groups.first { g in g.addons.contains { $0.addonItemId == addonId } }
-    }
-
     private func seed() {
         guard !seeded else { return }
         seeded = true
         if let line = app.detailEditLine {
-            // Edit mode: reconstruct the selection from the existing line.
+            // Edit mode: reconstruct the selection from the existing line. Resolve
+            // each saved addon by its TYPE → slot / global `type:` bucket (NOT via
+            // the on-screen `groups`, which the allowlist/"show all" filter may
+            // hide) so a prior selection is never silently dropped on edit.
             size = line.sizeLabel ?? item.sizes.first?.label
             for a in line.addons {
-                guard let g = group(forAddon: a.addonItemId) else { continue }
-                if g.isMulti {
-                    var m = multi[g.id] ?? [:]; m[a.addonItemId] = Int(a.qty); multi[g.id] = m
+                guard let type = app.itemAddons.first(where: { $0.addonItemId == a.addonItemId })?.addonType
+                else { continue }
+                if let slot = item.addonSlots.first(where: { $0.addonType == type }) {
+                    if (slot.maxSelections.map { Int($0) } ?? 2) > 1 {
+                        var m = multi[slot.id] ?? [:]; m[a.addonItemId] = Int(a.qty); multi[slot.id] = m
+                    } else {
+                        single[slot.id] = a.addonItemId
+                    }
                 } else {
-                    single[g.id] = a.addonItemId
+                    let gid = "type:\(type)"
+                    if type != "milk_type" {
+                        var m = multi[gid] ?? [:]; m[a.addonItemId] = Int(a.qty); multi[gid] = m
+                    } else {
+                        single[gid] = a.addonItemId
+                    }
                 }
             }
             optionals = Set(line.optionals.map { $0.optionalFieldId })
@@ -209,27 +223,37 @@ struct ItemDetailView: View {
                 }
             }
             Spacer(minLength: 0)
-            Text(Money.format(headerTotal, currency))
-                .font(.money(14, .bold)).foregroundStyle(theme.colors.navy)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(theme.colors.navyBg)
-                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
-            if !item.recipes.isEmpty {
-                Button { withAnimation(Motion.standard) { showRecipe.toggle() } } label: {
-                    Image(systemName: "list.bullet.rectangle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(showRecipe ? theme.colors.textOnAccent : theme.colors.accent)
+            HStack(spacing: Space.sm) {
+                Text(Money.format(headerTotal, currency))
+                    .font(.money(14, .bold)).foregroundStyle(theme.colors.navy)
+                    .frame(height: 32)
+                    .padding(.horizontal, 10)
+                    .background(theme.colors.navyBg)
+                    .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                if !item.recipes.isEmpty {
+                    Button { withAnimation(Motion.standard) { showRecipe.toggle() } } label: {
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(showRecipe ? theme.colors.textOnAccent : theme.colors.accent)
+                            .frame(width: 32, height: 32)
+                            .background(showRecipe ? theme.colors.accent : theme.colors.accentBg)
+                            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { onClose() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(theme.colors.textMuted)
                         .frame(width: 32, height: 32)
-                        .background(showRecipe ? theme.colors.accent : theme.colors.accentBg)
+                        .background(theme.colors.surfaceAlt)
                         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                                .strokeBorder(theme.colors.border, lineWidth: 1)
+                        )
                 }
                 .buttonStyle(.plain)
             }
-            Button { onClose() } label: {
-                Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(theme.colors.textMuted)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, Space.lg)
         .padding(.vertical, Space.md)
@@ -237,12 +261,11 @@ struct ItemDetailView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
 
-    /// The recipe lines for the current size (size-specific + size-agnostic);
-    /// falls back to ALL lines if nothing matches the selected size, so the
-    /// recipe button never reveals an empty panel.
-    private var visibleRecipes: [RecipeLineView] {
-        let matched = item.recipes.filter { $0.sizeLabel == nil || $0.sizeLabel == size }
-        return matched.isEmpty ? item.recipes : matched
+    /// The effective recipe for the current selection — the core applies size,
+    /// milk/coffee swaps, additive addons (× qty) and optional contributions, so
+    /// the panel reflects exactly what the teller configured.
+    private var computedRecipe: [ComputedRecipeLineView] {
+        app.recipePreview(itemId: item.id, sizeLabel: size, addons: selectedAddons(), optionalIds: Array(optionals))
     }
 
     private var recipeSection: some View {
@@ -253,11 +276,13 @@ struct ItemDetailView: View {
                 sectionTitle(t("order.recipe"))
             }
             VStack(spacing: 0) {
-                let lines = visibleRecipes
+                let lines = computedRecipe
                 ForEach(Array(lines.enumerated()), id: \.offset) { idx, r in
                     HStack(spacing: Space.sm) {
-                        Circle().fill(theme.colors.accent.opacity(0.45)).frame(width: 5, height: 5)
+                        Circle().fill((r.isBase ? theme.colors.accent : theme.colors.textMuted).opacity(0.45))
+                            .frame(width: 5, height: 5)
                         Text(r.ingredientName).font(.ui(13)).foregroundStyle(theme.colors.textPrimary)
+                        StatusChip(label: r.sourceLabel.uppercased(), tone: r.isBase ? .accent : .neutral)
                         Spacer(minLength: Space.sm)
                         Text("\(fmtQty(r.quantity)) \(r.unit)")
                             .font(.money(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
@@ -312,6 +337,18 @@ struct ItemDetailView: View {
         }
     }
 
+    /// Addons matching the group's live search query (case-insensitive). When no
+    /// query is set the full list shows; selected chips always stay visible so a
+    /// filter never hides an active selection.
+    private func filteredAddons(_ g: Group) -> [ItemAddonView] {
+        let q = (addonSearch[g.id] ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return g.addons }
+        return g.addons.filter { a in
+            a.name.lowercased().contains(q)
+                || (g.isMulti ? multi[g.id]?[a.addonItemId] != nil : single[g.id] == a.addonItemId)
+        }
+    }
+
     private func groupCard(_ g: Group) -> some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             HStack(spacing: Space.xs) {
@@ -322,8 +359,16 @@ struct ItemDetailView: View {
                 let count = selectedCount(g)
                 if count > 0 { StatusChip(label: "\(count)", tone: .accent) }
             }
+            if g.addons.count > 4 {
+                SufrixTextField(
+                    placeholder: t("order.search_addons"),
+                    text: Binding(get: { addonSearch[g.id] ?? "" },
+                                  set: { addonSearch[g.id] = $0 }),
+                    icon: "magnifyingglass"
+                )
+            }
             FlowLayout(spacing: Space.sm) {
-                ForEach(g.addons, id: \.addonItemId) { a in addonChip(g, a) }
+                ForEach(filteredAddons(g), id: \.addonItemId) { a in addonChip(g, a) }
             }
         }
     }
@@ -403,11 +448,23 @@ struct ItemDetailView: View {
             .clipShape(Capsule())
     }
 
+    private var activeOptionals: [OptionalFieldView] { item.optionalFields.filter { $0.isActive } }
+
+    /// Active optionals matching the search query; selected ones always stay.
+    private var filteredOptionals: [OptionalFieldView] {
+        let q = optionalSearch.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return activeOptionals }
+        return activeOptionals.filter { $0.name.lowercased().contains(q) || optionals.contains($0.id) }
+    }
+
     private var optionalsSection: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             sectionTitle(t("order.optionals"))
+            if activeOptionals.count > 4 {
+                SufrixTextField(placeholder: t("order.search_addons"), text: $optionalSearch, icon: "magnifyingglass")
+            }
             FlowLayout(spacing: Space.sm) {
-                ForEach(item.optionalFields.filter { $0.isActive }, id: \.id) { f in
+                ForEach(filteredOptionals, id: \.id) { f in
                     optionalChip(f)
                 }
             }

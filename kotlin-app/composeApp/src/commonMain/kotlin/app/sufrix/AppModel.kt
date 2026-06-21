@@ -11,6 +11,7 @@ import app.sufrix.core.CheckoutInput
 import app.sufrix.core.CheckoutSplit
 import app.sufrix.core.AddonSelection
 import app.sufrix.core.CategoryView
+import app.sufrix.core.ComputedRecipeLineView
 import app.sufrix.core.CoreException
 import app.sufrix.core.DiscountView
 import app.sufrix.core.ItemAddonView
@@ -457,6 +458,12 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         openItemDetail(item, line.key, line)
     }
     fun closeItemDetail() { detailItem = null; detailEditKey = null; detailEditLine = null }
+
+    /** Live recipe preview for the current selection — the core derives the
+     *  effective ingredients (base by size, milk/coffee swaps, additive addons,
+     *  optional contributions). Pure + cheap, so the sheet recomputes per toggle. */
+    fun recipePreview(itemId: String, sizeLabel: String?, addons: List<AddonSelection>, optionalIds: List<String>): List<ComputedRecipeLineView> =
+        runCatching { core.computeRecipe(itemId, sizeLabel, addons, optionalIds) }.getOrDefault(emptyList())
 
     /** Add (or, in edit mode, replace) a configured line. The core resolves the
      *  charged prices from the catalog; we just pass the selection. */

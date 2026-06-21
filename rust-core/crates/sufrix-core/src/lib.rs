@@ -35,6 +35,9 @@ pub mod menu;
 pub mod orders;
 /// Thermal-receipt rendering (ESC/POS) + best-effort network printing.
 pub mod receipt;
+/// Local recipe preview — effective ingredients for a configured item (parity
+/// with Flutter's `computeRecipeLocally`).
+pub mod recipe;
 /// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
 pub mod net;
 /// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
@@ -559,6 +562,26 @@ impl SufrixCore {
         let addon_catalog = menu::addons(&self.store, &self.current_locale())?;
         Ok(cart::item_addons(item, &addon_catalog))
     }
+    /// Live recipe preview for the current selection (size + addons + optionals).
+    /// Pure projection over the mirrored catalog, so the customization sheet can
+    /// recompute on every toggle, online or offline. Mirrors the Flutter teller
+    /// app: base by size, milk/coffee swaps, additive addons (× qty), and
+    /// optional-field ingredient contributions.
+    pub fn compute_recipe(
+        &self,
+        item_id: String,
+        size_label: Option<String>,
+        addons: Vec<cart::AddonSelection>,
+        optional_field_ids: Vec<String>,
+    ) -> Result<Vec<recipe::ComputedRecipeLineView>, CoreError> {
+        let items = menu::menu_items(&self.store, &self.current_locale())?;
+        let item = items
+            .iter()
+            .find(|i| i.id == item_id)
+            .ok_or_else(|| CoreError::Validation { field: "item".into(), message: "unknown item".into() })?;
+        let addon_catalog = menu::addons(&self.store, &self.current_locale())?;
+        Ok(recipe::compute_recipe(item, &addon_catalog, size_label.as_deref(), &addons, &optional_field_ids))
+    }
     /// Set a line's absolute quantity (by its key); `qty <= 0` removes the line.
     pub fn cart_set_qty(
         &self,
@@ -769,25 +792,19 @@ impl SufrixCore {
         }
         let menu_items_json = self.api.get_text("/menu-items", &q).await?;
 
+        // Addons — the plain `/addon-items` array (NOT `/catalog`): it's
+        // branch-effective AND embeds each addon's ingredients (the recipe
+        // preview needs them). Raw GET because the embedded `quantity_used` is a
+        // BigDecimal string the generated `AddonItem` (f64) can't decode.
+        let mut aq: Vec<(&str, String)> = vec![("org_id", org_id.clone())];
+        if let Some(b) = &branch_id {
+            aq.push(("branch_id", b.clone()));
+        }
+        let addons_json = self.api.get_text("/addon-items", &aq).await?;
+
         let categories = menu_api::list_categories(
             &self.api.config(),
             menu_api::ListCategoriesParams { org_id: org_id.clone() },
-        )
-        .await
-        .map_err(net::map_api_error)?;
-
-        let addons = menu_api::list_addon_catalog(
-            &self.api.config(),
-            menu_api::ListAddonCatalogParams {
-                org_id: org_id.clone(),
-                addon_type: None,
-                search: None,
-                page: Some(1),
-                per_page: Some(500),
-                branch_id: branch_id.clone(),
-                overridden: None,
-                sort: None,
-            },
         )
         .await
         .map_err(net::map_api_error)?;
@@ -821,7 +838,7 @@ impl SufrixCore {
         // All streams fetched OK → commit the mirror.
         self.store.kv_put(menu::K_MENU_ITEMS, &menu_items_json)?;
         self.store.kv_put(menu::K_CATEGORIES, &serde_json::to_string(&categories)?)?;
-        self.store.kv_put(menu::K_ADDONS, &serde_json::to_string(&addons.data)?)?;
+        self.store.kv_put(menu::K_ADDONS, &addons_json)?;
         self.store.kv_put(menu::K_BUNDLES, &serde_json::to_string(&bundles.data)?)?;
         self.store.kv_put(menu::K_PAYMENT_METHODS, &serde_json::to_string(&payment_methods)?)?;
         self.store.kv_put(menu::K_DISCOUNTS, &serde_json::to_string(&discounts)?)?;

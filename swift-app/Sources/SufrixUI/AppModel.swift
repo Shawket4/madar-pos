@@ -419,6 +419,13 @@ final class AppModel: ObservableObject {
     }
     func closeItemDetail() { detailItem = nil; detailEditKey = nil; detailEditLine = nil }
 
+    /// Live recipe preview for the current selection — the core derives the
+    /// effective ingredients (base by size, milk/coffee swaps, additive addons,
+    /// optional contributions). Pure + cheap, so the sheet recomputes per toggle.
+    func recipePreview(itemId: String, sizeLabel: String?, addons: [AddonSelection], optionalIds: [String]) -> [ComputedRecipeLineView] {
+        (try? core.computeRecipe(itemId: itemId, sizeLabel: sizeLabel, addons: addons, optionalFieldIds: optionalIds)) ?? []
+    }
+
     /// Add (or, in edit mode, replace) a configured line. The core resolves the
     /// charged prices from the catalog; we just pass the selection.
     func addConfigured(itemId: String, sizeLabel: String?, addons: [AddonSelection],

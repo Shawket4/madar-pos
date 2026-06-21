@@ -76,6 +76,13 @@ pub struct OptionalFieldView {
     pub name: String,
     pub price_minor: i64,
     pub is_active: bool,
+    /// Optional ingredient deduction: an optional that maps to stock carries a
+    /// full `(name, unit, quantity)` triplet; cosmetic fields leave these `None`
+    /// and contribute no recipe line. Mirrors Flutter's `OptionalField`.
+    pub ingredient_name: Option<String>,
+    pub ingredient_unit: Option<String>,
+    pub quantity_used: Option<f64>,
+    pub org_ingredient_id: Option<String>,
 }
 
 #[derive(uniffi::Record, Clone, Debug)]
@@ -86,6 +93,23 @@ pub struct RecipeLineView {
     pub unit: String,
     /// `None` = applies to all sizes; otherwise the size this line is for.
     pub size_label: Option<String>,
+    /// Ingredient category (e.g. `milk`, `coffee_bean`) — the swap engine matches
+    /// a milk/coffee addon against the base line of the same category.
+    pub category: String,
+    /// The org-ingredient identity — used to tell a real swap from re-selecting
+    /// the default (same id ⇒ no swap). May be absent on older rows.
+    pub org_ingredient_id: Option<String>,
+}
+
+/// One ingredient embedded in an addon item (`/addon-items` wire). Drives the
+/// recipe preview: a milk/coffee addon's first ingredient replaces the base
+/// line; other addons add their ingredients (scaled by qty).
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct AddonIngredientView {
+    pub ingredient_name: String,
+    pub unit: String,
+    pub quantity: f64,
+    pub org_ingredient_id: Option<String>,
 }
 
 #[derive(uniffi::Record, Clone, Debug)]
@@ -103,6 +127,9 @@ pub struct AddonItemView {
     pub addon_type: String,
     pub default_price_minor: i64,
     pub is_active: bool,
+    /// Embedded ingredient rows (recipe preview input). Empty when the addon has
+    /// no stock impact (e.g. a flavour shot) or the wire omitted them.
+    pub ingredients: Vec<AddonIngredientView>,
 }
 
 #[derive(uniffi::Record, Clone, Debug)]
@@ -194,6 +221,10 @@ struct FullRecipe {
     ingredient_unit: String,
     #[serde(default)]
     size_label: Option<String>,
+    #[serde(default)]
+    category: String,
+    #[serde(default)]
+    org_ingredient_id: Option<String>,
     // numeric(12,3) → BigDecimal → JSON STRING ("18.000"). Captured as a Value so
     // the string-vs-number encoding can't break the parse; projected to f64 below.
     #[serde(default)]
@@ -230,6 +261,44 @@ struct FullOptional {
     name_translations: Value,
     price: i32,
     is_active: bool,
+    #[serde(default)]
+    ingredient_name: Option<String>,
+    #[serde(default)]
+    ingredient_unit: Option<String>,
+    #[serde(default)]
+    org_ingredient_id: Option<String>,
+    // numeric → BigDecimal → JSON STRING; tolerant Value (projected below).
+    #[serde(default)]
+    quantity_used: Value,
+}
+
+// Tolerant local shape for the `/addon-items` wire. Like the menu, the embedded
+// ingredient `quantity_used` is a Postgres `numeric` → BigDecimal → JSON STRING,
+// so the generated `models::AddonItem` (which types it `f64`) can't parse it. We
+// capture only what the catalog + recipe preview need, decimals as `Value`.
+#[derive(Deserialize)]
+struct FullAddon {
+    id: uuid::Uuid,
+    name: String,
+    #[serde(default)]
+    name_translations: Value,
+    addon_type: String,
+    default_price: i32,
+    is_active: bool,
+    #[serde(default)]
+    ingredients: Vec<FullAddonIngredient>,
+}
+
+#[derive(Deserialize)]
+struct FullAddonIngredient {
+    #[serde(default)]
+    ingredient_name: String,
+    #[serde(default)]
+    ingredient_unit: String,
+    #[serde(default)]
+    org_ingredient_id: Option<String>,
+    #[serde(default)]
+    quantity_used: Value,
 }
 
 pub(crate) fn menu_items(store: &Store, locale: &str) -> CoreResult<Vec<MenuItemView>> {
@@ -255,6 +324,8 @@ pub(crate) fn menu_items(store: &Store, locale: &str) -> CoreResult<Vec<MenuItem
                     quantity: value_to_f64(&r.quantity_used),
                     unit: r.ingredient_unit.clone(),
                     size_label: r.size_label.clone().filter(|s| !s.is_empty()),
+                    category: r.category.clone(),
+                    org_ingredient_id: r.org_ingredient_id.clone().filter(|s| !s.is_empty()),
                 })
                 .collect(),
             sizes: i
@@ -287,6 +358,10 @@ pub(crate) fn menu_items(store: &Store, locale: &str) -> CoreResult<Vec<MenuItem
                     name: resolve(&o.name_translations, &o.name, locale),
                     price_minor: o.price as i64,
                     is_active: o.is_active,
+                    ingredient_name: o.ingredient_name.clone().filter(|s| !s.is_empty()),
+                    ingredient_unit: o.ingredient_unit.clone().filter(|s| !s.is_empty()),
+                    quantity_used: value_to_opt_f64(&o.quantity_used),
+                    org_ingredient_id: o.org_ingredient_id.clone().filter(|s| !s.is_empty()),
                 })
                 .collect(),
         })
@@ -308,7 +383,10 @@ pub(crate) fn categories(store: &Store, locale: &str) -> CoreResult<Vec<Category
 }
 
 pub(crate) fn addons(store: &Store, locale: &str) -> CoreResult<Vec<AddonItemView>> {
-    let items: Vec<models::AddonItem> = parse_kv(store, K_ADDONS)?;
+    // Lenient, decimal-tolerant parse: the `/addon-items` wire embeds ingredient
+    // `quantity_used` as a BigDecimal string, which the generated `AddonItem`
+    // (f64) can't decode — and a single bad row must never blank the addon list.
+    let items: Vec<FullAddon> = parse_kv_lenient(store, K_ADDONS)?;
     Ok(items
         .into_iter()
         .map(|a| AddonItemView {
@@ -317,6 +395,16 @@ pub(crate) fn addons(store: &Store, locale: &str) -> CoreResult<Vec<AddonItemVie
             addon_type: a.addon_type.clone(),
             default_price_minor: a.default_price as i64,
             is_active: a.is_active,
+            ingredients: a
+                .ingredients
+                .iter()
+                .map(|ing| AddonIngredientView {
+                    ingredient_name: ing.ingredient_name.clone(),
+                    unit: ing.ingredient_unit.clone(),
+                    quantity: value_to_f64(&ing.quantity_used),
+                    org_ingredient_id: ing.org_ingredient_id.clone().filter(|s| !s.is_empty()),
+                })
+                .collect(),
         })
         .collect())
 }
@@ -418,6 +506,17 @@ fn flat<T: Clone>(opt: &Option<Option<T>>) -> Option<T> {
 /// A JSON number OR a BigDecimal-as-string ("18.000") → f64 (0.0 on failure).
 fn value_to_f64(v: &Value) -> f64 {
     v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0)
+}
+
+/// Like `value_to_f64` but preserves absence: JSON `null`/missing → `None`, so a
+/// cosmetic optional (no ingredient deduction) is distinguishable from a 0 qty.
+fn value_to_opt_f64(v: &Value) -> Option<f64> {
+    match v {
+        Value::Null => None,
+        Value::Number(_) => v.as_f64(),
+        Value::String(s) => s.parse().ok(),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -527,12 +626,17 @@ mod tests {
         assert_eq!(items[0].optional_fields.len(), 1);
         assert_eq!(items[0].optional_fields[0].name, "Extra shot");
         assert_eq!(items[0].optional_fields[0].price_minor, 1500);
+        // Optional ingredient mapping projects (BigDecimal-string qty tolerated).
+        assert_eq!(items[0].optional_fields[0].quantity_used, Some(0.5));
+        assert_eq!(items[0].optional_fields[0].ingredient_unit.as_deref(), Some("shot"));
+        assert_eq!(items[0].optional_fields[0].ingredient_name, None); // absent → None
         // Recipes now parse despite the BigDecimal-as-string quantity_used.
         assert_eq!(items[0].recipes.len(), 1);
         assert_eq!(items[0].recipes[0].ingredient_name, "Beans");
         assert_eq!(items[0].recipes[0].quantity, 18.0);
         assert_eq!(items[0].recipes[0].unit, "g");
         assert_eq!(items[0].recipes[0].size_label.as_deref(), Some("Large"));
+        assert_eq!(items[0].recipes[0].category, "coffee");
         // Per-item addon allowlist surfaces for the "show item's options" default.
         assert_eq!(items[0].allowed_addon_ids, vec!["00000000-0000-0000-0000-0000000000d1"]);
     }
@@ -575,12 +679,17 @@ mod tests {
         seed(
             &store,
             K_ADDONS,
-            r#"[{"addon_type":"milk_type","created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z","default_price":1500,"id":"00000000-0000-0000-0000-0000000000d1","is_active":true,"name":"Oat Milk","name_translations":{"ar":"حليب شوفان"},"org_id":"00000000-0000-0000-0000-0000000000ff"}]"#,
+            r#"[{"addon_type":"milk_type","created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z","default_price":1500,"id":"00000000-0000-0000-0000-0000000000d1","is_active":true,"name":"Oat Milk","name_translations":{"ar":"حليب شوفان"},"org_id":"00000000-0000-0000-0000-0000000000ff","ingredients":[{"ingredient_name":"Oat milk","ingredient_unit":"ml","org_ingredient_id":"00000000-0000-0000-0000-0000000000aa","quantity_used":"200.000"}]}]"#,
         );
         let a = addons(&store, "ar").unwrap();
         assert_eq!(a[0].name, "حليب شوفان");
         assert_eq!(a[0].default_price_minor, 1500);
         assert_eq!(a[0].addon_type, "milk_type");
+        // Embedded ingredients project despite the BigDecimal-string quantity.
+        assert_eq!(a[0].ingredients.len(), 1);
+        assert_eq!(a[0].ingredients[0].ingredient_name, "Oat milk");
+        assert_eq!(a[0].ingredients[0].quantity, 200.0);
+        assert_eq!(a[0].ingredients[0].org_ingredient_id.as_deref(), Some("00000000-0000-0000-0000-0000000000aa"));
 
         seed(
             &store,

@@ -100,8 +100,10 @@ struct OrderView: View {
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }
-            // Item customization.
-            .sheet(item: $app.detailItem) { item in
+            // Item customization. Bind through a derived binding so EVERY dismissal
+            // route — header ✕, swipe-down, or tap-outside — runs closeItemDetail()
+            // and clears the edit state, not just the explicit close button.
+            .sheet(item: Binding(get: { app.detailItem }, set: { if $0 == nil { app.closeItemDetail() } })) { item in
                 ItemDetailView(app: app, item: item, onClose: { app.closeItemDetail() })
                     .frame(minWidth: 640, minHeight: 640)
                     .environment(\.theme, theme)

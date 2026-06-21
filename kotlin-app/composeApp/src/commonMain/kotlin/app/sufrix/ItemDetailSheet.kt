@@ -3,6 +3,9 @@ package app.sufrix
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -11,12 +14,14 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +54,7 @@ import app.sufrix.ui.pressScale
 import app.sufrix.ui.Radii
 import app.sufrix.ui.Space
 import app.sufrix.ui.SufrixFont
+import app.sufrix.ui.SufrixTextField
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
 
@@ -82,6 +88,11 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     var showAll by remember { mutableStateOf(false) }
     // The recipe section is revealed by the header recipe button (Flutter chip).
     var showRecipe by remember { mutableStateOf(false) }
+    // Per-group search query (groupId -> text), shown only when a group has many
+    // addons so a long list stays scannable. Mirrors the dashboard's filter.
+    val addonSearch = remember { mutableStateMapOf<String, String>() }
+    // Search query for the optional-fields section (same >4 rule as the groups).
+    var optionalSearch by remember { mutableStateOf("") }
 
     LaunchedEffect(item.id) {
         if (seeded) return@LaunchedEffect
@@ -181,7 +192,29 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
         multi = multi.toMutableMap().apply { if (m.isEmpty()) remove(g.id) else put(g.id, m) }
     }
 
-    Column(Modifier.fillMaxSize().background(c.bg)) {
+    Box(Modifier.fillMaxSize()) {
+      // Tap the dimmed area outside the panel to dismiss.
+      Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
+          .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() })
+      // The sheet panel itself (taps inside are swallowed, not dismissed).
+      Column(
+          Modifier.fillMaxWidth().fillMaxHeight(0.96f).align(Alignment.BottomCenter)
+              .clip(RoundedCornerShape(topStart = Radii.lg, topEnd = Radii.lg)).background(c.bg)
+              .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+      ) {
+        // Grab handle — a downward drag past the threshold dismisses the sheet.
+        var dragAccum by remember { mutableStateOf(0f) }
+        Box(
+            Modifier.fillMaxWidth().draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { delta -> dragAccum += delta },
+                onDragStopped = { if (dragAccum > 120f) onClose(); dragAccum = 0f },
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.padding(top = 8.dp, bottom = 4.dp).size(width = 36.dp, height = 4.dp)
+                .clip(CircleShape).background(c.borderLight))
+        }
         // ── Header ────────────────────────────────────────────────────────────
         Column(Modifier.fillMaxWidth().background(c.surface)) {
             Row(
@@ -195,21 +228,35 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                         Text(it, color = c.textSecondary, fontFamily = SufrixFont, fontSize = 12.sp, maxLines = 2)
                     }
                 }
-                Text(
-                    Money.format(headerTotal, currency), color = c.navy, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(Radii.sm)).background(c.navyBg).padding(horizontal = 10.dp, vertical = 5.dp),
-                )
-                if (item.recipes.isNotEmpty()) {
+                // Trailing controls share one center-aligned row so the price badge,
+                // recipe chip, and close button line up on a common baseline.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    Text(
+                        Money.format(headerTotal, currency), color = c.navy, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                        modifier = Modifier.height(32.dp).clip(RoundedCornerShape(Radii.sm)).background(c.navyBg)
+                            .padding(horizontal = 10.dp).wrapContentHeight(Alignment.CenterVertically),
+                    )
+                    if (item.recipes.isNotEmpty()) {
+                        Box(
+                            Modifier.size(32.dp).clip(RoundedCornerShape(Radii.sm))
+                                .background(if (showRecipe) c.accent else c.accentBg)
+                                .clickable { showRecipe = !showRecipe },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("▤", color = if (showRecipe) c.textOnAccent else c.accent, fontSize = 15.sp)
+                        }
+                    }
                     Box(
-                        Modifier.size(32.dp).clip(RoundedCornerShape(Radii.sm))
-                            .background(if (showRecipe) c.accent else c.accentBg)
-                            .clickable { showRecipe = !showRecipe },
+                        Modifier.size(32.dp).clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
+                            .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).clickable { onClose() },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("▤", color = if (showRecipe) c.textOnAccent else c.accent, fontSize = 15.sp)
+                        Text("✕", color = c.textMuted, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
-                Text("✕", color = c.textMuted, fontSize = 16.sp, modifier = Modifier.clickable { onClose() })
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
         }
@@ -220,10 +267,9 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(Space.lg),
         ) {
             // Recipe (revealed by the header button) — at the top so it's visible
-            // on toggle; falls back to all lines if the size has no specific recipe.
-            val recipeLines = item.recipes
-                .filter { it.sizeLabel == null || it.sizeLabel == size }
-                .ifEmpty { item.recipes }
+            // on toggle. The core derives the effective ingredients for the live
+            // selection (size, milk/coffee swaps, additive addons, optionals).
+            val recipeLines = if (showRecipe) model.recipePreview(item.id, size, selectedAddons, optionals.toList()) else emptyList()
             if (showRecipe && recipeLines.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -240,8 +286,10 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
                             ) {
-                                Box(Modifier.size(5.dp).clip(CircleShape).background(c.accent.copy(alpha = 0.45f)))
+                                Box(Modifier.size(5.dp).clip(CircleShape)
+                                    .background((if (r.isBase) c.accent else c.textMuted).copy(alpha = 0.45f)))
                                 Text(r.ingredientName, color = c.textPrimary, fontFamily = SufrixFont, fontSize = 13.sp)
+                                StatusChip(r.sourceLabel.uppercase(), if (r.isBase) ChipTone.ACCENT else ChipTone.NEUTRAL)
                                 Box(Modifier.weight(1f))
                                 Text(
                                     "${fmtQty(r.quantity)} ${r.unit}", color = c.textSecondary,
@@ -268,6 +316,8 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                     g, currency, charged,
                     selectedSingle = single[g.id],
                     selectedMulti = multi[g.id] ?: emptyMap(),
+                    query = addonSearch[g.id] ?: "",
+                    onQueryChange = { addonSearch[g.id] = it },
                     onToggleSingle = { toggleSingle(g, it) },
                     onToggleMulti = { toggleMulti(g, it) },
                     onInc = { incMulti(g, it) },
@@ -284,10 +334,17 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
             }
             val fields = item.optionalFields.filter { it.isActive }
             if (fields.isNotEmpty()) {
+                val oq = optionalSearch.trim().lowercase()
+                val shownOpts = if (oq.isEmpty()) fields else fields.filter {
+                    it.name.lowercase().contains(oq) || it.id in optionals
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     SectionTitle(t("order.optionals"))
+                    if (fields.size > 4) {
+                        SufrixTextField(value = optionalSearch, onValueChange = { optionalSearch = it }, placeholder = t("order.search_addons"))
+                    }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        fields.forEach { f ->
+                        shownOpts.forEach { f ->
                             val on = f.id in optionals
                             AddonOptionChip(f.name, f.priceMinor, on, multi = true, currency) {
                                 optionals = if (on) optionals - f.id else optionals + f.id
@@ -322,6 +379,7 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                 Text(Money.format(lineTotal, currency), color = c.textOnAccent, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 14.sp)
             }
         }
+      }
     }
 }
 
@@ -333,12 +391,21 @@ private fun AddonGroupCard(
     charged: (String) -> Long,
     selectedSingle: String?,
     selectedMulti: Map<String, Int>,
+    query: String,
+    onQueryChange: (String) -> Unit,
     onToggleSingle: (String) -> Unit,
     onToggleMulti: (String) -> Unit,
     onInc: (String) -> Unit,
     onDec: (String) -> Unit,
 ) {
     val count = if (g.isMulti) selectedMulti.size else (if (selectedSingle != null) 1 else 0)
+    // Filter by the live query; selected chips always stay visible so a filter
+    // never hides an active selection.
+    val q = query.trim().lowercase()
+    val shown = if (q.isEmpty()) g.addons else g.addons.filter {
+        it.name.lowercase().contains(q) ||
+            (if (g.isMulti) selectedMulti.containsKey(it.addonItemId) else selectedSingle == it.addonItemId)
+    }
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             SectionTitle(g.title)
@@ -347,8 +414,11 @@ private fun AddonGroupCard(
             Box(Modifier.weight(1f))
             if (count > 0) StatusChip("$count", ChipTone.ACCENT)
         }
+        if (g.addons.size > 4) {
+            SufrixTextField(value = query, onValueChange = onQueryChange, placeholder = t("order.search_addons"))
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            g.addons.forEach { a ->
+            shown.forEach { a ->
                 val selected = if (g.isMulti) selectedMulti.containsKey(a.addonItemId) else selectedSingle == a.addonItemId
                 val price = charged(a.addonItemId)
                 if (g.isMulti && selected) {

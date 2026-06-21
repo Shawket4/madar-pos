@@ -459,6 +459,7 @@ mod tests {
             addon_type: kind.into(),
             default_price_minor: price,
             is_active: true,
+            ingredients: vec![],
         }
     }
 
@@ -475,7 +476,7 @@ mod tests {
             allowed_addon_ids: vec![],
             sizes: vec![menu::ItemSizeView { id: "lg".into(), label: "Large".into(), price_minor: 6000, is_active: true }],
             addon_slots: vec![],
-            optional_fields: vec![menu::OptionalFieldView { id: "van".into(), name: "Vanilla".into(), price_minor: 300, is_active: true }],
+            optional_fields: vec![menu::OptionalFieldView { id: "van".into(), name: "Vanilla".into(), price_minor: 300, is_active: true, ingredient_name: None, ingredient_unit: None, quantity_used: None, org_ingredient_id: None }],
             recipes: vec![],
         }
     }
