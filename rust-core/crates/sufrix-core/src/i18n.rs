@@ -158,6 +158,7 @@ fn en(key: &str) -> Option<&'static str> {
         "sync.op_create_order" => "Order",
         // order-screen chrome (action bar + banners)
         "chrome.online" => "Online",
+        "chrome.clock_skew" => "Device clock is off — please fix it",
         "chrome.offline" => "Offline",
         "chrome.offline_banner" => "Working offline — changes sync when you reconnect",
         "chrome.syncing" => "Syncing",
@@ -365,6 +366,7 @@ fn ar(key: &str) -> Option<&'static str> {
         "sync.op_create_order" => "طلب",
         // order-screen chrome (action bar + banners)
         "chrome.online" => "متصل",
+        "chrome.clock_skew" => "ساعة الجهاز غير مضبوطة — يرجى تصحيحها",
         "chrome.offline" => "غير متصل",
         "chrome.offline_banner" => "تعمل دون اتصال — ستتم المزامنة عند عودة الاتصال",
         "chrome.syncing" => "جارٍ المزامنة",

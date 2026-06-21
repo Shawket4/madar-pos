@@ -46,6 +46,12 @@ struct OrderView: View {
                             .padding(.horizontal, Space.lg)
                             .padding(.top, Space.sm)
                     }
+                    if abs(app.clockSkewMinutes) >= 5 {
+                        NoticeBanner(icon: "clock.badge.exclamationmark",
+                                     text: "\(t("chrome.clock_skew")) (\(abs(app.clockSkewMinutes))m)", tone: .warning)
+                            .padding(.horizontal, Space.lg)
+                            .padding(.top, Space.sm)
+                    }
                     if let error = app.errorMessage {
                         NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
                             .padding(.horizontal, Space.lg)
@@ -153,6 +159,14 @@ struct OrderView: View {
             await app.loadCatalog()
             app.refreshPending()
             await app.loadHistory()
+        }
+        // Connectivity heartbeat — refresh online + clock skew (+ drain) every
+        // 15s while the order screen is up; cancelled when it goes away.
+        .task {
+            while !Task.isCancelled {
+                await app.refreshConnectivity()
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+            }
         }
     }
 

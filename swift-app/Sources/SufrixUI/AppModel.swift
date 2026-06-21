@@ -320,6 +320,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var syncFailed: Int = 0
     /// Session connectivity — drives the offline banner + sync chip state.
     @Published private(set) var isOnline: Bool = true
+    /// Server-vs-device clock skew in minutes (drives the clock-skew banner).
+    @Published private(set) var clockSkewMinutes: Int = 0
 
     /// Refresh the sync chrome signals (chip counts + online) in one local read.
     func refreshPending() {
@@ -328,6 +330,15 @@ final class AppModel: ObservableObject {
             syncFailed = Int(s.failed)
             isOnline = s.online
         }
+    }
+    /// The connectivity heartbeat — pings the server (updating online + clock
+    /// skew + draining the outbox), then re-reads the chrome. Called on appear
+    /// and on a timer by the order screen. Online-aware: no-op effect offline.
+    func refreshConnectivity() async {
+        guard session != nil else { return }
+        _ = await core.refreshConnectivity()
+        clockSkewMinutes = Int(core.clockSkewMinutes())
+        refreshPending()
     }
     /// Load the full outbox (for the sync sheet) + the count.
     func loadOutbox() {
