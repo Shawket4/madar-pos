@@ -54,7 +54,6 @@ CREATE TABLE IF NOT EXISTS outbox (
   shift_id        TEXT                                -- the shift this op belongs to (close-last gating)
 );
 CREATE INDEX IF NOT EXISTS outbox_status_seq ON outbox(status, seq);
-CREATE INDEX IF NOT EXISTS outbox_due ON outbox(status, next_attempt_at, seq);
 "#;
 
 /// Idempotent column adds for stores created before the offline-orchestration
@@ -127,9 +126,17 @@ impl Store {
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
         // Bring older stores up to the current outbox shape (no-op on fresh DBs).
+        // MUST run before any index that references the new columns — on an
+        // upgraded DB the columns don't exist until these ALTERs add them.
         for stmt in MIGRATIONS {
             let _ = conn.execute(stmt, []); // "duplicate column" is expected + fine
         }
+        // The backoff-gate index references `next_attempt_at`, so it's created
+        // only AFTER the migrations guarantee that column exists.
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS outbox_due ON outbox(status, next_attempt_at, seq)",
+            [],
+        );
         Ok(Store { conn: Mutex::new(conn) })
     }
 
@@ -495,6 +502,38 @@ mod tests {
             shift_id: shift_id.map(|s| s.into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn open_upgrades_an_old_schema_db_without_erroring() {
+        // Reproduces the startup crash: an app updated in place has a DB whose
+        // `outbox` predates the offline-orchestration columns. Opening it MUST
+        // migrate (not fail on the backoff index that references a new column).
+        let path = std::env::temp_dir().join("sufrix_old_schema_upgrade_test.sqlite");
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE outbox (
+                   seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                   id TEXT NOT NULL UNIQUE, op_type TEXT NOT NULL,
+                   idempotency_key TEXT NOT NULL, payload TEXT NOT NULL,
+                   event_at TEXT NOT NULL, enqueued_at TEXT NOT NULL,
+                   status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+                   last_error TEXT, server_id TEXT, depends_on_seq INTEGER);
+                 INSERT INTO outbox(id,op_type,idempotency_key,payload,event_at,enqueued_at)
+                   VALUES('old-1','create_order','old-1','{}','t','t');",
+            )
+            .unwrap();
+        }
+        // Opening with the CURRENT schema must NOT error (the bug threw here).
+        let s = Store::open(path.to_str().unwrap()).expect("open must migrate, not crash");
+        // The pre-existing row survives and the new columns defaulted sanely.
+        let due = s.due_for_sync(now_ms() + 1, None).unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, "old-1");
+        assert_eq!(due[0].next_attempt_at, 0);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
