@@ -117,6 +117,8 @@ fun ItemDetailSheet(
     val addonSearch = remember { mutableStateMapOf<String, String>() }
     // Search query for the optional-fields section (same >4 rule as the groups).
     var optionalSearch by remember { mutableStateOf("") }
+    // Free-text line note (kitchen instructions); not collected in configure mode.
+    var notes by remember { mutableStateOf("") }
 
     LaunchedEffect(item.id) {
         if (seeded) return@LaunchedEffect
@@ -155,6 +157,7 @@ fun ItemDetailSheet(
             editLine.addons.forEach { a -> placeAddon(a.addonItemId, a.qty.toInt()) }
             multi = newMulti.mapValues { it.value.toMap() }
             optionals = editLine.optionals.map { it.optionalFieldId }.toSet()
+            notes = editLine.notes ?: ""
             qty = maxOf(1, editLine.qty.toInt())
         } else {
             size = item.sizes.firstOrNull()?.label
@@ -392,6 +395,12 @@ fun ItemDetailSheet(
                     }
                 }
             }
+            if (!isConfiguring) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    SectionTitle(t("order.notes"))
+                    SufrixTextField(value = notes, onValueChange = { notes = it }, placeholder = t("order.notes_hint"))
+                }
+            }
         }
 
         // ── Footer ──────────────────────────────────────────────────────────────
@@ -418,7 +427,7 @@ fun ItemDetailSheet(
                         if (onConfigure != null) {
                             onConfigure(BundleComponentDraft(size, selectedAddons, optionals.toList(), addonsTotal + optionalsTotal))
                         } else {
-                            model.addConfigured(item.id, size, selectedAddons, optionals.toList(), qty.toLong(), null)
+                            model.addConfigured(item.id, size, selectedAddons, optionals.toList(), qty.toLong(), notes.ifBlank { null })
                         }
                     }
                     .padding(horizontal = Space.lg),

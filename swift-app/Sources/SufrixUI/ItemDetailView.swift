@@ -36,6 +36,9 @@ struct ItemDetailView: View {
     @State private var addonSearch: [String: String] = [:]
     /// Search query for the optional-fields section (same >4 rule as the groups).
     @State private var optionalSearch = ""
+    /// A free-text note for this line (kitchen instructions). Not shown in bundle
+    /// component-config mode.
+    @State private var notes = ""
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -174,6 +177,7 @@ struct ItemDetailView: View {
                         ForEach(groups) { groupCard($0) }
                         if showAll || hasHiddenAddonTypes { showAllToggle }
                         if !item.optionalFields.isEmpty { optionalsSection }
+                        if !isConfiguring { notesSection }
                     }
                     .frame(maxWidth: 680)
                     .frame(maxWidth: .infinity)
@@ -229,6 +233,7 @@ struct ItemDetailView: View {
             size = line.sizeLabel ?? item.sizes.first?.label
             for a in line.addons { placeAddon(a.addonItemId, qty: Int(a.qty)) }
             optionals = Set(line.optionals.map { $0.optionalFieldId })
+            notes = line.notes ?? ""
             qty = Swift.max(1, Int(line.qty))
         } else {
             seedDefaults()
@@ -515,6 +520,13 @@ struct ItemDetailView: View {
         .buttonStyle(.pressable(scale: 0.97))
     }
 
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            sectionTitle(t("order.notes"))
+            SufrixTextField(placeholder: t("order.notes_hint"), text: $notes, icon: "text.bubble")
+        }
+    }
+
     private var footer: some View {
         let unsatisfied = firstUnsatisfied
         let canAdd = unsatisfied == nil
@@ -536,7 +548,8 @@ struct ItemDetailView: View {
                         optionalIds: Array(optionals), extrasMinor: addonsTotal + optionalsTotal))
                 } else {
                     app.addConfigured(itemId: item.id, sizeLabel: size, addons: selectedAddons(),
-                                      optionalIds: Array(optionals), qty: Int64(qty), notes: nil)
+                                      optionalIds: Array(optionals), qty: Int64(qty),
+                                      notes: notes.isEmpty ? nil : notes)
                 }
             } label: {
                 HStack {
