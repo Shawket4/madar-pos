@@ -46,6 +46,7 @@ import app.sufrix.ui.StatusChip
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixTextField
+import app.sufrix.ui.backGlyph
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
 import kotlinx.coroutines.launch
@@ -70,7 +71,7 @@ fun OrderHistoryScreen(model: AppModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.md),
                 ) {
-                    Text("‹", color = c.textPrimary, fontSize = 26.sp, modifier = Modifier.clickable { model.showHistory = false })
+                    Text(backGlyph(), color = c.textPrimary, fontSize = 26.sp, modifier = Modifier.clickable { model.showHistory = false })
                     Text(t("history.title"), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 17.sp)
                     Box(Modifier.weight(1f))
                     if (model.isLoadingHistory && model.history.isNotEmpty()) {

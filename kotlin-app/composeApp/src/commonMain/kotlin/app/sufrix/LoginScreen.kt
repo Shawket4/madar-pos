@@ -46,6 +46,7 @@ import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixLockup
 import app.sufrix.ui.SufrixMark
 import app.sufrix.ui.SufrixTextField
+import app.sufrix.ui.disclosureGlyph
 import app.sufrix.ui.pressScale
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
@@ -199,7 +200,7 @@ private fun BranchRow(branch: BranchView, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(branch.name, color = c.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Text("›", color = c.textMuted, fontSize = 18.sp)
+        Text(disclosureGlyph(), color = c.textMuted, fontSize = 18.sp)
     }
 }
 

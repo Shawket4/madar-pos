@@ -42,6 +42,7 @@ import app.sufrix.ui.Space
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixTextField
+import app.sufrix.ui.backGlyph
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
 import kotlinx.coroutines.launch
@@ -67,7 +68,7 @@ fun CloseShiftScreen(model: AppModel) {
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
             ) {
                 Text(
-                    "‹", color = c.textPrimary, fontSize = 26.sp,
+                    backGlyph(), color = c.textPrimary, fontSize = 26.sp,
                     modifier = Modifier.clickable { model.error = null; model.showCloseShift = false },
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {

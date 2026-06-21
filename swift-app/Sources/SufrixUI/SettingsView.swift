@@ -47,7 +47,7 @@ struct SettingsView: View {
     private var header: some View {
         HStack(spacing: Space.md) {
             Button { onClose() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                Image(systemName: "chevron.backward").font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(theme.colors.textPrimary)
             }
             .buttonStyle(.pressable)
@@ -94,7 +94,7 @@ struct SettingsView: View {
                     Image(systemName: "building.2").foregroundStyle(theme.colors.textMuted)
                     Text(t("settings.reconfigure")).font(.ui(14)).foregroundStyle(theme.colors.textPrimary)
                     Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(theme.colors.textMuted)
+                    Image(systemName: "chevron.forward").font(.system(size: 13)).foregroundStyle(theme.colors.textMuted)
                 }
             }
             .buttonStyle(.pressable)

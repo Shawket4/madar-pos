@@ -23,6 +23,9 @@ struct PinPad: View {
                 }
             }
         }
+        // A numeric keypad keeps its 1-2-3 / 4-5-6 order even in Arabic (POS +
+        // phone convention); only the surrounding screen mirrors.
+        .environment(\.layoutDirection, .leftToRight)
     }
 
     private var dots: some View {

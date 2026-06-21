@@ -43,7 +43,7 @@ struct SyncView: View {
     private var header: some View {
         HStack(spacing: Space.md) {
             Button { onClose() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                Image(systemName: "chevron.backward").font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(theme.colors.textPrimary)
             }
             .buttonStyle(.pressable)

@@ -67,43 +67,37 @@ struct OrderView: View {
                         CartPanel(app: app, onClose: { showCart = false }, onCheckout: { tenderInCart = true })
                     }
                 }
-                .environment(\.theme, theme)
-                .environment(\.localize, t)
+                .modalChrome(app, theme, t)
             }
             // Wide: tender is a root sheet beside the cart column.
             .sheet(isPresented: $showTenderWide, onDismiss: { app.dismissReceipt() }) {
                 TenderView(app: app, onClose: { showTenderWide = false })
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
             // Close-shift flow over the order screen.
             #if os(iOS)
             .fullScreenCover(isPresented: $app.showCloseShift) {
                 CloseShiftView(app: app)
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
             #else
             .sheet(isPresented: $app.showCloseShift) {
                 CloseShiftView(app: app)
                     .frame(minWidth: 480, minHeight: 600)
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
             #endif
             // Sync center.
             .sheet(isPresented: $app.showSync) {
                 SyncView(app: app, onClose: { app.showSync = false })
                     .frame(minWidth: 420, minHeight: 520)
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
             // Order history.
             .sheet(isPresented: $app.showHistory) {
                 OrderHistoryView(app: app, onClose: { app.showHistory = false })
                     .frame(minWidth: 460, minHeight: 560)
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
             // Item customization. Bind through a derived binding so EVERY dismissal
             // route — header ✕, swipe-down, or tap-outside — runs closeItemDetail()
@@ -111,21 +105,18 @@ struct OrderView: View {
             .sheet(item: Binding(get: { app.detailItem }, set: { if $0 == nil { app.closeItemDetail() } })) { item in
                 ItemDetailView(app: app, item: item, onClose: { app.closeItemDetail() })
                     .frame(minWidth: 640, minHeight: 640)
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
             // Settings.
             .sheet(isPresented: $app.showSettings) {
                 SettingsView(app: app, onClose: { app.showSettings = false })
                     .frame(minWidth: 440, minHeight: 560)
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
             // More — overflow nav hub (close shift, sign out, …).
             .sheet(isPresented: $app.showMore) {
                 MoreDrawer(app: app)
-                    .environment(\.theme, theme)
-                    .environment(\.localize, t)
+                    .modalChrome(app, theme, t)
             }
         }
         .task {
@@ -361,7 +352,7 @@ private struct MoreDrawer: View {
                     .foregroundStyle(tone).frame(width: 28)
                 Text(label).font(.ui(15, .semibold)).foregroundStyle(tone)
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                Image(systemName: "chevron.forward").font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.colors.textMuted)
             }
             .padding(.horizontal, Space.md).padding(.vertical, 14)
@@ -834,5 +825,18 @@ extension ShiftView {
     /// "EGP 500.00" — opening cash, formatted from minor units.
     func currencyDisplay(_ code: String) -> String {
         Money.format(openingCashMinor, code)
+    }
+}
+
+private extension View {
+    /// Inject the app chrome a modally-presented screen needs. A `.sheet` /
+    /// `.fullScreenCover` is hosted in a FRESH environment that does NOT inherit
+    /// the presenter's `\.theme`, `\.localize`, or `\.layoutDirection`, so each
+    /// modal must re-inject them — including the RTL flip, or Arabic sheets would
+    /// render left-to-right while the rest of the app mirrors.
+    func modalChrome(_ app: AppModel, _ theme: SufrixTheme, _ t: @escaping (String) -> String) -> some View {
+        environment(\.theme, theme)
+            .environment(\.localize, t)
+            .environment(\.layoutDirection, app.isRTL ? .rightToLeft : .leftToRight)
     }
 }

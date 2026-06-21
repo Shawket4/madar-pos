@@ -45,7 +45,7 @@ struct CloseShiftView: View {
     private var header: some View {
         HStack(spacing: Space.md) {
             Button { app.errorMessage = nil; app.showCloseShift = false } label: {
-                Image(systemName: "chevron.left")
+                Image(systemName: "chevron.backward")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(theme.colors.textPrimary)
             }

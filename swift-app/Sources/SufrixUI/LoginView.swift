@@ -186,7 +186,7 @@ private struct DeviceSetupForm: View {
                 Image(systemName: "building.2").foregroundStyle(theme.colors.textMuted)
                 Text(branch.name).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary)
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(theme.colors.textMuted)
+                Image(systemName: "chevron.forward").font(.system(size: 13)).foregroundStyle(theme.colors.textMuted)
             }
             .padding(.horizontal, 14).padding(.vertical, 14)
             .frame(maxWidth: .infinity)
