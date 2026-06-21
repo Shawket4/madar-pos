@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.sp
 import app.sufrix.core.BundleView
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
+import androidx.compose.ui.graphics.Brush
+import app.sufrix.core.CatStyleView
 import app.sufrix.core.CategoryView
 import app.sufrix.core.MenuItemView
 import app.sufrix.core.ShiftView
@@ -143,6 +145,7 @@ fun OrderScreen(model: AppModel) {
                             onAdd = { item -> model.openItemDetail(item) },
                             bundles = model.bundles,
                             onBundleTap = { b -> model.openBundleDetail(b) },
+                            catStyle = { name -> model.core.categoryStyle(name, c.isDark) },
                         )
                     }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(c.border))
@@ -160,6 +163,7 @@ fun OrderScreen(model: AppModel) {
                         onAdd = { item -> model.openItemDetail(item) },
                         bundles = model.bundles,
                         onBundleTap = { b -> model.openBundleDetail(b) },
+                        catStyle = { name -> model.core.categoryStyle(name, c.isDark) },
                     )
                 }
                 CartBar(model, currency) { showCart = true }
@@ -416,6 +420,7 @@ private fun CatalogColumn(
     onAdd: (MenuItemView) -> Unit,
     bundles: List<BundleView>,
     onBundleTap: (BundleView) -> Unit,
+    catStyle: (String) -> CatStyleView,
 ) {
     val c = sufrixColors()
     val showCombos = bundles.isNotEmpty()
@@ -423,7 +428,7 @@ private fun CatalogColumn(
     if (wide) {
         // Tablet/desktop: a vertical category rail beside the search + grid.
         Row(Modifier.fillMaxSize()) {
-            CategoryRail(categories, selectedCategory, onSelect, showCombos)
+            CategoryRail(categories, selectedCategory, onSelect, catStyle, showCombos)
             Box(Modifier.width(1.dp).fillMaxHeight().background(c.borderLight))
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (combos) {
@@ -439,7 +444,7 @@ private fun CatalogColumn(
     } else {
         // Phone: a horizontal underline-tab strip above the search + grid.
         Column(Modifier.fillMaxSize()) {
-            CategoryTabs(categories, selectedCategory, onSelect, showCombos)
+            CategoryTabs(categories, selectedCategory, onSelect, catStyle, showCombos)
             if (combos) {
                 Box(Modifier.weight(1f).fillMaxWidth()) { BundleGrid(bundles, currency, onBundleTap) }
             } else {
@@ -470,7 +475,13 @@ private fun BundleGrid(bundles: List<BundleView>, currency: String, onBundleTap:
 
 // ── Category navigation (phone underline tabs · wide vertical rail) ──────────────
 @Composable
-private fun CategoryTabs(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit, showCombos: Boolean = false) {
+private fun CategoryTabs(
+    cats: List<CategoryView>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+    catStyle: (String) -> CatStyleView,
+    showCombos: Boolean = false,
+) {
     val c = sufrixColors()
     Column(Modifier.fillMaxWidth().background(c.surface)) {
         Row(
@@ -478,10 +489,10 @@ private fun CategoryTabs(cats: List<CategoryView>, selected: String?, onSelect: 
                 .padding(horizontal = Space.lg),
             horizontalArrangement = Arrangement.spacedBy(Space.lg),
         ) {
-            CategoryTab(t("order.all"), selected == null) { onSelect(null) }
-            if (showCombos) CategoryTab(t("order.combos"), selected == kCombosCategory) { onSelect(kCombosCategory) }
+            CategoryTab(t("order.all"), "🍽️", selected == null) { onSelect(null) }
+            if (showCombos) CategoryTab(t("order.combos"), "🎁", selected == kCombosCategory) { onSelect(kCombosCategory) }
             cats.filter { it.isActive }.forEach { cat ->
-                CategoryTab(cat.name, selected == cat.id) { onSelect(cat.id) }
+                CategoryTab(cat.name, catEmoji(catStyle(cat.name).icon), selected == cat.id) { onSelect(cat.id) }
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
@@ -489,7 +500,7 @@ private fun CategoryTabs(cats: List<CategoryView>, selected: String?, onSelect: 
 }
 
 @Composable
-private fun CategoryTab(label: String, active: Boolean, onClick: () -> Unit) {
+private fun CategoryTab(label: String, emoji: String, active: Boolean, onClick: () -> Unit) {
     val c = sufrixColors()
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
@@ -501,17 +512,26 @@ private fun CategoryTab(label: String, active: Boolean, onClick: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            Text(
-                label, color = if (active) c.accent else c.textMuted, fontFamily = SufrixFont,
-                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(emoji, fontSize = 12.sp)
+                Text(
+                    label, color = if (active) c.accent else c.textMuted, fontFamily = SufrixFont,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp,
+                )
+            }
         }
         Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) c.accent else Color.Transparent))
     }
 }
 
 @Composable
-private fun CategoryRail(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit, showCombos: Boolean = false) {
+private fun CategoryRail(
+    cats: List<CategoryView>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+    catStyle: (String) -> CatStyleView,
+    showCombos: Boolean = false,
+) {
     val c = sufrixColors()
     Column(
         Modifier.width(96.dp).fillMaxHeight().background(c.surface)
@@ -519,30 +539,67 @@ private fun CategoryRail(cats: List<CategoryView>, selected: String?, onSelect: 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        RailTile(t("order.all"), selected == null) { onSelect(null) }
-        if (showCombos) RailTile(t("order.combos"), selected == kCombosCategory) { onSelect(kCombosCategory) }
+        RailTile(t("order.all"), null, "🍽️", selected == null) { onSelect(null) }
+        if (showCombos) RailTile(t("order.combos"), null, "🎁", selected == kCombosCategory) { onSelect(kCombosCategory) }
         cats.filter { it.isActive }.forEach { cat ->
-            RailTile(cat.name, selected == cat.id) { onSelect(cat.id) }
+            val style = catStyle(cat.name)
+            RailTile(cat.name, style, catEmoji(style.icon), selected == cat.id) { onSelect(cat.id) }
         }
     }
 }
 
 @Composable
-private fun RailTile(label: String, active: Boolean, onClick: () -> Unit) {
+private fun RailTile(label: String, style: CatStyleView?, emoji: String, active: Boolean, onClick: () -> Unit) {
     val c = sufrixColors()
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
-    Text(
-        label, color = if (active) c.accent else c.textSecondary, fontFamily = SufrixFont,
-        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 10.sp,
-        textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Space.sm).pressScale(interaction)
+    val gradient = if (style != null) {
+        Brush.linearGradient(listOf(hexColor(style.bgTop), hexColor(style.bgBottom)))
+    } else {
+        Brush.linearGradient(listOf(c.accentBg, c.accentBg))
+    }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = Space.sm).pressScale(interaction)
             .clip(RoundedCornerShape(Radii.sm)).background(if (active) c.accentBg else Color.Transparent)
             .clickable(interactionSource = interaction, indication = null) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
             }
-            .padding(vertical = Space.md, horizontal = Space.xs),
-    )
+            .padding(vertical = Space.sm, horizontal = Space.xs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(gradient)
+                .border(if (active) 2.dp else 0.dp, if (active) c.accent else Color.Transparent, RoundedCornerShape(11.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(emoji, fontSize = 16.sp)
+        }
+        Text(
+            label, color = if (active) c.accent else c.textSecondary, fontFamily = SufrixFont,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 10.sp,
+            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Core `CatStyleView.icon` key → emoji (Compose's glyph for category icons). */
+private fun catEmoji(key: String): String = when (key) {
+    "coffee", "mocha", "tea", "cafe" -> "☕"
+    "bakery" -> "🥐"
+    "lunch" -> "🥪"
+    "icecream" -> "🍨"
+    "drink" -> "🥤"
+    "water" -> "💧"
+    "ice" -> "🧊"
+    "matcha" -> "🍵"
+    else -> "☕"
+}
+
+/** `#RRGGBB` → Compose Color (opaque). Pairs with the core's CatStyleView. */
+private fun hexColor(hex: String): Color {
+    val s = hex.removePrefix("#")
+    return Color(("FF$s").toLong(16))
 }
 
 // ── Item grid ───────────────────────────────────────────────────────────────────

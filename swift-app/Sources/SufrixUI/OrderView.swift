@@ -174,14 +174,14 @@ struct OrderView: View {
         if wide {
             // Tablet/desktop: a vertical category rail beside the search + grid.
             HStack(spacing: 0) {
-                CategoryRail(categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
+                CategoryRail(app: app, categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
                 Rectangle().fill(theme.colors.borderLight).frame(width: 1)
                 VStack(spacing: 0) { searchAndGrid }
             }
         } else {
             // Phone: a horizontal underline-tab strip above the search + grid.
             VStack(spacing: 0) {
-                CategoryTabs(categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
+                CategoryTabs(app: app, categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
                 searchAndGrid
             }
         }
@@ -436,6 +436,7 @@ private struct MoreDrawer: View {
 
 /// Phone: a horizontal underline-tab strip (the Flutter CategoryStrip).
 private struct CategoryTabs: View {
+    @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     let categories: [CategoryView]
@@ -445,10 +446,10 @@ private struct CategoryTabs: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Space.lg) {
-                tab(t("order.all"), id: nil)
-                if showCombos { tab(t("order.combos"), id: kCombosCategory) }
+                tab(t("order.all"), id: nil, icon: "square.grid.2x2.fill")
+                if showCombos { tab(t("order.combos"), id: kCombosCategory, icon: "square.stack.3d.up.fill") }
                 ForEach(categories.filter { $0.isActive }, id: \.id) { c in
-                    tab(c.name, id: c.id)
+                    tab(c.name, id: c.id, icon: catSymbol(app.core.categoryStyle(name: c.name, dark: theme.isDark).icon))
                 }
             }
             .padding(.horizontal, Space.lg)
@@ -458,7 +459,7 @@ private struct CategoryTabs: View {
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
 
-    private func tab(_ label: String, id: String?) -> some View {
+    private func tab(_ label: String, id: String?, icon: String) -> some View {
         let active = selected == id
         return Button {
             Haptics.selection()
@@ -466,9 +467,11 @@ private struct CategoryTabs: View {
         } label: {
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
-                Text(label)
-                    .font(.ui(13, active ? .bold : .medium))
-                    .foregroundStyle(active ? theme.colors.accent : theme.colors.textMuted)
+                HStack(spacing: 5) {
+                    Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+                    Text(label).font(.ui(13, active ? .bold : .medium))
+                }
+                .foregroundStyle(active ? theme.colors.accent : theme.colors.textMuted)
                 Spacer(minLength: 0)
                 Rectangle()
                     .fill(active ? theme.colors.accent : Color.clear)
@@ -481,8 +484,10 @@ private struct CategoryTabs: View {
     }
 }
 
-/// Tablet/desktop: a 94pt vertical category rail (the Flutter CategoryRail).
+/// Tablet/desktop: a 94pt vertical category rail (the Flutter CategoryRail). Each
+/// tile carries a category-styled gradient icon badge above its label.
 private struct CategoryRail: View {
+    @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     let categories: [CategoryView]
@@ -492,10 +497,10 @@ private struct CategoryRail: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 3) {
-                tile(t("order.all"), id: nil)
-                if showCombos { tile(t("order.combos"), id: kCombosCategory) }
+                tile(t("order.all"), id: nil, style: nil, fallbackIcon: "square.grid.2x2.fill")
+                if showCombos { tile(t("order.combos"), id: kCombosCategory, style: nil, fallbackIcon: "square.stack.3d.up.fill") }
                 ForEach(categories.filter { $0.isActive }, id: \.id) { c in
-                    tile(c.name, id: c.id)
+                    tile(c.name, id: c.id, style: app.core.categoryStyle(name: c.name, dark: theme.isDark), fallbackIcon: nil)
                 }
             }
             .padding(.vertical, Space.sm)
@@ -504,22 +509,38 @@ private struct CategoryRail: View {
         .background(theme.colors.surface)
     }
 
-    private func tile(_ label: String, id: String?) -> some View {
+    private func tile(_ label: String, id: String?, style: CatStyleView?, fallbackIcon: String?) -> some View {
         let active = selected == id
+        let symbol = style.map { catSymbol($0.icon) } ?? (fallbackIcon ?? "tag.fill")
         return Button {
             Haptics.selection()
             selected = id
         } label: {
-            Text(label)
-                .font(.ui(10, active ? .bold : .medium))
-                .foregroundStyle(active ? theme.colors.accent : theme.colors.textSecondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Space.md)
-                .padding(.horizontal, Space.xs)
-                .background(active ? theme.colors.accentBg : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            VStack(spacing: 5) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: style.map { [Color(hex: $0.bgTop), Color(hex: $0.bgBottom)] } ?? [theme.colors.accentBg, theme.colors.accentBg],
+                            startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Image(systemName: symbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(style.map { Color(hex: $0.iconColor) } ?? theme.colors.accent)
+                }
+                .frame(width: 38, height: 38)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(active ? theme.colors.accent : Color.clear, lineWidth: 2))
+                Text(label)
+                    .font(.ui(10, active ? .bold : .medium))
+                    .foregroundStyle(active ? theme.colors.accent : theme.colors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Space.sm)
+            .padding(.horizontal, Space.xs)
+            .background(active ? theme.colors.accentBg : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
         .buttonStyle(.pressable(scale: 0.95))
         .padding(.horizontal, Space.sm)

@@ -38,6 +38,8 @@ pub mod receipt;
 /// Local recipe preview — effective ingredients for a configured item (parity
 /// with Flutter's `computeRecipeLocally`).
 pub mod recipe;
+/// Category styling (icon + gradient palette) — port of Flutter's `CatStyle`.
+pub mod catstyle;
 /// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
 pub mod net;
 /// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
@@ -531,6 +533,13 @@ impl SufrixCore {
 // ── catalog reads (sync; serve the local mirror, always succeed offline) ─────
 #[uniffi::export]
 impl SufrixCore {
+    /// Themed style (icon key + gradient palette) for a category/item name —
+    /// the host maps `icon` to a glyph and paints the gradient. Pure; mirrors
+    /// Flutter's `CatStyle.of`. `dark` picks the dark-mode palette.
+    pub fn category_style(&self, name: String, dark: bool) -> catstyle::CatStyleView {
+        catstyle::category_style(&name, dark)
+    }
+
     pub fn list_menu_items(&self) -> Result<Vec<menu::MenuItemView>, CoreError> {
         menu::menu_items(&self.store, &self.current_locale())
     }

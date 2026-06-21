@@ -155,7 +155,35 @@ private func categoryHueSat(_ raw: String) -> (Double, Double) {
     return (Double(hash % 360), 0.42)
 }
 
+/// Map a core `CatStyleView.icon` key to an SF Symbol. Keys come from
+/// `category_style` in the core (the single source of truth for the mapping).
+func catSymbol(_ key: String) -> String {
+    switch key {
+    case "coffee", "mocha", "tea", "cafe": return "cup.and.saucer.fill"
+    case "bakery": return "birthday.cake.fill"
+    case "lunch": return "fork.knife"
+    case "icecream": return "snowflake"
+    case "drink": return "drop.fill"
+    case "water": return "drop.fill"
+    case "ice": return "snowflake"
+    case "matcha": return "leaf.fill"
+    default: return "cup.and.saucer.fill"
+    }
+}
+
 extension Color {
+    /// `#RRGGBB` → Color. Pairs with the core's `CatStyleView` hex palette.
+    init(hex: String) {
+        let s = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        var v: UInt64 = 0
+        Scanner(string: s).scanHexInt64(&v)
+        self.init(
+            red: Double((v >> 16) & 0xFF) / 255,
+            green: Double((v >> 8) & 0xFF) / 255,
+            blue: Double(v & 0xFF) / 255
+        )
+    }
+
     /// HSL → Color (h in degrees 0–360, s/l in 0–1). Matches Compose's
     /// `Color.hsl`, so the two hosts render identical category palettes.
     init(h: Double, s: Double, l: Double) {
