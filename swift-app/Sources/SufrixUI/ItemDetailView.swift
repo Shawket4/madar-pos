@@ -45,11 +45,19 @@ struct ItemDetailView: View {
     /// Global types shown by default; "show all" expands to EVERY catalog type.
     private let baseTypes = ["milk_type", "coffee_type", "extra"]
 
+    /// Default view shows only the item's allowed addons (the dashboard model);
+    /// "show all" drops the allowlist filter to reveal the full catalog.
+    private func visibleAddons(_ all: [ItemAddonView]) -> [ItemAddonView] {
+        let allowed = Set(item.allowedAddonIds)
+        if showAll || allowed.isEmpty { return all }
+        return all.filter { allowed.contains($0.addonItemId) }
+    }
+
     private var groups: [Group] {
         var out: [Group] = []
         let slotTypes = Set(item.addonSlots.map { $0.addonType })
         for s in item.addonSlots {
-            let addons = addonsByType[s.addonType] ?? []
+            let addons = visibleAddons(addonsByType[s.addonType] ?? [])
             if addons.isEmpty { continue }
             let isMulti = (s.maxSelections.map { Int($0) } ?? 2) > 1
             out.append(Group(id: s.id, title: s.label ?? typeLabel(s.addonType), addons: addons,
@@ -63,7 +71,7 @@ struct ItemDetailView: View {
             extraTypes += rest
         }
         for type in extraTypes where !slotTypes.contains(type) {
-            let addons = addonsByType[type] ?? []
+            let addons = visibleAddons(addonsByType[type] ?? [])
             if addons.isEmpty { continue }
             out.append(Group(id: "type:\(type)", title: typeLabel(type), addons: addons,
                              isMulti: type != "milk_type", maxSel: nil, isRequired: false, minSel: 0))
@@ -71,8 +79,10 @@ struct ItemDetailView: View {
         return out
     }
 
-    /// True when "show all" would reveal addon types not already on screen.
+    /// True when "show all" would reveal more than the default view: a per-item
+    /// allowlist is hiding addons, or there are addon types not on screen.
     private var hasHiddenAddonTypes: Bool {
+        if !item.allowedAddonIds.isEmpty { return true }
         let slotTypes = Set(item.addonSlots.map { $0.addonType })
         return addonsByType.keys.contains { !slotTypes.contains($0) && !baseTypes.contains($0) }
     }
@@ -150,6 +160,7 @@ struct ItemDetailView: View {
                         ForEach(groups) { groupCard($0) }
                         if showAll || hasHiddenAddonTypes { showAllToggle }
                         if !item.optionalFields.isEmpty { optionalsSection }
+                        if !visibleRecipes.isEmpty { recipeSection }
                     }
                     .frame(maxWidth: 560)
                     .frame(maxWidth: .infinity)
@@ -211,6 +222,41 @@ struct ItemDetailView: View {
         .padding(.vertical, Space.md)
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    /// The recipe lines for the current size (size-specific + size-agnostic).
+    private var visibleRecipes: [RecipeLineView] {
+        item.recipes.filter { $0.sizeLabel == nil || $0.sizeLabel == size }
+    }
+
+    private var recipeSection: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            sectionTitle(t("order.recipe"))
+            VStack(spacing: 0) {
+                let lines = visibleRecipes
+                ForEach(Array(lines.enumerated()), id: \.offset) { idx, r in
+                    HStack {
+                        Text(r.ingredientName).font(.ui(13)).foregroundStyle(theme.colors.textPrimary)
+                        Spacer(minLength: Space.sm)
+                        Text("\(fmtQty(r.quantity)) \(r.unit)")
+                            .font(.money(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
+                    }
+                    .padding(.vertical, 9)
+                    if idx < lines.count - 1 { Rectangle().fill(theme.colors.borderLight).frame(height: 1) }
+                }
+            }
+            .padding(.horizontal, Space.md)
+            .background(theme.colors.surface)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                    .strokeBorder(theme.colors.border, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        }
+    }
+
+    private func fmtQty(_ q: Double) -> String {
+        q == q.rounded() ? String(Int(q)) : String(format: "%g", q)
     }
 
     private var showAllToggle: some View {

@@ -113,11 +113,16 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     val addonsByType = model.itemAddons.groupBy { it.addonType }
     val slotTypes = item.addonSlots.map { it.addonType }.toSet()
     val baseTypes = listOf("milk_type", "coffee_type", "extra")
-    // "Show all" reveals every catalog type not already on screen.
-    val hasHiddenAddonTypes = addonsByType.keys.any { it !in slotTypes && it !in baseTypes }
+    val allowed = item.allowedAddonIds.toSet()
+    // Default view shows only the item's allowed addons (the dashboard model);
+    // "show all" drops the allowlist filter to reveal the full catalog.
+    fun visibleAddons(all: List<ItemAddonView>) =
+        if (showAll || allowed.isEmpty()) all else all.filter { it.addonItemId in allowed }
+    // "Show all" reveals more: a per-item allowlist hides addons, or a type is off-screen.
+    val hasHiddenAddonTypes = allowed.isNotEmpty() || addonsByType.keys.any { it !in slotTypes && it !in baseTypes }
     val groups = buildList {
         item.addonSlots.forEach { s ->
-            val addons = addonsByType[s.addonType] ?: emptyList()
+            val addons = visibleAddons(addonsByType[s.addonType] ?: emptyList())
             if (addons.isEmpty()) return@forEach
             val isMulti = (s.maxSelections?.toInt() ?: 2) > 1
             add(Group(s.id, s.label ?: typeLabel(s.addonType), addons, isMulti, s.maxSelections?.toInt(), s.isRequired, s.minSelections.toInt()))
@@ -125,7 +130,7 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
         val extraTypes = if (showAll) baseTypes + addonsByType.keys.filter { it !in baseTypes }.sorted() else baseTypes
         extraTypes.forEach { type ->
             if (type in slotTypes) return@forEach
-            val addons = addonsByType[type] ?: emptyList()
+            val addons = visibleAddons(addonsByType[type] ?: emptyList())
             if (addons.isEmpty()) return@forEach
             add(Group("type:$type", typeLabel(type), addons, type != "milk_type", null, false, 0))
         }
@@ -238,6 +243,29 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                     }
                 }
             }
+            // Recipe lines for the current size (size-specific + size-agnostic).
+            val recipeLines = item.recipes.filter { it.sizeLabel == null || it.sizeLabel == size }
+            if (recipeLines.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    SectionTitle(t("order.recipe"))
+                    Card {
+                        recipeLines.forEachIndexed { i, r ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(r.ingredientName, color = c.textPrimary, fontFamily = SufrixFont, fontSize = 13.sp)
+                                Box(Modifier.weight(1f))
+                                Text(
+                                    "${fmtQty(r.quantity)} ${r.unit}", color = c.textSecondary,
+                                    fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                                )
+                            }
+                            if (i < recipeLines.size - 1) Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
+                        }
+                    }
+                }
+            }
         }
 
         // ── Footer ──────────────────────────────────────────────────────────────
@@ -328,6 +356,10 @@ private fun CheckRow(name: String, price: String?, on: Boolean, onToggle: () -> 
         price?.let { Text(it, color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
     }
 }
+
+/** Recipe quantity: whole numbers without a decimal, else the shortest form. */
+private fun fmtQty(q: Double): String =
+    if (q == q.toLong().toDouble()) q.toLong().toString() else q.toString()
 
 @Composable
 private fun Card(content: @Composable () -> Unit) {
