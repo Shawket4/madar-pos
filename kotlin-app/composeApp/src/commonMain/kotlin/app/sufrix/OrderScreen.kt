@@ -227,6 +227,11 @@ fun OrderScreen(model: AppModel) {
             DraftsScreen(model)
         }
 
+        // Delivery queue — full-screen over the order screen.
+        if (model.showDelivery) {
+            DeliveryScreen(model)
+        }
+
         // Settings — full-screen over the order screen.
         if (model.showSettings) {
             SettingsScreen(model)
@@ -284,6 +289,9 @@ private fun MoreDrawer(model: AppModel, modifier: Modifier = Modifier) {
             }
             MoreRow("⤓", t("drafts.title"), c.textPrimary) {
                 model.showMore = false; model.loadDrafts(); model.showDrafts = true
+            }
+            MoreRow("🛵", t("delivery.title"), c.textPrimary) {
+                model.showMore = false; model.error = null; model.showDelivery = true
             }
             MoreRow("🔒", t("order.close_shift"), c.danger) {
                 model.showMore = false; model.error = null; model.showCloseShift = true

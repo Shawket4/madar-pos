@@ -17,6 +17,7 @@ import app.sufrix.core.CategoryView
 import app.sufrix.core.ComputedRecipeLineView
 import app.sufrix.core.CoreException
 import app.sufrix.core.DiscountView
+import app.sufrix.core.DeliveryOrderView
 import app.sufrix.core.DraftView
 import app.sufrix.core.ItemAddonView
 import app.sufrix.core.LoginMode
@@ -637,6 +638,59 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun discardDraft(id: String) {
         runCatching { core.discardDraft(id) }
         loadDrafts()
+    }
+
+    // ── delivery orders (online; teller works the live branch queue) ──────────────
+    var showDelivery by mutableStateOf(false)
+    var deliveryOrders by mutableStateOf<List<DeliveryOrderView>>(emptyList())
+        private set
+    var isLoadingDelivery by mutableStateOf(false)
+        private set
+    var deliveryActiveOnly by mutableStateOf(true)
+
+    private val activeStatusFilter = "received,confirmed,preparing,ready,out_for_delivery"
+
+    /** The branch delivery queue (online). Active-only by default. */
+    suspend fun loadDeliveryOrders() {
+        isLoadingDelivery = true
+        try {
+            val status = if (deliveryActiveOnly) activeStatusFilter else null
+            deliveryOrders = core.listDeliveryOrders(status)
+        } catch (e: CoreException) {
+            error = humanMessage(e)
+        } finally {
+            isLoadingDelivery = false
+        }
+    }
+    /** Advance one lifecycle step (Confirm → Preparing → … → Delivered). */
+    suspend fun advanceDelivery(o: DeliveryOrderView) {
+        isBusy = true; error = null
+        try { core.deliveryAdvanceStatus(o.id, o.status); loadDeliveryOrders() }
+        catch (e: CoreException) { error = humanMessage(e) }
+        finally { isBusy = false }
+    }
+    /** Add extra prep time (multiples of 5). */
+    suspend fun addDeliveryPrep(o: DeliveryOrderView, minutes: Int = 5) {
+        try { core.deliverySetPrepTime(o.id, minutes); loadDeliveryOrders() }
+        catch (e: CoreException) { error = humanMessage(e) }
+    }
+    /** Cancel a delivery order (optionally restocking ingredients). */
+    suspend fun cancelDelivery(o: DeliveryOrderView, reason: String?, restoreInventory: Boolean): Boolean {
+        isBusy = true; error = null
+        return try { core.deliveryCancel(o.id, reason, restoreInventory); loadDeliveryOrders(); true }
+        catch (e: CoreException) { error = humanMessage(e); false }
+        finally { isBusy = false }
+    }
+    /** Finalize into a real sale on the open shift, charged to a payment method. */
+    suspend fun finalizeDelivery(o: DeliveryOrderView, paymentMethodId: String): Boolean {
+        isBusy = true; error = null
+        return try {
+            val res = core.deliveryFinalize(o.id, paymentMethodId)
+            loadDeliveryOrders()
+            showToast(t("delivery.finalized") + (res.orderRef?.let { " · $it" } ?: ""), ChipTone.SUCCESS)
+            true
+        } catch (e: CoreException) { error = humanMessage(e); false }
+        finally { isBusy = false }
     }
 
     // ── item customization ───────────────────────────────────────────────────────
