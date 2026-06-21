@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import app.sufrix.core.DiscountView
 import app.sufrix.core.CheckoutSplit
 import app.sufrix.core.PaymentMethodView
+import app.sufrix.core.ReceiptLineView
+import app.sufrix.core.ReceiptModifierView
 import app.sufrix.core.ReceiptView
 import app.sufrix.ui.AmountField
 import app.sufrix.ui.ChipTone
@@ -274,13 +276,7 @@ private fun ReceiptConfirmation(model: AppModel, receipt: ReceiptView, currency:
                 .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            receipt.lines.forEach { line ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${line.qty}× ${line.name}", color = c.textSecondary, fontFamily = SufrixFont, fontSize = 14.sp)
-                    Box(Modifier.weight(1f))
-                    Text(Money.format(line.lineTotalMinor, currency), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                }
-            }
+            receipt.lines.forEach { line -> ReceiptLineRow(line, currency) }
         }
 
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -289,6 +285,9 @@ private fun ReceiptConfirmation(model: AppModel, receipt: ReceiptView, currency:
                 SummaryRow(t("order.discount"), "−${Money.format(receipt.discountMinor, currency)}")
             }
             SummaryRow(t("order.tax"), Money.format(receipt.taxMinor, currency))
+            if (receipt.deliveryFeeMinor > 0) {
+                SummaryRow(t("receipt.delivery_fee"), Money.format(receipt.deliveryFeeMinor, currency))
+            }
             SummaryRow(t("order.total"), Money.format(receipt.totalMinor, currency), emphasized = true)
             if (receipt.tipMinor > 0) SummaryRow(t("order.tip"), Money.format(receipt.tipMinor, currency))
             if (receipt.isCash) {
@@ -315,6 +314,45 @@ private fun ReceiptConfirmation(model: AppModel, receipt: ReceiptView, currency:
 
 private fun discountLabel(d: DiscountView): String =
     if (d.dtype == "percentage") "${d.name} ${d.value}%" else d.name
+
+private fun receiptName(base: String, size: String?): String =
+    if (!size.isNullOrEmpty()) "$base ($size)" else base
+
+/** One receipt line with its modifier / bundle breakdown — the on-screen mirror
+ *  of the printed item block. */
+@Composable
+private fun ReceiptLineRow(line: ReceiptLineView, currency: String) {
+    val c = sufrixColors()
+
+    @Composable
+    fun modifier(prefix: String, m: ReceiptModifierView) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("$prefix${m.name}", color = c.textMuted, fontFamily = SufrixFont, fontSize = 12.sp)
+            Box(Modifier.weight(1f))
+            if (m.priceMinor > 0) {
+                Text("+${Money.format(m.priceMinor, currency)}", color = c.textMuted, fontFamily = SufrixFont, fontSize = 12.sp)
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${line.qty}× ${receiptName(line.name, line.sizeLabel)}", color = c.textSecondary, fontFamily = SufrixFont, fontSize = 14.sp)
+            Box(Modifier.weight(1f))
+            Text(Money.format(line.lineTotalMinor, currency), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        }
+        if (line.isBundle) {
+            line.components.forEach { comp ->
+                Text("– ${receiptName(comp.name, comp.sizeLabel)}", color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                comp.addons.forEach { modifier("   + ", it) }
+                comp.optionals.forEach { modifier("   + ", it) }
+            }
+        } else {
+            line.addons.forEach { modifier(" + ", it) }
+            line.optionals.forEach { modifier(" + ", it) }
+        }
+    }
+}
 
 @Composable
 private fun SummaryRow(label: String, value: String, emphasized: Boolean = false) {

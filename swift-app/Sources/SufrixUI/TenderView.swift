@@ -263,13 +263,7 @@ private struct ReceiptConfirmation: View {
 
                 VStack(spacing: Space.sm) {
                     ForEach(Array(receipt.lines.enumerated()), id: \.offset) { _, line in
-                        HStack {
-                            Text("\(line.qty)× \(line.name)")
-                                .font(.ui(14, .medium)).foregroundStyle(theme.colors.textSecondary)
-                            Spacer()
-                            Text(Money.format(line.lineTotalMinor, currency))
-                                .font(.money(14, .semibold)).foregroundStyle(theme.colors.textPrimary)
-                        }
+                        ReceiptLineRow(line: line, currency: currency)
                     }
                 }
                 .padding(Space.lg)
@@ -286,6 +280,9 @@ private struct ReceiptConfirmation: View {
                         SummaryRow(label: t("order.discount"), value: "−\(Money.format(receipt.discountMinor, currency))")
                     }
                     SummaryRow(label: t("order.tax"), value: Money.format(receipt.taxMinor, currency))
+                    if receipt.deliveryFeeMinor > 0 {
+                        SummaryRow(label: t("receipt.delivery_fee"), value: Money.format(receipt.deliveryFeeMinor, currency))
+                    }
                     SummaryRow(label: t("order.total"), value: Money.format(receipt.totalMinor, currency), emphasized: true)
                     if receipt.tipMinor > 0 {
                         SummaryRow(label: t("order.tip"), value: Money.format(receipt.tipMinor, currency))
@@ -344,6 +341,52 @@ private struct SummaryRow: View {
             Text(value)
                 .font(.money(emphasized ? 18 : 14, emphasized ? .heavy : .semibold))
                 .foregroundStyle(emphasized ? theme.colors.textPrimary : theme.colors.textSecondary)
+        }
+    }
+}
+
+/// One receipt line with its modifier / bundle breakdown — the on-screen mirror
+/// of the printed item block.
+private struct ReceiptLineRow: View {
+    @Environment(\.theme) private var theme
+    let line: ReceiptLineView
+    let currency: String
+
+    private func name(_ base: String, _ size: String?) -> String {
+        if let s = size, !s.isEmpty { return "\(base) (\(s))" }
+        return base
+    }
+
+    private func modifier(_ prefix: String, _ m: ReceiptModifierView) -> some View {
+        HStack(spacing: 4) {
+            Text("\(prefix)\(m.name)").font(.ui(12)).foregroundStyle(theme.colors.textMuted)
+            Spacer(minLength: 0)
+            if m.priceMinor > 0 {
+                Text("+\(Money.format(m.priceMinor, currency))")
+                    .font(.money(12)).foregroundStyle(theme.colors.textMuted)
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("\(line.qty)× \(name(line.name, line.sizeLabel))")
+                    .font(.ui(14, .medium)).foregroundStyle(theme.colors.textSecondary)
+                Spacer()
+                Text(Money.format(line.lineTotalMinor, currency))
+                    .font(.money(14, .semibold)).foregroundStyle(theme.colors.textPrimary)
+            }
+            if line.isBundle {
+                ForEach(Array(line.components.enumerated()), id: \.offset) { _, c in
+                    Text("– \(name(c.name, c.sizeLabel))").font(.ui(12, .medium)).foregroundStyle(theme.colors.textSecondary)
+                    ForEach(Array(c.addons.enumerated()), id: \.offset) { _, a in modifier("   + ", a) }
+                    ForEach(Array(c.optionals.enumerated()), id: \.offset) { _, o in modifier("   + ", o) }
+                }
+            } else {
+                ForEach(Array(line.addons.enumerated()), id: \.offset) { _, a in modifier(" + ", a) }
+                ForEach(Array(line.optionals.enumerated()), id: \.offset) { _, o in modifier(" + ", o) }
+            }
         }
     }
 }
