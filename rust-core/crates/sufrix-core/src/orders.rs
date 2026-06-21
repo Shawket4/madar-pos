@@ -380,7 +380,7 @@ mod tests {
                 idempotency_key: id.into(),
                 payload: serde_json::to_string(&cmd).unwrap(),
                 event_at: "2026-06-20T12:00:00+00:00".into(),
-                depends_on_seq: None,
+                ..Default::default()
             })
             .unwrap();
     }
@@ -435,7 +435,7 @@ mod tests {
                 idempotency_key: "srv-order-1:void".into(),
                 payload: serde_json::to_string(&cmd).unwrap(),
                 event_at: "2026-06-20T12:00:00+00:00".into(),
-                depends_on_seq: None,
+                ..Default::default()
             })
             .unwrap();
 
