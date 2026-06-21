@@ -68,6 +68,7 @@ import app.sufrix.ui.StatusChip
 import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixMark
+import app.sufrix.ui.disclosureGlyph
 import app.sufrix.ui.pressScale
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
@@ -256,7 +257,7 @@ private fun MoreRow(glyph: String, label: String, tone: Color, onClick: () -> Un
         Text(glyph, color = tone, fontSize = 15.sp)
         Text(label, color = tone, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
         Box(Modifier.weight(1f))
-        Text("›", color = c.textMuted, fontSize = 15.sp)
+        Text(disclosureGlyph(), color = c.textMuted, fontSize = 15.sp)
     }
 }
 
@@ -386,7 +387,7 @@ private fun CatalogColumn(
             CategoryTabs(categories, selectedCategory, onSelect)
             SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, onAdd)
+                ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
             }
         }
     }

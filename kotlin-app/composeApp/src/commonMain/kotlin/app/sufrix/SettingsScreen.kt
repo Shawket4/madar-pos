@@ -35,6 +35,8 @@ import app.sufrix.ui.SufrixButton
 import app.sufrix.ui.SufrixFont
 import app.sufrix.ui.SufrixTextField
 import app.sufrix.ui.ThemeMode
+import app.sufrix.ui.backGlyph
+import app.sufrix.ui.disclosureGlyph
 import app.sufrix.ui.sufrixColors
 import app.sufrix.ui.t
 
@@ -51,7 +53,7 @@ fun SettingsScreen(model: AppModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
             ) {
-                Text("‹", color = c.textPrimary, fontSize = 26.sp, modifier = Modifier.clickable { model.showSettings = false })
+                Text(backGlyph(), color = c.textPrimary, fontSize = 26.sp, modifier = Modifier.clickable { model.showSettings = false })
                 Text(t("settings.title"), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 17.sp)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
@@ -84,7 +86,7 @@ fun SettingsScreen(model: AppModel) {
                         Modifier.fillMaxWidth().clickable {
                             // Re-provisioning is only allowed with a closed drawer.
                             if (model.hasOpenShift) {
-                                model.flagError(t("settings.reconfigure_shift_open"))
+                                model.flagError(model.t("settings.reconfigure_shift_open"))
                             } else {
                                 model.beginReconfigure(); model.showSettings = false
                             }
@@ -93,7 +95,7 @@ fun SettingsScreen(model: AppModel) {
                     ) {
                         Text(t("settings.reconfigure"), color = c.textPrimary, fontFamily = SufrixFont, fontSize = 14.sp)
                         Box(Modifier.weight(1f))
-                        Text("›", color = c.textMuted, fontSize = 18.sp)
+                        Text(disclosureGlyph(), color = c.textMuted, fontSize = 18.sp)
                     }
                 }
                 Card(t("settings.diagnostics")) {
@@ -106,7 +108,7 @@ fun SettingsScreen(model: AppModel) {
                     {
                         // Sign-out (→ login) requires a closed drawer first.
                         if (model.hasOpenShift) {
-                            model.flagError(t("settings.sign_out_shift_open"))
+                            model.flagError(model.t("settings.sign_out_shift_open"))
                         } else {
                             model.signOut(); model.showSettings = false
                         }
