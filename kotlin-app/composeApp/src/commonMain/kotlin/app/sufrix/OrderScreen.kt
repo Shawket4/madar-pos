@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -283,7 +284,7 @@ private fun CatalogColumn(
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, onAdd)
+                    ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
                 }
             }
         }
@@ -382,9 +383,14 @@ private fun ItemGridOrEmpty(
     searching: Boolean,
     categoryName: (String?) -> String,
     cartQty: (String) -> Long,
+    gridKey: String?,
     onAdd: (MenuItemView) -> Unit,
 ) {
     val c = sufrixColors()
+    // One scroll state per category — switching back restores the scroll position
+    // (and the data never reloads; it's an in-memory filter).
+    val scrollStates = remember { mutableMapOf<String?, LazyGridState>() }
+    val gridState = scrollStates.getOrPut(gridKey) { LazyGridState() }
     if (items.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
@@ -398,6 +404,7 @@ private fun ItemGridOrEmpty(
     } else {
         LazyVerticalGrid(
             columns = MaxExtentCells(200.dp),
+            state = gridState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(Space.lg),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -475,7 +482,7 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
                 items(model.cartLines, key = { it.key }) { line ->
-                    val onEdit: (() -> Unit)? = if (line.key != line.itemId) { { model.editCartLine(line) } } else null
+                    val onEdit: (() -> Unit)? = { model.editCartLine(line) }
                     CartLineRow(
                         line, currency,
                         onDec = { model.setCartQty(line.key, line.qty - 1) },

@@ -440,7 +440,8 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     }
     /** Re-open the sheet for a configured cart line so the teller can change it. */
     fun editCartLine(line: CartLineView) {
-        if (line.key == line.itemId) return
+        // Any cart line is editable — reopens the customization sheet seeded from
+        // the line; addConfigured removes the old line (by its key) and re-adds.
         val item = menuItems.firstOrNull { it.id == line.itemId } ?: return
         openItemDetail(item, line.key, line)
     }

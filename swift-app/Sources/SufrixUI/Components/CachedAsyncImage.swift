@@ -37,6 +37,13 @@ final class ImageStore: @unchecked Sendable {
         return String(h, radix: 16)
     }
 
+    /// A fast, main-thread-safe memory-only hit (no disk I/O) — used to paint a
+    /// cached photo on the very first frame, avoiding a gradient flash when a
+    /// card re-mounts (e.g. switching categories).
+    func memoryHit(_ url: URL) -> PlatformImage? {
+        memory.object(forKey: key(url) as NSString)
+    }
+
     /// A synchronous hit from memory or disk (nil = needs fetching).
     func cached(_ url: URL) -> PlatformImage? {
         let k = key(url) as NSString
@@ -67,6 +74,13 @@ struct CachedAsyncImage: View {
     let url: URL
     @State private var image: PlatformImage?
 
+    init(url: URL) {
+        self.url = url
+        // Seed from the memory cache so a re-mounted card paints the photo on the
+        // first frame (no gradient blink when switching categories / scrolling).
+        _image = State(initialValue: ImageStore.shared.memoryHit(url))
+    }
+
     var body: some View {
         Group {
             if let image {
@@ -76,6 +90,7 @@ struct CachedAsyncImage: View {
             }
         }
         .task(id: url) {
+            if image != nil { return }
             if let hit = ImageStore.shared.cached(url) { image = hit; return }
             image = await ImageStore.shared.load(url)
         }

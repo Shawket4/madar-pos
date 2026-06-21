@@ -395,7 +395,9 @@ final class AppModel: ObservableObject {
     }
     /// Re-open the sheet for a configured cart line so the teller can change it.
     func editCartLine(_ line: CartLineView) {
-        guard line.key != line.itemId, let item = menuItems.first(where: { $0.id == line.itemId }) else { return }
+        // Any cart line is editable — reopens the customization sheet seeded from
+        // the line; addConfigured removes the old line (by its key) and re-adds.
+        guard let item = menuItems.first(where: { $0.id == line.itemId }) else { return }
         openItemDetail(item, editKey: line.key, editLine: line)
     }
     func closeItemDetail() { detailItem = nil; detailEditKey = nil; detailEditLine = nil }

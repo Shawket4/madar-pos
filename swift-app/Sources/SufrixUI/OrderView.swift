@@ -460,7 +460,7 @@ private struct CartPanel: View {
                                 line: line, currency: currency,
                                 onDec: { app.setCartQty(line.key, line.qty - 1) },
                                 onInc: { app.setCartQty(line.key, line.qty + 1) },
-                                onEdit: line.key != line.itemId ? { app.editCartLine(line) } : nil
+                                onEdit: { app.editCartLine(line) }
                             )
                         }
                     }
