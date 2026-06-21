@@ -6,6 +6,11 @@
 // opens a sheet. Tender lands in the next phase.
 import SwiftUI
 
+/// Synthetic category id for the Combos tab (bundles aren't a real category).
+private let kCombosCategory = "__combos__"
+
+extension BundleView: Identifiable {}
+
 struct OrderView: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
@@ -118,6 +123,12 @@ struct OrderView: View {
                 MoreDrawer(app: app)
                     .modalChrome(app, theme, t)
             }
+            // Bundle (combo) configuration.
+            .sheet(item: $app.detailBundle) { bundle in
+                BundleDetailView(app: app, bundle: bundle, onClose: { app.closeBundleDetail() })
+                    .frame(minWidth: 640, minHeight: 640)
+                    .modalChrome(app, theme, t)
+            }
         }
         .task {
             await app.reconcileShift()
@@ -131,30 +142,45 @@ struct OrderView: View {
         if wide {
             // Tablet/desktop: a vertical category rail beside the search + grid.
             HStack(spacing: 0) {
-                CategoryRail(categories: app.categories, selected: $selectedCategory)
+                CategoryRail(categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
                 Rectangle().fill(theme.colors.borderLight).frame(width: 1)
                 VStack(spacing: 0) { searchAndGrid }
             }
         } else {
             // Phone: a horizontal underline-tab strip above the search + grid.
             VStack(spacing: 0) {
-                CategoryTabs(categories: app.categories, selected: $selectedCategory)
+                CategoryTabs(categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
                 searchAndGrid
             }
         }
     }
 
     @ViewBuilder private var searchAndGrid: some View {
-        SearchField(text: $search, placeholder: t("order.search"))
-            .padding(.horizontal, Space.lg)
-            .padding(.top, Space.sm)
-            .padding(.bottom, Space.sm)
-        ItemGridOrEmpty(
-            items: visibleItems, currency: currency, searching: !search.isEmpty,
-            categoryName: { id in app.categories.first { $0.id == id }?.name ?? "" },
-            cartQty: { itemId in app.cartQtyForItem(itemId) },
-            onAdd: { item in app.openItemDetail(item) }
-        )
+        if selectedCategory == kCombosCategory {
+            bundleGrid
+        } else {
+            SearchField(text: $search, placeholder: t("order.search"))
+                .padding(.horizontal, Space.lg)
+                .padding(.top, Space.sm)
+                .padding(.bottom, Space.sm)
+            ItemGridOrEmpty(
+                items: visibleItems, currency: currency, searching: !search.isEmpty,
+                categoryName: { id in app.categories.first { $0.id == id }?.name ?? "" },
+                cartQty: { itemId in app.cartQtyForItem(itemId) },
+                onAdd: { item in app.openItemDetail(item) }
+            )
+        }
+    }
+
+    private var bundleGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 14)], spacing: 14) {
+                ForEach(app.bundles, id: \.id) { b in
+                    BundleCard(bundle: b, currency: currency) { app.openBundleDetail(b) }
+                }
+            }
+            .padding(Space.lg)
+        }
     }
 }
 
@@ -373,11 +399,13 @@ private struct CategoryTabs: View {
     @Environment(\.localize) private var t
     let categories: [CategoryView]
     @Binding var selected: String?
+    var showCombos: Bool = false
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Space.lg) {
                 tab(t("order.all"), id: nil)
+                if showCombos { tab(t("order.combos"), id: kCombosCategory) }
                 ForEach(categories.filter { $0.isActive }, id: \.id) { c in
                     tab(c.name, id: c.id)
                 }
@@ -418,11 +446,13 @@ private struct CategoryRail: View {
     @Environment(\.localize) private var t
     let categories: [CategoryView]
     @Binding var selected: String?
+    var showCombos: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 3) {
                 tile(t("order.all"), id: nil)
+                if showCombos { tile(t("order.combos"), id: kCombosCategory) }
                 ForEach(categories.filter { $0.isActive }, id: \.id) { c in
                     tile(c.name, id: c.id)
                 }
@@ -590,7 +620,9 @@ private struct CartPanel: View {
                                 line: line, currency: currency,
                                 onDec: { app.setCartQty(line.key, line.qty - 1) },
                                 onInc: { app.setCartQty(line.key, line.qty + 1) },
-                                onEdit: { app.editCartLine(line) }
+                                // Bundles aren't re-editable in place (reconfigure by
+                                // removing + re-adding); only plain lines reopen the sheet.
+                                onEdit: line.bundleId == nil ? { app.editCartLine(line) } : nil
                             )
                         }
                     }
@@ -605,12 +637,14 @@ private struct CartPanel: View {
 
 private struct CartLineRow: View {
     @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
     let line: CartLineView
     let currency: String
     let onDec: () -> Void
     let onInc: () -> Void
     var onEdit: (() -> Void)? = nil
 
+    private var isBundle: Bool { line.bundleId != nil }
     private var hasModifiers: Bool {
         line.sizeLabel != nil || !line.addons.isEmpty || !line.optionals.isEmpty
     }
@@ -618,9 +652,12 @@ private struct CartLineRow: View {
     var body: some View {
         HStack(spacing: Space.md) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(line.name).font(.ui(14, .semibold))
-                    .foregroundStyle(theme.colors.textPrimary).lineLimit(1)
-                if hasModifiers { modifierPills }
+                HStack(spacing: 6) {
+                    Text(line.name).font(.ui(14, .semibold))
+                        .foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+                    if isBundle { StatusChip(label: t("order.combos"), tone: .accent) }
+                }
+                if isBundle { bundleBreakdown } else if hasModifiers { modifierPills }
                 Text(Money.format(line.lineTotalMinor, currency))
                     .font(.money(13, .bold)).foregroundStyle(theme.colors.accent)
             }
@@ -650,6 +687,29 @@ private struct CartLineRow: View {
             }
             ForEach(line.optionals, id: \.optionalFieldId) { o in
                 pill(o.name, fg: theme.colors.warning, bg: theme.colors.warningBg)
+            }
+        }
+    }
+
+    /// A bundle line lists its components (qty × name) with each component's
+    /// chosen addons/optionals as sub-pills.
+    private var bundleBreakdown: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(line.bundleComponents.enumerated()), id: \.offset) { _, c in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(c.qty)× \(c.name)")
+                        .font(.ui(11, .medium)).foregroundStyle(theme.colors.textSecondary)
+                    if !c.addons.isEmpty || !c.optionals.isEmpty {
+                        FlowLayout(spacing: 4) {
+                            ForEach(c.addons, id: \.addonItemId) { a in
+                                pill(a.qty > 1 ? "\(a.name) ×\(a.qty)" : a.name, fg: theme.colors.navy, bg: theme.colors.navyBg)
+                            }
+                            ForEach(c.optionals, id: \.optionalFieldId) { o in
+                                pill(o.name, fg: theme.colors.warning, bg: theme.colors.warningBg)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -828,7 +888,7 @@ extension ShiftView {
     }
 }
 
-private extension View {
+extension View {
     /// Inject the app chrome a modally-presented screen needs. A `.sheet` /
     /// `.fullScreenCover` is hosted in a FRESH environment that does NOT inherit
     /// the presenter's `\.theme`, `\.localize`, or `\.layoutDirection`, so each

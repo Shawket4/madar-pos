@@ -13,6 +13,12 @@ struct ItemDetailView: View {
     @Environment(\.localize) private var t
     let item: MenuItemView
     let onClose: () -> Void
+    /// Bundle-component configuration mode: when `onConfigure` is set the footer
+    /// SAVES the selection back (no cart write), seeded from `configureSeed`, and
+    /// the qty stepper is hidden (the bundle fixes the component count).
+    var configureSeed: BundleComponentDraft? = nil
+    var onConfigure: ((BundleComponentDraft) -> Void)? = nil
+    private var isConfiguring: Bool { onConfigure != nil }
 
     @State private var size: String?
     @State private var single: [String: String] = [:]       // groupId → addonId
@@ -179,38 +185,53 @@ struct ItemDetailView: View {
         .onAppear(perform: seed)
     }
 
+    /// Restore a saved addon (id + qty) into the right group — by its TYPE →
+    /// slot / global `type:` bucket, NOT the on-screen `groups` (which the
+    /// allowlist / "show all" filter may hide), so a selection is never dropped.
+    private func placeAddon(_ addonItemId: String, qty: Int) {
+        guard let type = app.itemAddons.first(where: { $0.addonItemId == addonItemId })?.addonType
+        else { return }
+        if let slot = item.addonSlots.first(where: { $0.addonType == type }) {
+            if (slot.maxSelections.map { Int($0) } ?? 2) > 1 {
+                var m = multi[slot.id] ?? [:]; m[addonItemId] = qty; multi[slot.id] = m
+            } else {
+                single[slot.id] = addonItemId
+            }
+        } else {
+            let gid = "type:\(type)"
+            if type != "milk_type" {
+                var m = multi[gid] ?? [:]; m[addonItemId] = qty; multi[gid] = m
+            } else {
+                single[gid] = addonItemId
+            }
+        }
+    }
+
+    private func seedDefaults() {
+        if size == nil { size = item.sizes.first?.label }
+        if let dm = item.defaultMilkAddonId { single["type:milk_type"] = dm }
+    }
+
     private func seed() {
         guard !seeded else { return }
         seeded = true
-        if let line = app.detailEditLine {
-            // Edit mode: reconstruct the selection from the existing line. Resolve
-            // each saved addon by its TYPE → slot / global `type:` bucket (NOT via
-            // the on-screen `groups`, which the allowlist/"show all" filter may
-            // hide) so a prior selection is never silently dropped on edit.
-            size = line.sizeLabel ?? item.sizes.first?.label
-            for a in line.addons {
-                guard let type = app.itemAddons.first(where: { $0.addonItemId == a.addonItemId })?.addonType
-                else { continue }
-                if let slot = item.addonSlots.first(where: { $0.addonType == type }) {
-                    if (slot.maxSelections.map { Int($0) } ?? 2) > 1 {
-                        var m = multi[slot.id] ?? [:]; m[a.addonItemId] = Int(a.qty); multi[slot.id] = m
-                    } else {
-                        single[slot.id] = a.addonItemId
-                    }
-                } else {
-                    let gid = "type:\(type)"
-                    if type != "milk_type" {
-                        var m = multi[gid] ?? [:]; m[a.addonItemId] = Int(a.qty); multi[gid] = m
-                    } else {
-                        single[gid] = a.addonItemId
-                    }
-                }
+        if isConfiguring {
+            // Bundle component: seed from the saved draft, else defaults.
+            if let draft = configureSeed {
+                size = draft.sizeLabel ?? item.sizes.first?.label
+                for a in draft.addons { placeAddon(a.addonItemId, qty: Int(a.qty)) }
+                optionals = Set(draft.optionalIds)
+            } else {
+                seedDefaults()
             }
+        } else if let line = app.detailEditLine {
+            // Edit mode: reconstruct the selection from the existing cart line.
+            size = line.sizeLabel ?? item.sizes.first?.label
+            for a in line.addons { placeAddon(a.addonItemId, qty: Int(a.qty)) }
             optionals = Set(line.optionals.map { $0.optionalFieldId })
             qty = Swift.max(1, Int(line.qty))
         } else {
-            if size == nil { size = item.sizes.first?.label }
-            if let dm = item.defaultMilkAddonId { single["type:milk_type"] = dm }
+            seedDefaults()
         }
     }
 
@@ -497,21 +518,31 @@ struct ItemDetailView: View {
     private var footer: some View {
         let unsatisfied = firstUnsatisfied
         let canAdd = unsatisfied == nil
-        let label = canAdd
-            ? (app.detailEditKey == nil ? t("order.add_to_cart") : t("order.update_item"))
-            : "\(t("order.select_prefix")) \(unsatisfied!.title)"
+        let label = !canAdd
+            ? "\(t("order.select_prefix")) \(unsatisfied!.title)"
+            : isConfiguring ? t("order.save_component")
+            : (app.detailEditKey == nil ? t("order.add_to_cart") : t("order.update_item"))
+        let footerPrice = isConfiguring ? (addonsTotal + optionalsTotal) : lineTotal
         return HStack(spacing: Space.md) {
-            miniStepper(qty, dec: { qty = Swift.max(1, qty - 1) }, inc: { qty = Swift.min(99, qty + 1) }, large: true)
+            if !isConfiguring {
+                miniStepper(qty, dec: { qty = Swift.max(1, qty - 1) }, inc: { qty = Swift.min(99, qty + 1) }, large: true)
+            }
             Button {
                 guard canAdd else { return }
                 Haptics.impact()
-                app.addConfigured(itemId: item.id, sizeLabel: size, addons: selectedAddons(),
-                                  optionalIds: Array(optionals), qty: Int64(qty), notes: nil)
+                if let onConfigure {
+                    onConfigure(BundleComponentDraft(
+                        sizeLabel: size, addons: selectedAddons(),
+                        optionalIds: Array(optionals), extrasMinor: addonsTotal + optionalsTotal))
+                } else {
+                    app.addConfigured(itemId: item.id, sizeLabel: size, addons: selectedAddons(),
+                                      optionalIds: Array(optionals), qty: Int64(qty), notes: nil)
+                }
             } label: {
                 HStack {
                     Text(label).font(.ui(14, .bold))
                     Spacer()
-                    Text(Money.format(lineTotal, currency)).font(.money(14, .heavy))
+                    Text(Money.format(footerPrice, currency)).font(.money(14, .heavy))
                 }
                 .foregroundStyle(theme.colors.textOnAccent)
                 .padding(.horizontal, Space.lg)

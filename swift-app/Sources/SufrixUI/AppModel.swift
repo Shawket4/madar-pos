@@ -205,6 +205,7 @@ final class AppModel: ObservableObject {
         menuItems = (try? core.listMenuItems()) ?? []
         paymentMethods = (try? core.listPaymentMethods()) ?? []
         discounts = (try? core.listDiscounts()) ?? []
+        loadBundles()
     }
 
     /// Apply or clear the cart discount (re-reads totals so the UI updates).
@@ -467,6 +468,45 @@ final class AppModel: ObservableObject {
         loadCart()
         refreshPending()
         closeItemDetail()
+    }
+
+    // ── bundles / combos ─────────────────────────────────────────────────────────
+    /// Available bundles (status active + within their date/time window) — the
+    /// Combos section of the catalog.
+    @Published private(set) var bundles: [BundleView] = []
+    /// Non-nil = the bundle configuration sheet is open.
+    @Published var detailBundle: BundleView?
+
+    func loadBundles() {
+        bundles = (try? core.availableBundles(nowRfc3339: Self.nowRFC3339())) ?? []
+    }
+    func openBundleDetail(_ b: BundleView) { detailBundle = b }
+    func closeBundleDetail() { detailBundle = nil }
+
+    /// Resolve a bundle component's `MenuItemView` and load its addons into
+    /// `itemAddons` so the per-component sheet (ItemDetailView) can render them.
+    func componentItem(_ itemId: String) -> MenuItemView? {
+        guard let item = menuItems.first(where: { $0.id == itemId }) else { return nil }
+        itemAddons = (try? core.listItemAddons(itemId: itemId)) ?? []
+        return item
+    }
+
+    /// Add a configured bundle to the cart — the core resolves each component's
+    /// charged extras and records one bundle line at the fixed bundle price.
+    func addBundle(bundleId: String, components: [BundleComponentSelection]) {
+        _ = try? core.cartAddBundle(bundleId: bundleId, components: components, qty: 1)
+        loadCart()
+        refreshPending()
+        closeBundleDetail()
+    }
+
+    /// Local time as RFC3339 with a colon offset, so the core gates bundle
+    /// windows in the till's timezone (the till sits at the branch).
+    static func nowRFC3339() -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withColonSeparatorInTimeZone]
+        f.timeZone = .current
+        return f.string(from: Date())
     }
 
     // ── device setup (manager) ──────────────────────────────────────────────────
