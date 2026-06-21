@@ -668,9 +668,14 @@ impl SufrixCore {
     ) -> Result<Vec<cart::CartLineView>, CoreError> {
         cart::set_qty(&self.store, &item_id, qty)
     }
-    /// Remove a line entirely.
+    /// Remove a line entirely (stashed for undo — see `cart_restore_removed`).
     pub fn cart_remove(&self, item_id: String) -> Result<Vec<cart::CartLineView>, CoreError> {
         cart::remove(&self.store, &item_id)
+    }
+    /// Undo the last `cart_remove` — re-inserts the swiped-away line. No-op if
+    /// nothing was removed (or it was already restored / the cart was cleared).
+    pub fn cart_restore_removed(&self) -> Result<Vec<cart::CartLineView>, CoreError> {
+        cart::restore_last_removed(&self.store)
     }
     /// Empty the cart.
     pub fn cart_clear(&self) -> Result<(), CoreError> {

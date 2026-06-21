@@ -583,6 +583,12 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun addToCart(item: MenuItemView) = applyCart { core.cartAdd(item.id, item.name, item.basePriceMinor) }
     fun setCartQty(itemId: String, qty: Long) = applyCart { core.cartSetQty(itemId, qty) }
     fun removeCartLine(itemId: String) = applyCart { core.cartRemove(itemId) }
+    /** Swipe-to-delete: remove the whole line and offer an Undo toast. */
+    fun swipeRemoveCartLine(line: CartLineView) {
+        applyCart { core.cartRemove(line.key) }
+        showToast("${t("order.removed")} ${line.name}", ChipTone.NEUTRAL, t("order.undo"), { undoRemoveCartLine() }, 4.0)
+    }
+    fun undoRemoveCartLine() = applyCart { core.cartRestoreRemoved() }
     fun clearCart() {
         runCatching { core.cartClear() }
         cartLines = emptyList()

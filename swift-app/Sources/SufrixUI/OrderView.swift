@@ -684,11 +684,14 @@ private struct CartPanel: View {
                                 onInc: { app.setCartQty(line.key, line.qty + 1) },
                                 // Bundles aren't re-editable in place (reconfigure by
                                 // removing + re-adding); only plain lines reopen the sheet.
-                                onEdit: line.bundleId == nil ? { app.editCartLine(line) } : nil
+                                onEdit: line.bundleId == nil ? { app.editCartLine(line) } : nil,
+                                onSwipeDelete: { app.swipeRemoveCartLine(line) }
                             )
+                            .transition(.move(edge: .leading).combined(with: .opacity))
                         }
                     }
                     .padding(Space.lg)
+                    .animation(Motion.standard, value: app.cartLines.count)
                 }
                 CartFooter(totals: app.cartTotals, currency: currency, onCheckout: onCheckout,
                            onHold: { app.holdCart() })
@@ -701,18 +704,65 @@ private struct CartPanel: View {
 private struct CartLineRow: View {
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
+    @Environment(\.layoutDirection) private var dir
     let line: CartLineView
     let currency: String
     let onDec: () -> Void
     let onInc: () -> Void
     var onEdit: (() -> Void)? = nil
+    /// Swipe-to-delete the whole line (nil disables the gesture).
+    var onSwipeDelete: (() -> Void)? = nil
+
+    @State private var dragX: CGFloat = 0
 
     private var isBundle: Bool { line.bundleId != nil }
     private var hasModifiers: Bool {
         line.sizeLabel != nil || !line.addons.isEmpty || !line.optionals.isEmpty
     }
+    /// Delete-swipe direction: left in LTR, right in RTL.
+    private var swipeSign: CGFloat { dir == .rightToLeft ? 1 : -1 }
 
     var body: some View {
+        ZStack {
+            // Red delete affordance revealed under the row as it slides away.
+            if onSwipeDelete != nil && dragX != 0 {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(theme.colors.textOnAccent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: dir == .rightToLeft ? .leading : .trailing)
+                    .padding(.horizontal, Space.xl)
+                    .background(theme.colors.danger)
+                    .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            }
+            rowContent
+                .offset(x: dragX)
+                .gesture(swipeGesture)
+        }
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 14)
+            .onChanged { v in
+                guard onSwipeDelete != nil else { return }
+                guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                let raw = v.translation.width
+                // Only track movement in the delete direction.
+                if (swipeSign < 0 && raw < 0) || (swipeSign > 0 && raw > 0) {
+                    dragX = max(-120, min(120, raw))
+                }
+            }
+            .onEnded { _ in
+                if abs(dragX) > 72 {
+                    onSwipeDelete?() // removes the line → the row leaves the list
+                    dragX = 0
+                } else {
+                    withAnimation(Motion.standard) { dragX = 0 }
+                }
+            }
+    }
+
+    private var rowContent: some View {
         HStack(spacing: Space.md) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

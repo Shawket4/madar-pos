@@ -18,7 +18,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -45,7 +49,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +63,8 @@ import app.sufrix.core.BundleView
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
 import androidx.compose.ui.graphics.Brush
+import app.sufrix.ui.SufrixColors
+import app.sufrix.ui.isRtlLayout
 import app.sufrix.core.CatStyleView
 import app.sufrix.core.CategoryView
 import app.sufrix.core.MenuItemView
@@ -717,6 +726,7 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                         onDec = { model.setCartQty(line.key, line.qty - 1) },
                         onInc = { model.setCartQty(line.key, line.qty + 1) },
                         onEdit = onEdit,
+                        onSwipeDelete = { model.swipeRemoveCartLine(line) },
                     )
                 }
             }
@@ -727,12 +737,72 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CartLineRow(line: CartLineView, currency: String, onDec: () -> Unit, onInc: () -> Unit, onEdit: (() -> Unit)? = null) {
+private fun CartLineRow(
+    line: CartLineView,
+    currency: String,
+    onDec: () -> Unit,
+    onInc: () -> Unit,
+    onEdit: (() -> Unit)? = null,
+    onSwipeDelete: (() -> Unit)? = null,
+) {
     val c = sufrixColors()
     val isBundle = line.bundleId != null
     val hasModifiers = line.sizeLabel != null || line.addons.isNotEmpty() || line.optionals.isNotEmpty()
+    // Swipe-to-delete: track a horizontal offset via `draggable` (NOT pointerInput).
+    // Delete direction is leftward in LTR, rightward in RTL.
+    val isRtl = isRtlLayout()
+    val sign = if (isRtl) 1f else -1f
+    val thresholdPx = with(LocalDensity.current) { 72.dp.toPx() }
+    var offsetX by remember(line.key) { mutableStateOf(0f) }
+    val dragState = rememberDraggableState { delta ->
+        val next = offsetX + delta
+        offsetX = if (sign < 0f) next.coerceIn(-260f, 0f) else next.coerceIn(0f, 260f)
+    }
+
+    Box(Modifier.fillMaxWidth()) {
+        if (onSwipeDelete != null && offsetX != 0f) {
+            Box(
+                Modifier.matchParentSize().clip(RoundedCornerShape(Radii.sm)).background(c.danger)
+                    .padding(horizontal = Space.xl),
+                contentAlignment = if (isRtl) Alignment.CenterStart else Alignment.CenterEnd,
+            ) {
+                Text("🗑", fontSize = 18.sp)
+            }
+        }
+        CartLineRowBody(
+            line, currency, c, isBundle, hasModifiers, onDec, onInc, onEdit,
+            modifier = Modifier
+                .offset { IntOffset(offsetX.roundToInt(), 0) }
+                .then(
+                    if (onSwipeDelete != null) {
+                        Modifier.draggable(
+                            state = dragState,
+                            orientation = Orientation.Horizontal,
+                            onDragStopped = {
+                                if (kotlin.math.abs(offsetX) > thresholdPx) onSwipeDelete() else offsetX = 0f
+                            },
+                        )
+                    } else Modifier,
+                ),
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CartLineRowBody(
+    line: CartLineView,
+    currency: String,
+    c: app.sufrix.ui.SufrixColors,
+    isBundle: Boolean,
+    hasModifiers: Boolean,
+    onDec: () -> Unit,
+    onInc: () -> Unit,
+    onEdit: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
+        modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
             .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).padding(Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),

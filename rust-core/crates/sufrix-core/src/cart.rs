@@ -509,10 +509,38 @@ pub(crate) fn set_qty(store: &Store, line_key: &str, qty: i64) -> CoreResult<Vec
     Ok(view(&lines))
 }
 
-/// Remove a line entirely (by its key).
+/// Where a swiped-away line is stashed so `restore_last_removed` can undo it.
+const K_LAST_REMOVED: &str = "cart:last_removed";
+
+/// Remove a line entirely (by its key), stashing it so the host can offer an
+/// "Undo" (see `restore_last_removed`).
 pub(crate) fn remove(store: &Store, line_key: &str) -> CoreResult<Vec<CartLineView>> {
     let mut lines = load(store)?;
+    let removed: Vec<StoredLine> = lines.iter().filter(|l| signature(l) == line_key).cloned().collect();
     lines.retain(|l| signature(l) != line_key);
+    if !removed.is_empty() {
+        store.kv_put(K_LAST_REMOVED, &serde_json::to_string(&removed)?)?;
+    }
+    save(store, &lines)?;
+    Ok(view(&lines))
+}
+
+/// Re-insert the most recently `remove`d line(s) — the Undo for a swipe-delete.
+/// Merges back into an identical line (same signature) if one exists, else
+/// re-appends. Clears the stash; a no-op when nothing was stashed.
+pub(crate) fn restore_last_removed(store: &Store) -> CoreResult<Vec<CartLineView>> {
+    let stash: Vec<StoredLine> = match store.kv_get(K_LAST_REMOVED)? {
+        Some(j) => serde_json::from_str(&j).unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let mut lines = load(store)?;
+    for r in stash {
+        match lines.iter_mut().find(|l| signature(l) == signature(&r)) {
+            Some(l) => l.qty += r.qty,
+            None => lines.push(r),
+        }
+    }
+    store.kv_put(K_LAST_REMOVED, "[]")?; // consume the stash (no double-undo)
     save(store, &lines)?;
     Ok(view(&lines))
 }
@@ -520,6 +548,7 @@ pub(crate) fn remove(store: &Store, line_key: &str) -> CoreResult<Vec<CartLineVi
 /// Empty the cart + its discount (e.g. after checkout or on sign-out).
 pub(crate) fn clear(store: &Store) -> CoreResult<()> {
     clear_discount(store)?;
+    store.kv_put(K_LAST_REMOVED, "[]")?; // a stale undo must not resurrect a sold line
     save(store, &[])
 }
 
@@ -919,6 +948,27 @@ mod tests {
         // Holding an empty cart is rejected.
         clear(&s).unwrap();
         assert!(hold(&s, "d2".into(), "x".into(), "t".into()).is_err());
+    }
+
+    #[test]
+    fn remove_then_restore_brings_the_line_back() {
+        let s = store();
+        add(&s, "latte", "Latte", 5000).unwrap();
+        set_qty(&s, &lines(&s).unwrap()[0].key, 3).unwrap(); // a 3× line
+        add(&s, "bun", "Bun", 2000).unwrap();
+        let key = lines(&s).unwrap().iter().find(|l| l.name == "Latte").unwrap().key.clone();
+        // Swipe-remove the latte → one line left.
+        let after = remove(&s, &key).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].name, "Bun");
+        // Undo → the 3× latte is back (qty preserved).
+        let restored = restore_last_removed(&s).unwrap();
+        assert_eq!(restored.len(), 2);
+        let latte = restored.iter().find(|l| l.name == "Latte").unwrap();
+        assert_eq!(latte.qty, 3);
+        // The stash is consumed — a second undo is a no-op.
+        let again = restore_last_removed(&s).unwrap();
+        assert_eq!(again.iter().find(|l| l.name == "Latte").unwrap().qty, 3);
     }
 
     #[test]

@@ -492,6 +492,23 @@ final class AppModel: ObservableObject {
     func removeCartLine(_ itemId: String) {
         applyCart { try core.cartRemove(itemId: itemId) }
     }
+    /// Swipe-to-delete: remove the whole line and offer an Undo toast that
+    /// restores it (the core stashes the removed line).
+    func swipeRemoveCartLine(_ line: CartLineView) {
+        applyCart { try core.cartRemove(itemId: line.key) }
+        Haptics.warning()
+        showToast(
+            "\(t("order.removed")) \(line.name)",
+            icon: "trash",
+            tone: .neutral,
+            actionLabel: t("order.undo"),
+            action: { [weak self] in self?.undoRemoveCartLine() },
+            seconds: 4.0
+        )
+    }
+    func undoRemoveCartLine() {
+        applyCart { try core.cartRestoreRemoved() }
+    }
     func clearCart() {
         try? core.cartClear()
         cartLines = []
