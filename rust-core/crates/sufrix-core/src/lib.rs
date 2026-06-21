@@ -392,6 +392,13 @@ impl SufrixCore {
         shift::current(&self.store)
     }
 
+    /// Suggested opening cash for the next shift (minor units) — the previous
+    /// shift's declared closing, for cash continuity. 0 when none is known. The
+    /// open-shift screen prefills this; deviating from it requires a reason.
+    pub fn suggested_opening_cash_minor(&self) -> Result<i64, CoreError> {
+        shift::suggested_opening_cash(&self.store)
+    }
+
     /// The screen to show. `branch_configured` + `reconfiguring` are host-owned
     /// bits (the device branch lives in the host vault); the rest is core state.
     pub fn app_route(&self, branch_configured: bool, reconfiguring: bool) -> AppRoute {
@@ -818,7 +825,11 @@ impl SufrixCore {
     /// Open a shift. Writes an optimistic local shift + queues an idempotent
     /// open-shift command (client UUID = shift PK), then drains best-effort. The
     /// shift is usable immediately, online or offline. Returns the current shift.
-    pub async fn open_shift(&self, opening_cash_minor: i64) -> Result<shift::ShiftView, CoreError> {
+    pub async fn open_shift(
+        &self,
+        opening_cash_minor: i64,
+        edit_reason: Option<String>,
+    ) -> Result<shift::ShiftView, CoreError> {
         let (branch_id, teller_id, teller_name) = {
             let g = self.session.read().unwrap_or_else(|e| e.into_inner());
             let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated {
@@ -837,6 +848,11 @@ impl SufrixCore {
         let shift_id = uuid::Uuid::new_v4();
         let opened_at = chrono::Utc::now().fixed_offset();
         let opening_cash = opening_cash_minor as i32;
+        // A non-empty discrepancy reason ⇒ the teller deviated from the carried-
+        // over closing. The server re-derives this authoritatively; we mirror it
+        // locally for display and pass the reason through.
+        let edit_reason = edit_reason.filter(|r| !r.trim().is_empty());
+        let was_edited = edit_reason.is_some();
 
         // Optimistic local shift — visible immediately on every read.
         let local = sufrix_api::models::Shift {
@@ -844,7 +860,7 @@ impl SufrixCore {
             id: shift_id,
             opened_at,
             opening_cash,
-            opening_cash_was_edited: false,
+            opening_cash_was_edited: was_edited,
             status: "open".into(),
             teller_id: teller_uuid,
             teller_name,
@@ -857,6 +873,7 @@ impl SufrixCore {
             id: Some(Some(shift_id)),
             opened_at: Some(Some(opened_at)),
             opening_cash,
+            edit_reason: edit_reason.map(Some),
             ..Default::default()
         };
         let cmd = shift::OpenShiftCommand { branch_id, request };
@@ -898,6 +915,9 @@ impl SufrixCore {
         // and drop the in-progress cart (a closed shift sells nothing).
         shift::close_local(&self.store)?;
         cart::clear(&self.store)?;
+        // Carry the declared closing into the NEXT shift's suggested opening, so
+        // cash continuity holds even before this close syncs.
+        shift::cache_suggested_opening_cash(&self.store, closing_cash_minor)?;
 
         // Queue the durable command. Keyed by `{shift_id}:close` so it doesn't
         // collide with the still-pending open_shift command (id == shift PK).
@@ -1122,6 +1142,14 @@ impl SufrixCore {
         )
         .await
         .map_err(net::map_api_error)?;
+
+        // Refresh the carried-over opening-cash suggestion from the server's
+        // prefill (the last *synced* declared closing). Only overwrite with a
+        // positive value, so a stale server 0 can't clobber a fresher local
+        // close that hasn't synced yet.
+        if prefill.suggested_opening_cash > 0 {
+            shift::cache_suggested_opening_cash(&self.store, prefill.suggested_opening_cash as i64)?;
+        }
 
         // The server's "no open shift" is only authoritative once our own
         // open_shift command has actually reached it. While it's still queued,
@@ -1388,7 +1416,7 @@ mod lifecycle_tests {
         .await
         .unwrap();
 
-        core.open_shift(50000).await.unwrap();
+        core.open_shift(50000, None).await.unwrap();
         core.cart_add("item-1".into(), "Latte".into(), 1000).unwrap();
         assert_eq!(core.app_route(true, false), AppRoute::Order);
 
@@ -1505,7 +1533,7 @@ mod lifecycle_tests {
         // Signed in, no shift yet → open-shift.
         assert_eq!(core.app_route(true, false), AppRoute::OpenShift);
 
-        let shift = core.open_shift(50000).await.expect("open shift offline");
+        let shift = core.open_shift(50000, None).await.expect("open shift offline");
         assert!(shift.is_open);
         // The command is queued (couldn't reach the server)…
         assert_eq!(core.pending_outbox_count().unwrap(), 1);

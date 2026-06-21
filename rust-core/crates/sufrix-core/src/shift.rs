@@ -11,6 +11,11 @@ use crate::store::Store;
 
 /// kv key holding the device's current shift (canonical `Shift` JSON).
 pub(crate) const CURRENT_SHIFT_KEY: &str = "current_shift";
+/// kv key holding the suggested opening cash for the NEXT shift — the previous
+/// shift's declared closing (cash continuity). Cached from the server prefill
+/// when online and from a local close when offline, so the open-shift screen can
+/// prefill it either way.
+pub(crate) const SUGGESTED_OPEN_CASH_KEY: &str = "shift:suggested_open_cash";
 
 #[derive(uniffi::Record, Clone, Debug)]
 pub struct ShiftView {
@@ -112,6 +117,20 @@ pub(crate) fn view_from(shift: &models::Shift) -> ShiftView {
         status: shift.status.clone(),
         is_open: shift.status == "open",
     }
+}
+
+/// Cache the suggested opening cash (previous declared closing) for the next
+/// shift. A non-positive value clears it (no carryover to suggest).
+pub(crate) fn cache_suggested_opening_cash(store: &Store, minor: i64) -> CoreResult<()> {
+    store.kv_put(SUGGESTED_OPEN_CASH_KEY, &minor.max(0).to_string())
+}
+
+/// The suggested opening cash for the next shift (0 when none is known).
+pub(crate) fn suggested_opening_cash(store: &Store) -> CoreResult<i64> {
+    Ok(store
+        .kv_get(SUGGESTED_OPEN_CASH_KEY)?
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(0))
 }
 
 pub(crate) fn current(store: &Store) -> CoreResult<Option<ShiftView>> {
@@ -269,6 +288,16 @@ mod tests {
         let mut pf = models::ShiftPreFill::new(true, 0);
         pf.open_shift = Some(Some(Box::new(open_shift_model())));
         assert!(matches!(reconcile(&pf, false, false), ShiftReconcile::Adopt(_)));
+    }
+
+    #[test]
+    fn suggested_opening_cash_roundtrips_and_clamps() {
+        let store = Store::open("").unwrap();
+        assert_eq!(suggested_opening_cash(&store).unwrap(), 0); // none known yet
+        cache_suggested_opening_cash(&store, 48000).unwrap();
+        assert_eq!(suggested_opening_cash(&store).unwrap(), 48000);
+        cache_suggested_opening_cash(&store, -5).unwrap(); // non-positive clears
+        assert_eq!(suggested_opening_cash(&store).unwrap(), 0);
     }
 
     #[test]
