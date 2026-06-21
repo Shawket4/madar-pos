@@ -23,6 +23,8 @@ struct ItemDetailView: View {
     /// Override: reveal the FULL org addon catalog (every type), not just the
     /// item's assigned slots + global types. Mirrors the dashboard's "show all".
     @State private var showAll = false
+    /// The recipe section is revealed by the header recipe button (Flutter chip).
+    @State private var showRecipe = false
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -160,9 +162,9 @@ struct ItemDetailView: View {
                         ForEach(groups) { groupCard($0) }
                         if showAll || hasHiddenAddonTypes { showAllToggle }
                         if !item.optionalFields.isEmpty { optionalsSection }
-                        if !visibleRecipes.isEmpty { recipeSection }
+                        if showRecipe, !visibleRecipes.isEmpty { recipeSection }
                     }
-                    .frame(maxWidth: 560)
+                    .frame(maxWidth: 680)
                     .frame(maxWidth: .infinity)
                     .padding(Space.lg)
                 }
@@ -212,6 +214,14 @@ struct ItemDetailView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(theme.colors.navyBg)
                 .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            if !item.recipes.isEmpty {
+                Button { withAnimation(Motion.standard) { showRecipe.toggle() } } label: {
+                    Image(systemName: "list.bullet.rectangle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(showRecipe ? theme.colors.accent : theme.colors.textMuted)
+                }
+                .buttonStyle(.plain)
+            }
             Button { onClose() } label: {
                 Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(theme.colors.textMuted)

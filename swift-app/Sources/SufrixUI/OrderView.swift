@@ -103,7 +103,7 @@ struct OrderView: View {
             // Item customization.
             .sheet(item: $app.detailItem) { item in
                 ItemDetailView(app: app, item: item, onClose: { app.closeItemDetail() })
-                    .frame(minWidth: 460, minHeight: 600)
+                    .frame(minWidth: 640, minHeight: 640)
                     .environment(\.theme, theme)
                     .environment(\.localize, t)
             }

@@ -80,6 +80,8 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     // Override: reveal the FULL org addon catalog (every type), not just the
     // item's assigned slots + global types. Mirrors the dashboard's "show all".
     var showAll by remember { mutableStateOf(false) }
+    // The recipe section is revealed by the header recipe button (Flutter chip).
+    var showRecipe by remember { mutableStateOf(false) }
 
     LaunchedEffect(item.id) {
         if (seeded) return@LaunchedEffect
@@ -197,6 +199,12 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                     Money.format(headerTotal, currency), color = c.navy, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                     modifier = Modifier.clip(RoundedCornerShape(Radii.sm)).background(c.navyBg).padding(horizontal = 10.dp, vertical = 5.dp),
                 )
+                if (item.recipes.isNotEmpty()) {
+                    Text(
+                        "▤", color = if (showRecipe) c.accent else c.textMuted, fontSize = 18.sp,
+                        modifier = Modifier.clickable { showRecipe = !showRecipe },
+                    )
+                }
                 Text("✕", color = c.textMuted, fontSize = 16.sp, modifier = Modifier.clickable { onClose() })
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
@@ -252,7 +260,7 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
             }
             // Recipe lines for the current size (size-specific + size-agnostic).
             val recipeLines = item.recipes.filter { it.sizeLabel == null || it.sizeLabel == size }
-            if (recipeLines.isNotEmpty()) {
+            if (showRecipe && recipeLines.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     SectionTitle(t("order.recipe"))
                     Card {
