@@ -1044,4 +1044,479 @@ mod tests {
         add_resolved(&s, c).unwrap();
         assert_eq!(lines(&s).unwrap().len(), 2);
     }
+
+    // ── add / merge edge cases ────────────────────────────────────────────────
+
+    #[test]
+    fn add_to_empty_creates_single_line() {
+        let s = store();
+        let v = add(&s, "a", "Latte", 5000).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].qty, 1);
+        assert_eq!(v[0].line_total_minor, 5000);
+        assert_eq!(v[0].key, "a");
+    }
+
+    #[test]
+    fn add_resolved_merges_on_matching_signature() {
+        let s = store();
+        // Two option-less lines for the same item id merge regardless of name/price
+        // because the signature for an option-less line is just the item_id.
+        add_resolved(&s, resolve_line(&item(), &catalog(), None, &[], &[], 1, None)).unwrap();
+        let v = add_resolved(&s, resolve_line(&item(), &catalog(), None, &[], &[], 1, None)).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].qty, 2);
+        assert_eq!(v[0].key, "latte"); // option-less → key is item_id
+    }
+
+    // ── set_qty boundaries ────────────────────────────────────────────────────
+
+    #[test]
+    fn set_qty_to_one_keeps_line() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        let v = set_qty(&s, "a", 1).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].qty, 1);
+    }
+
+    #[test]
+    fn set_qty_negative_removes_line() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        assert!(set_qty(&s, "a", -5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn set_qty_on_missing_key_is_noop() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        // A positive qty on a non-existent key changes nothing.
+        let v = set_qty(&s, "nope", 9).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].qty, 1);
+    }
+
+    #[test]
+    fn set_qty_zero_on_missing_key_leaves_others() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        add(&s, "b", "Tea", 3000).unwrap();
+        // qty<=0 only retains lines whose signature differs from the key; an
+        // unknown key removes nothing.
+        let v = set_qty(&s, "nope", 0).unwrap();
+        assert_eq!(v.len(), 2);
+    }
+
+    #[test]
+    fn set_qty_on_empty_cart_is_noop() {
+        let s = store();
+        assert!(set_qty(&s, "a", 3).unwrap().is_empty());
+        assert!(set_qty(&s, "a", 0).unwrap().is_empty());
+    }
+
+    // ── remove edge cases ─────────────────────────────────────────────────────
+
+    #[test]
+    fn remove_missing_key_does_not_stash() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        let v = remove(&s, "nope").unwrap();
+        assert_eq!(v.len(), 1); // nothing removed
+        // Nothing was stashed, so undo is a no-op (cart unchanged).
+        let after = restore_last_removed(&s).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].qty, 1);
+    }
+
+    #[test]
+    fn remove_from_empty_cart_is_noop() {
+        let s = store();
+        assert!(remove(&s, "a").unwrap().is_empty());
+    }
+
+    // ── undo (restore_last_removed) edge cases ───────────────────────────────
+
+    #[test]
+    fn restore_with_no_stash_is_noop() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        let v = restore_last_removed(&s).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].qty, 1);
+    }
+
+    #[test]
+    fn restore_merges_back_into_matching_line() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        set_qty(&s, "a", 2).unwrap(); // 2× in cart
+        // Remove it (stash = 2×), then re-add one fresh, then undo: the stashed 2
+        // merges into the existing 1× for qty 3 in a single line.
+        remove(&s, "a").unwrap();
+        add(&s, "a", "Latte", 5000).unwrap();
+        let restored = restore_last_removed(&s).unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].qty, 3);
+    }
+
+    #[test]
+    fn clear_drops_the_undo_stash() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        remove(&s, "a").unwrap(); // stash now holds the latte
+        clear(&s).unwrap(); // a stale undo must not resurrect a sold line
+        let after = restore_last_removed(&s).unwrap();
+        assert!(after.is_empty());
+    }
+
+    // ── signature determinism ─────────────────────────────────────────────────
+
+    #[test]
+    fn signature_is_order_independent_for_addons_and_optionals() {
+        // Same selection, different option ORDER → identical signature → merge.
+        let mut it = item();
+        it.optional_fields.push(menu::OptionalFieldView {
+            id: "cin".into(), name: "Cinnamon".into(), price_minor: 100, is_active: true,
+            ingredient_name: None, ingredient_unit: None, quantity_used: None, org_ingredient_id: None,
+        });
+        let a = resolve_line(&it, &catalog(), Some("Large".into()),
+            &[AddonSelection { addon_item_id: "almond".into(), qty: 1 },
+              AddonSelection { addon_item_id: "shot".into(), qty: 1 }],
+            &["van".into(), "cin".into()], 1, None);
+        let b = resolve_line(&it, &catalog(), Some("Large".into()),
+            &[AddonSelection { addon_item_id: "shot".into(), qty: 1 },
+              AddonSelection { addon_item_id: "almond".into(), qty: 1 }],
+            &["cin".into(), "van".into()], 1, None);
+        let s = store();
+        add_resolved(&s, a).unwrap();
+        let v = add_resolved(&s, b).unwrap();
+        assert_eq!(v.len(), 1, "reordered options must merge");
+        assert_eq!(v[0].qty, 2);
+    }
+
+    #[test]
+    fn signature_distinguishes_notes() {
+        // Same item, different notes → distinct lines.
+        let s = store();
+        add_resolved(&s, resolve_line(&item(), &catalog(), None, &[], &[], 1, Some("no sugar".into()))).unwrap();
+        add_resolved(&s, resolve_line(&item(), &catalog(), None, &[], &[], 1, Some("extra hot".into()))).unwrap();
+        assert_eq!(lines(&s).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn signature_distinguishes_addon_qty() {
+        // Same addon, different qty → distinct lines (qty is in the signature).
+        let s = store();
+        let mk = |q: i64| resolve_line(&item(), &catalog(), None,
+            &[AddonSelection { addon_item_id: "shot".into(), qty: q }], &[], 1, None);
+        add_resolved(&s, mk(1)).unwrap();
+        let v = add_resolved(&s, mk(2)).unwrap();
+        assert_eq!(v.len(), 2);
+    }
+
+    #[test]
+    fn signature_distinguishes_size() {
+        let s = store();
+        add_resolved(&s, resolve_line(&item(), &catalog(), Some("Large".into()), &[], &[], 1, None)).unwrap();
+        // No size → falls back to the option-less item_id signature, distinct from
+        // the sized line.
+        add_resolved(&s, resolve_line(&item(), &catalog(), None, &[], &[], 1, None)).unwrap();
+        assert_eq!(lines(&s).unwrap().len(), 2);
+    }
+
+    // ── resolve_line boundaries / malformed input ─────────────────────────────
+
+    #[test]
+    fn resolve_line_clamps_qty_floor_to_one() {
+        let line = resolve_line(&item(), &catalog(), None, &[], &[], 0, None);
+        assert_eq!(line.qty, 1);
+        let line = resolve_line(&item(), &catalog(), None, &[], &[], -3, None);
+        assert_eq!(line.qty, 1);
+    }
+
+    #[test]
+    fn resolve_line_clamps_addon_qty_floor_to_one() {
+        let line = resolve_line(&item(), &catalog(), None,
+            &[AddonSelection { addon_item_id: "shot".into(), qty: 0 }], &[], 1, None);
+        assert_eq!(line.addons.len(), 1);
+        assert_eq!(line.addons[0].qty, 1);
+    }
+
+    #[test]
+    fn resolve_line_unknown_size_falls_back_to_base() {
+        let line = resolve_line(&item(), &catalog(), Some("Gigantic".into()), &[], &[], 1, None);
+        assert_eq!(line.unit_price_minor, 5000); // base, unknown size label ignored
+        // The bogus size label is still recorded (and so part of the signature).
+        assert_eq!(line.size_label.as_deref(), Some("Gigantic"));
+    }
+
+    #[test]
+    fn resolve_line_drops_unknown_addon_and_optional_ids() {
+        let line = resolve_line(&item(), &catalog(), None,
+            &[AddonSelection { addon_item_id: "ghost".into(), qty: 1 },
+              AddonSelection { addon_item_id: "shot".into(), qty: 1 }],
+            &["nope".into(), "van".into()], 1, None);
+        assert_eq!(line.addons.len(), 1); // only "shot" survives
+        assert_eq!(line.addons[0].addon_item_id, "shot");
+        assert_eq!(line.optionals.len(), 1); // only "van" survives
+        assert_eq!(line.optionals[0].optional_field_id, "van");
+    }
+
+    #[test]
+    fn resolve_line_with_no_options_keys_by_item_id() {
+        let line = resolve_line(&item(), &catalog(), None, &[], &[], 1, None);
+        assert_eq!(signature(&line), "latte");
+    }
+
+    // ── item_addons filtering ─────────────────────────────────────────────────
+
+    #[test]
+    fn item_addons_drops_inactive_entries() {
+        let mut cat = catalog();
+        cat.push(menu::AddonItemView {
+            id: "retired".into(), name: "Retired".into(), addon_type: "extra".into(),
+            default_price_minor: 999, is_active: false, ingredients: vec![],
+        });
+        let v = item_addons(&item(), &cat);
+        assert!(v.iter().all(|a| a.addon_item_id != "retired"));
+    }
+
+    // ── bundle pricing / component resolution ─────────────────────────────────
+
+    #[test]
+    fn resolve_bundle_line_uses_fixed_price_and_clamps_qty() {
+        let line = resolve_bundle_line(&bundle(), &[item()], &catalog(), &[combo_component()], 0);
+        assert_eq!(line.unit_price_minor, 10000); // fixed bundle price
+        assert_eq!(line.qty, 1); // qty clamped up from 0
+        assert!(line.addons.is_empty()); // bundle's own addons stay empty
+        assert!(line.optionals.is_empty());
+        assert_eq!(line.bundle_id.as_deref(), Some("b1"));
+    }
+
+    #[test]
+    fn resolve_bundle_line_drops_components_with_unknown_item() {
+        let mut ghost = combo_component();
+        ghost.item_id = "not-in-catalog".into();
+        // One good + one ghost component → only the resolvable one survives.
+        let line = resolve_bundle_line(&bundle(), &[item()], &catalog(),
+            &[combo_component(), ghost], 1);
+        assert_eq!(line.bundle_components.len(), 1);
+        assert_eq!(line.bundle_components[0].item_id, "latte");
+    }
+
+    #[test]
+    fn resolve_bundle_line_with_no_components_charges_only_base() {
+        let line = resolve_bundle_line(&bundle(), &[item()], &catalog(), &[], 2);
+        assert!(line.bundle_components.is_empty());
+        // (10000 base + 0 extras) × 2 = 20000.
+        assert_eq!(line_total(&line), 20000);
+    }
+
+    #[test]
+    fn bundle_component_qty_does_not_scale_extras() {
+        // A component qty of 5 must NOT multiply the addon/optional up-charge; the
+        // bundle's own line qty is the only multiplier (Flutter parity — extras are
+        // per-bundle, base covers the component count).
+        let mut comp = combo_component();
+        comp.qty = 5;
+        let line = resolve_bundle_line(&bundle(), &[item()], &catalog(), &[comp], 1);
+        assert_eq!(line.bundle_components[0].qty, 5);
+        // 10000 base + 500 almond delta + 300 vanilla = 10800 (extras counted once).
+        assert_eq!(line_total(&line), 10800);
+    }
+
+    #[test]
+    fn bundle_totals_flow_through_pricing_engine() {
+        let s = store();
+        add_resolved(&s, resolve_bundle_line(&bundle(), &[item()], &catalog(), &[combo_component()], 2)).unwrap();
+        let t = totals(&s, 0.0).unwrap();
+        assert_eq!(t.item_count, 2);
+        // (10000 + 500 + 300) × 2 = 21600.
+        assert_eq!(t.subtotal_minor, 21600);
+    }
+
+    // ── drafts ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn hold_empty_cart_errors_with_validation() {
+        let s = store();
+        let err = hold(&s, "d1".into(), "x".into(), "now".into()).unwrap_err();
+        match err {
+            crate::error::CoreError::Validation { field, detail } => {
+                assert_eq!(field, "cart");
+                assert_eq!(detail, "cart is empty");
+            }
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn drafts_are_listed_newest_first() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        hold(&s, "d1".into(), "First".into(), "2026-06-21T10:00:00Z".into()).unwrap();
+        add(&s, "b", "Tea", 3000).unwrap();
+        hold(&s, "d2".into(), "Second".into(), "2026-06-21T11:00:00Z".into()).unwrap();
+        let ds = drafts(&s).unwrap();
+        assert_eq!(ds.len(), 2);
+        assert_eq!(ds[0].name, "Second"); // newest first (reversed)
+        assert_eq!(ds[1].name, "First");
+    }
+
+    #[test]
+    fn drafts_empty_when_none_held() {
+        let s = store();
+        assert!(drafts(&s).unwrap().is_empty());
+    }
+
+    #[test]
+    fn restore_draft_replaces_current_cart_lines() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        hold(&s, "d1".into(), "Held".into(), "t".into()).unwrap();
+        // Build a new, different cart, then restore — the draft REPLACES it.
+        add(&s, "b", "Tea", 3000).unwrap();
+        let restored = restore_draft(&s, "d1").unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].name, "Latte"); // the held line, not the Tea
+        assert!(drafts(&s).unwrap().is_empty()); // draft consumed
+    }
+
+    #[test]
+    fn restore_draft_clears_any_selected_discount() {
+        let s = store();
+        seed_discounts(&s);
+        add(&s, "a", "Latte", 1000).unwrap();
+        hold(&s, "d1".into(), "Held".into(), "t".into()).unwrap();
+        // Pick a discount on the (now empty) cart, then restore the draft.
+        set_discount(&s, "00000000-0000-0000-0000-0000000000d1").unwrap();
+        restore_draft(&s, "d1").unwrap();
+        assert!(discount_id(&s).unwrap().is_none());
+    }
+
+    #[test]
+    fn restore_unknown_draft_is_noop_returning_current_cart() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        let v = restore_draft(&s, "ghost").unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].name, "Latte"); // current cart unchanged
+    }
+
+    #[test]
+    fn discard_draft_removes_only_the_target() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        hold(&s, "d1".into(), "One".into(), "t".into()).unwrap();
+        add(&s, "b", "Tea", 3000).unwrap();
+        hold(&s, "d2".into(), "Two".into(), "t".into()).unwrap();
+        discard_draft(&s, "d1").unwrap();
+        let ds = drafts(&s).unwrap();
+        assert_eq!(ds.len(), 1);
+        assert_eq!(ds[0].id, "d2");
+    }
+
+    #[test]
+    fn discard_unknown_draft_is_noop() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        hold(&s, "d1".into(), "One".into(), "t".into()).unwrap();
+        discard_draft(&s, "ghost").unwrap();
+        assert_eq!(drafts(&s).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn hold_clears_the_cart_and_its_discount() {
+        let s = store();
+        seed_discounts(&s);
+        add(&s, "a", "Latte", 1000).unwrap();
+        set_discount(&s, "00000000-0000-0000-0000-0000000000d1").unwrap();
+        hold(&s, "d1".into(), "Held".into(), "t".into()).unwrap();
+        assert!(lines(&s).unwrap().is_empty());
+        assert!(discount_id(&s).unwrap().is_none()); // hold → clear → clear_discount
+    }
+
+    #[test]
+    fn draft_summary_counts_quantities_and_totals() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        set_qty(&s, "a", 3).unwrap();
+        add(&s, "b", "Tea", 2000).unwrap();
+        hold(&s, "d1".into(), "Table".into(), "t".into()).unwrap();
+        let ds = drafts(&s).unwrap();
+        assert_eq!(ds[0].item_count, 4); // 3 + 1
+        assert_eq!(ds[0].total_minor, 17000); // 5000*3 + 2000
+    }
+
+    // ── discount set / clear / resolve ────────────────────────────────────────
+
+    #[test]
+    fn discount_id_none_when_unset() {
+        let s = store();
+        assert!(discount_id(&s).unwrap().is_none());
+    }
+
+    #[test]
+    fn set_then_clear_discount_id() {
+        let s = store();
+        set_discount(&s, "abc").unwrap();
+        assert_eq!(discount_id(&s).unwrap().as_deref(), Some("abc"));
+        clear_discount(&s).unwrap();
+        assert!(discount_id(&s).unwrap().is_none());
+    }
+
+    #[test]
+    fn discount_id_treats_literal_null_as_none() {
+        let s = store();
+        set_discount(&s, "null").unwrap(); // the string "null" is filtered out
+        assert!(discount_id(&s).unwrap().is_none());
+    }
+
+    #[test]
+    fn discount_resolves_kind_and_value_from_catalog() {
+        let s = store();
+        seed_discounts(&s);
+        set_discount(&s, "00000000-0000-0000-0000-0000000000d1").unwrap();
+        let (kind, value) = discount(&s).unwrap();
+        assert_eq!(kind, DiscountKind::Percentage);
+        assert_eq!(value, 10);
+        set_discount(&s, "00000000-0000-0000-0000-0000000000d2").unwrap();
+        let (kind, value) = discount(&s).unwrap();
+        assert_eq!(kind, DiscountKind::Fixed);
+        assert_eq!(value, 250);
+    }
+
+    #[test]
+    fn discount_none_when_nothing_selected() {
+        let s = store();
+        seed_discounts(&s);
+        let (kind, value) = discount(&s).unwrap();
+        assert_eq!(kind, DiscountKind::None);
+        assert_eq!(value, 0);
+    }
+
+    #[test]
+    fn discount_none_when_catalog_missing() {
+        // A selected id but no discounts catalog seeded → resolves to none.
+        let s = store();
+        set_discount(&s, "00000000-0000-0000-0000-0000000000d1").unwrap();
+        let (kind, value) = discount(&s).unwrap();
+        assert_eq!(kind, DiscountKind::None);
+        assert_eq!(value, 0);
+    }
+
+    // ── clear ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn clear_empties_lines_and_keeps_drafts() {
+        let s = store();
+        add(&s, "a", "Latte", 5000).unwrap();
+        hold(&s, "d1".into(), "Held".into(), "t".into()).unwrap(); // parks + clears
+        add(&s, "b", "Tea", 3000).unwrap();
+        clear(&s).unwrap();
+        assert!(lines(&s).unwrap().is_empty());
+        // clear() empties the live cart but does NOT touch the drafts stash.
+        assert_eq!(drafts(&s).unwrap().len(), 1);
+    }
 }

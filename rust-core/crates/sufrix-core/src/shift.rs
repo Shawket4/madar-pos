@@ -429,4 +429,369 @@ mod tests {
         assert_eq!(v.payment_lines[0].total_minor, 12000);
         assert!(v.from_server);
     }
+
+    // ── report_view: full field projection + movements + ordering ─────────────
+
+    #[test]
+    fn report_view_projects_every_field_and_preserves_movement_order() {
+        let mut report = models::ShiftReportResponse::default();
+        report.expected_cash = 30000;
+        report.shift = Box::new(models::Shift { opening_cash: 20000, ..Default::default() });
+        report.total_payments = 9000;
+        report.net_payments = 8500; // distinct from total (a void)
+        report.voided_amount = 500;
+        report.cash_movements_net = 1200;
+        report.cash_movements_in = 3000;
+        report.cash_movements_out = 1800;
+        report.payment_summary = vec![
+            models::PaymentSummaryRow::new(true, 2, "Cash".into(), 5000),
+            models::PaymentSummaryRow::new(false, 1, "Card".into(), 4000),
+        ];
+        report.cash_movements = vec![
+            models::CashMovementSummaryRow { amount: 3000, note: "float".into(), moved_by_name: "Mona".into(), ..Default::default() },
+            models::CashMovementSummaryRow { amount: -1800, note: "".into(), moved_by_name: "Ali".into(), ..Default::default() },
+        ];
+        let v = report_view(&report, 0);
+        // Every server figure mapped through verbatim (queued = 0 here).
+        assert_eq!(v.expected_cash_minor, 30000);
+        assert_eq!(v.net_payments_minor, 8500);
+        assert_eq!(v.voided_amount_minor, 500);
+        assert_eq!(v.cash_movements_net_minor, 1200);
+        assert_eq!(v.cash_in_minor, 3000);
+        assert_eq!(v.cash_out_minor, 1800);
+        // Payment lines keep order and per-row fields.
+        assert_eq!(v.payment_lines.len(), 2);
+        assert_eq!(v.payment_lines[0].method, "Cash");
+        assert!(v.payment_lines[0].is_cash);
+        assert_eq!(v.payment_lines[0].order_count, 2);
+        assert_eq!(v.payment_lines[1].method, "Card");
+        assert!(!v.payment_lines[1].is_cash);
+        // Movement order preserved; note + signed amount mapped.
+        assert_eq!(v.cash_movements.len(), 2);
+        assert_eq!(v.cash_movements[0].amount_minor, 3000);
+        assert_eq!(v.cash_movements[0].note, "float");
+        assert_eq!(v.cash_movements[0].moved_by_name, "Mona");
+        assert_eq!(v.cash_movements[1].amount_minor, -1800);
+        assert_eq!(v.cash_movements[1].moved_by_name, "Ali");
+    }
+
+    #[test]
+    fn report_view_default_response_is_all_zero_and_empty() {
+        // A defaulted server response (no sales, no movements) projects cleanly.
+        let report = models::ShiftReportResponse::default();
+        let v = report_view(&report, 0);
+        assert_eq!(v.expected_cash_minor, 0);
+        assert_eq!(v.opening_cash_minor, 0);
+        assert_eq!(v.total_payments_minor, 0);
+        assert_eq!(v.net_payments_minor, 0);
+        assert_eq!(v.voided_amount_minor, 0);
+        assert_eq!(v.cash_in_minor, 0);
+        assert_eq!(v.cash_out_minor, 0);
+        assert!(v.payment_lines.is_empty());
+        assert!(v.cash_movements.is_empty());
+        assert!(v.from_server);
+    }
+
+    #[test]
+    fn report_view_negative_queued_cash_lowers_expected() {
+        // queued_cash is just added — a negative (net cash refund queued) lowers it.
+        let mut report = models::ShiftReportResponse::default();
+        report.expected_cash = 60000;
+        let v = report_view(&report, -1500);
+        assert_eq!(v.expected_cash_minor, 58500);
+    }
+
+    // ── offline_report_view: cash split / net / empties / boundaries ──────────
+
+    #[test]
+    fn offline_report_view_empty_movements_is_pure_opening_plus_queued() {
+        let v = offline_report_view(50000, 2280, vec![]);
+        assert_eq!(v.expected_cash_minor, 52280);
+        assert_eq!(v.opening_cash_minor, 50000);
+        assert_eq!(v.cash_in_minor, 0);
+        assert_eq!(v.cash_out_minor, 0);
+        assert_eq!(v.cash_movements_net_minor, 0);
+        assert!(v.cash_movements.is_empty());
+        assert!(v.payment_lines.is_empty());
+        assert!(!v.from_server);
+        // Sales figures are always zero in the offline fallback.
+        assert_eq!(v.total_payments_minor, 0);
+        assert_eq!(v.net_payments_minor, 0);
+        assert_eq!(v.voided_amount_minor, 0);
+    }
+
+    #[test]
+    fn offline_report_view_zero_amount_movement_counts_as_neither_in_nor_out() {
+        // amount == 0 is excluded from both the >0 and <0 filters (boundary).
+        let moves = vec![ShiftReportCashLine {
+            amount_minor: 0,
+            note: "noop".into(),
+            moved_by_name: "Mona".into(),
+            created_at: "t".into(),
+        }];
+        let v = offline_report_view(10000, 0, moves);
+        assert_eq!(v.cash_in_minor, 0);
+        assert_eq!(v.cash_out_minor, 0);
+        assert_eq!(v.cash_movements_net_minor, 0);
+        assert_eq!(v.cash_movements.len(), 1); // still itemised
+    }
+
+    #[test]
+    fn offline_report_view_only_pay_outs_net_is_negative() {
+        let moves = vec![
+            ShiftReportCashLine { amount_minor: -2000, note: "supplier".into(), moved_by_name: "Ali".into(), created_at: "t".into() },
+            ShiftReportCashLine { amount_minor: -500, note: "tips".into(), moved_by_name: "Ali".into(), created_at: "t".into() },
+        ];
+        let v = offline_report_view(30000, 0, moves);
+        assert_eq!(v.cash_in_minor, 0);
+        assert_eq!(v.cash_out_minor, 2500); // stored as a positive magnitude
+        assert_eq!(v.cash_movements_net_minor, -2500);
+    }
+
+    #[test]
+    fn offline_report_view_preserves_given_movement_order() {
+        // The fallback itemises the movements exactly as handed in (newest-first
+        // is the caller's responsibility) — no reordering.
+        let moves = vec![
+            ShiftReportCashLine { amount_minor: 100, note: "a".into(), moved_by_name: "X".into(), created_at: "3".into() },
+            ShiftReportCashLine { amount_minor: 200, note: "b".into(), moved_by_name: "X".into(), created_at: "2".into() },
+            ShiftReportCashLine { amount_minor: 300, note: "c".into(), moved_by_name: "X".into(), created_at: "1".into() },
+        ];
+        let v = offline_report_view(0, 0, moves);
+        assert_eq!(v.cash_movements[0].note, "a");
+        assert_eq!(v.cash_movements[1].note, "b");
+        assert_eq!(v.cash_movements[2].note, "c");
+        assert_eq!(v.cash_in_minor, 600);
+    }
+
+    // ── cash_movement_view ────────────────────────────────────────────────────
+
+    #[test]
+    fn cash_movement_view_maps_fields_and_widens_amount() {
+        let m = models::CashMovement {
+            amount: -1500, // i32 → i64
+            note: "supplier".into(),
+            moved_by_name: "Mona".into(),
+            created_at: chrono::DateTime::parse_from_rfc3339("2026-06-20T09:30:00+02:00").unwrap(),
+            ..Default::default()
+        };
+        let v = cash_movement_view(&m);
+        assert_eq!(v.amount_minor, -1500_i64);
+        assert_eq!(v.note, "supplier");
+        assert_eq!(v.moved_by_name, "Mona");
+        // created_at is rendered as an RFC3339 string in the source offset.
+        assert!(v.created_at.starts_with("2026-06-20T09:30:00"));
+        // id comes from the model's uuid (defaulted → all-zero uuid).
+        assert_eq!(v.id, "00000000-0000-0000-0000-000000000000");
+    }
+
+    #[test]
+    fn cash_movement_view_positive_amount_kept() {
+        let m = models::CashMovement { amount: 4200, ..Default::default() };
+        let v = cash_movement_view(&m);
+        assert_eq!(v.amount_minor, 4200);
+    }
+
+    // ── shift_summary_view: Option<Option<T>> flatten ────────────────────────
+
+    #[test]
+    fn shift_summary_view_flattens_present_double_options() {
+        let s = models::Shift {
+            status: "closed".into(),
+            opening_cash: 50000,
+            branch_name: Some(Some("Maadi".into())),
+            closed_at: Some(Some(
+                chrono::DateTime::parse_from_rfc3339("2026-06-20T18:00:00Z").unwrap(),
+            )),
+            closing_cash_declared: Some(Some(60000)),
+            closing_cash_system: Some(Some(60500)),
+            cash_discrepancy: Some(Some(-500)),
+            ..Default::default()
+        };
+        let v = shift_summary_view(&s);
+        assert_eq!(v.branch_name.as_deref(), Some("Maadi"));
+        assert!(v.closed_at.unwrap().starts_with("2026-06-20T18:00:00"));
+        assert_eq!(v.opening_cash_minor, 50000);
+        assert_eq!(v.closing_declared_minor, Some(60000));
+        assert_eq!(v.closing_system_minor, Some(60500));
+        assert_eq!(v.discrepancy_minor, Some(-500));
+        assert_eq!(v.status, "closed");
+        assert!(!v.is_open);
+    }
+
+    #[test]
+    fn shift_summary_view_flattens_absent_and_inner_none_to_none() {
+        // Outer-None (field absent) and inner-None (explicit JSON null) both
+        // collapse to None after `.flatten()`.
+        let s = models::Shift {
+            status: "open".into(),
+            opening_cash: 10000,
+            branch_name: None,             // outer none
+            closed_at: Some(None),         // inner none (explicit null)
+            closing_cash_declared: Some(None),
+            closing_cash_system: None,
+            cash_discrepancy: Some(None),
+            ..Default::default()
+        };
+        let v = shift_summary_view(&s);
+        assert_eq!(v.branch_name, None);
+        assert_eq!(v.closed_at, None);
+        assert_eq!(v.closing_declared_minor, None);
+        assert_eq!(v.closing_system_minor, None);
+        assert_eq!(v.discrepancy_minor, None);
+        assert!(v.is_open); // status == "open"
+    }
+
+    #[test]
+    fn shift_summary_view_is_open_only_for_exact_open_status() {
+        let mk = |status: &str| models::Shift { status: status.into(), ..Default::default() };
+        assert!(shift_summary_view(&mk("open")).is_open);
+        assert!(!shift_summary_view(&mk("closed")).is_open);
+        assert!(!shift_summary_view(&mk("force_closed")).is_open);
+        assert!(!shift_summary_view(&mk("Open")).is_open); // case-sensitive
+    }
+
+    // ── view_from / current / save / clear / close_local ─────────────────────
+
+    #[test]
+    fn view_from_maps_core_fields_and_is_open_flag() {
+        let s = models::Shift {
+            status: "open".into(),
+            opening_cash: 25000,
+            teller_name: "Sara".into(),
+            ..Default::default()
+        };
+        let v = view_from(&s);
+        assert_eq!(v.teller_name, "Sara");
+        assert_eq!(v.opening_cash_minor, 25000);
+        assert!(v.is_open);
+        // ids stringify from the (defaulted) uuids.
+        assert_eq!(v.branch_id, "00000000-0000-0000-0000-000000000000");
+        assert_eq!(v.teller_id, "00000000-0000-0000-0000-000000000000");
+    }
+
+    #[test]
+    fn save_then_current_roundtrips_a_model() {
+        let store = Store::open("").unwrap();
+        let s = models::Shift { status: "open".into(), opening_cash: 33000, teller_name: "Omar".into(), ..Default::default() };
+        save(&store, &s).unwrap();
+        let v = current(&store).unwrap().unwrap();
+        assert_eq!(v.opening_cash_minor, 33000);
+        assert_eq!(v.teller_name, "Omar");
+        assert!(v.is_open);
+    }
+
+    #[test]
+    fn clear_makes_current_none() {
+        let store = Store::open("").unwrap();
+        save(&store, &models::Shift { status: "open".into(), ..Default::default() }).unwrap();
+        assert!(current(&store).unwrap().is_some());
+        clear(&store).unwrap();
+        assert!(current(&store).unwrap().is_none());
+        // The literal "null" is what's stored, read back as None.
+        assert_eq!(store.kv_get(CURRENT_SHIFT_KEY).unwrap().as_deref(), Some("null"));
+    }
+
+    #[test]
+    fn current_treats_literal_null_as_none() {
+        let store = Store::open("").unwrap();
+        store.kv_put(CURRENT_SHIFT_KEY, "null").unwrap();
+        assert!(current(&store).unwrap().is_none());
+    }
+
+    #[test]
+    fn close_local_flips_status_to_closed() {
+        let store = Store::open("").unwrap();
+        save(&store, &models::Shift { status: "open".into(), opening_cash: 12000, ..Default::default() }).unwrap();
+        close_local(&store).unwrap();
+        let v = current(&store).unwrap().unwrap();
+        assert_eq!(v.status, "closed");
+        assert!(!v.is_open);
+        assert_eq!(v.opening_cash_minor, 12000); // other fields untouched
+    }
+
+    #[test]
+    fn close_local_is_noop_without_a_cached_shift() {
+        let store = Store::open("").unwrap();
+        // No shift saved at all.
+        assert!(close_local(&store).is_ok());
+        assert!(current(&store).unwrap().is_none());
+        // And a no-op on an explicitly-cleared ("null") cache.
+        clear(&store).unwrap();
+        assert!(close_local(&store).is_ok());
+        assert!(current(&store).unwrap().is_none());
+    }
+
+    #[test]
+    fn close_local_is_idempotent() {
+        let store = Store::open("").unwrap();
+        save(&store, &models::Shift { status: "open".into(), ..Default::default() }).unwrap();
+        close_local(&store).unwrap();
+        close_local(&store).unwrap(); // second call stays closed
+        assert_eq!(current(&store).unwrap().unwrap().status, "closed");
+    }
+
+    // ── suggested opening cash: clamp boundary ───────────────────────────────
+
+    #[test]
+    fn cache_suggested_opening_cash_clamps_negative_to_zero_exactly() {
+        let store = Store::open("").unwrap();
+        cache_suggested_opening_cash(&store, 0).unwrap(); // boundary: 0 stays 0
+        assert_eq!(suggested_opening_cash(&store).unwrap(), 0);
+        cache_suggested_opening_cash(&store, -1).unwrap(); // just below clamps
+        assert_eq!(suggested_opening_cash(&store).unwrap(), 0);
+        cache_suggested_opening_cash(&store, 1).unwrap(); // just above kept
+        assert_eq!(suggested_opening_cash(&store).unwrap(), 1);
+    }
+
+    #[test]
+    fn suggested_opening_cash_defaults_to_zero_on_garbage() {
+        let store = Store::open("").unwrap();
+        store.kv_put(SUGGESTED_OPEN_CASH_KEY, "not-a-number").unwrap();
+        // Unparseable cached value falls back to 0, not an error.
+        assert_eq!(suggested_opening_cash(&store).unwrap(), 0);
+    }
+
+    // ── reconcile: remaining matrix corners ──────────────────────────────────
+
+    #[test]
+    fn reconcile_adopts_carries_the_server_shift_payload() {
+        // Adopt actually hands back the server's shift (not a placeholder).
+        let mut pf = models::ShiftPreFill::new(true, 0);
+        let mut srv = open_shift_model();
+        srv.teller_name = "ServerTeller".into();
+        pf.open_shift = Some(Some(Box::new(srv)));
+        match reconcile(&pf, false, false) {
+            ShiftReconcile::Adopt(s) => assert_eq!(s.teller_name, "ServerTeller"),
+            other => panic!("expected Adopt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reconcile_flag_true_inner_none_is_treated_as_no_payload() {
+        // has_open_shift=true but open_shift = Some(None) (explicit null payload):
+        // falls through to the pending/clear branch like a missing payload.
+        let mut pf = models::ShiftPreFill::new(true, 0);
+        pf.open_shift = Some(None);
+        assert!(matches!(reconcile(&pf, true, false), ShiftReconcile::KeepLocal));
+        assert!(matches!(reconcile(&pf, false, false), ShiftReconcile::Clear));
+    }
+
+    #[test]
+    fn reconcile_close_pending_irrelevant_when_server_has_no_shift() {
+        // close_pending only matters on the server-open branch; with no server
+        // shift, the open_pending logic governs regardless of close_pending.
+        let pf = models::ShiftPreFill::new(false, 0);
+        assert!(matches!(reconcile(&pf, true, true), ShiftReconcile::KeepLocal));
+        assert!(matches!(reconcile(&pf, false, true), ShiftReconcile::Clear));
+    }
+
+    #[test]
+    fn reconcile_both_pending_with_server_open_keeps_local() {
+        // Server open + both commands pending: close_pending short-circuits to
+        // KeepLocal (the reverse bounce wins over a re-adopt).
+        let mut pf = models::ShiftPreFill::new(true, 0);
+        pf.open_shift = Some(Some(Box::new(open_shift_model())));
+        assert!(matches!(reconcile(&pf, true, true), ShiftReconcile::KeepLocal));
+    }
 }

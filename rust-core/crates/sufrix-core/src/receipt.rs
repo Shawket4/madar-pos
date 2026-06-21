@@ -689,4 +689,493 @@ mod tests {
         // ESC a 1 (center).
         assert!(bytes.windows(3).any(|w| w == [0x1B, b'a', 0x01]));
     }
+
+    // ── money() formatting: sign, no-currency, rounding boundaries ────────────
+
+    #[test]
+    fn money_handles_zero_thousands_and_exact_currency_suffix() {
+        assert_eq!(money(0, "EGP"), "0.00 EGP");
+        assert_eq!(money(100, "EGP"), "1.00 EGP"); // whole unit
+        assert_eq!(money(99, "EGP"), "0.99 EGP"); // sub-unit, padded? 99 -> 0.99
+        assert_eq!(money(1, "EGP"), "0.01 EGP"); // leading-zero on cents
+        assert_eq!(money(123456, "USD"), "1234.56 USD"); // thousands, no grouping
+    }
+
+    #[test]
+    fn money_no_currency_drops_the_suffix_and_keeps_sign() {
+        assert_eq!(money(14250, ""), "142.50");
+        assert_eq!(money(-14250, ""), "-142.50");
+        assert_eq!(money(5, ""), "0.05");
+        assert_eq!(money(0, ""), "0.00");
+    }
+
+    #[test]
+    fn money_negative_one_cent_keeps_leading_zero() {
+        // unsigned_abs path: -1 → magnitude 1 → "0.01" with a sign.
+        assert_eq!(money(-1, "EGP"), "-0.01 EGP");
+        assert_eq!(money(-100, "EGP"), "-1.00 EGP");
+    }
+
+    #[test]
+    fn money_i64_min_does_not_panic_on_abs() {
+        // unsigned_abs is used precisely so i64::MIN can't overflow .abs().
+        let s = money(i64::MIN, "EGP");
+        assert!(s.starts_with('-'));
+        assert!(s.ends_with(" EGP"));
+    }
+
+    // ── row(): right-align, left-truncation, exact-width boundaries ───────────
+
+    #[test]
+    fn row_exact_width_value_returns_value_only() {
+        // right value is exactly `width` wide → returns just the value, no left.
+        let r = row("Total", "1234567890", 10);
+        assert_eq!(r, "1234567890");
+        assert_eq!(r.chars().count(), 10);
+    }
+
+    #[test]
+    fn row_overlong_value_is_truncated_to_width() {
+        // rc >= width: value is truncated from the front (take(width)).
+        let r = row("L", "12345678901234", 8);
+        assert_eq!(r, "12345678");
+        assert_eq!(r.chars().count(), 8);
+    }
+
+    #[test]
+    fn row_keeps_at_least_one_space_between_columns() {
+        // max_left = width - rc - 1 guarantees a gap even when left would fill it.
+        let r = row("ABCDEFGH", "XY", 10);
+        assert_eq!(r.chars().count(), 10);
+        assert!(r.ends_with("XY"));
+        // left truncated to 7 chars (10 - 2 - 1), then a single pad space.
+        assert_eq!(r, "ABCDEFG XY");
+    }
+
+    #[test]
+    fn row_short_left_pads_with_spaces_to_full_width() {
+        let r = row("A", "Z", 5);
+        assert_eq!(r, "A   Z");
+        assert_eq!(r.chars().count(), 5);
+    }
+
+    #[test]
+    fn row_counts_unicode_by_chars_not_bytes() {
+        // Right value is multi-byte; width accounting is by char count.
+        let r = row("Total", "٥.٠٠", 12); // Arabic-Indic digits
+        assert_eq!(r.chars().count(), 12);
+        assert!(r.ends_with("٥.٠٠"));
+    }
+
+    // ── encode(): framing, ordering, per-line resets, empty input ─────────────
+
+    #[test]
+    fn encode_empty_lines_still_frames_init_feed_and_cut() {
+        let bytes = encode(&[]);
+        // ESC @ at the head.
+        assert_eq!(&bytes[0..2], &[ESC, b'@']);
+        // Tail reset block: ESC a 0, ESC E 0, GS ! 0, LF LF LF, GS V 66 0.
+        let tail = &bytes[bytes.len() - 4..];
+        assert_eq!(tail, &[GS, b'V', 66, 0]);
+        assert!(bytes.windows(3).any(|w| w == [ESC, b'a', 0]));
+        assert!(bytes.windows(3).any(|w| w == [ESC, b'E', 0]));
+        assert!(bytes.windows(3).any(|w| w == [GS, b'!', 0]));
+        assert!(bytes.windows(3).any(|w| w == [LF, LF, LF]));
+    }
+
+    #[test]
+    fn encode_emits_per_line_control_sequence_in_order() {
+        // For one left/plain line: ESC a 0, ESC E 0, GS ! 0, text, LF — in that
+        // order, immediately after the ESC @ init.
+        let bytes = encode(&[Line::plain("AB")]);
+        let expected_head: Vec<u8> = vec![
+            ESC, b'@', ESC, b'a', 0, ESC, b'E', 0, GS, b'!', 0, b'A', b'B', LF,
+        ];
+        assert_eq!(&bytes[..expected_head.len()], expected_head.as_slice());
+    }
+
+    #[test]
+    fn encode_right_align_uses_code_two() {
+        let bytes = encode(&[Line { text: "R".into(), align: Align::Right, bold: false, size: Size::Normal }]);
+        assert!(bytes.windows(3).any(|w| w == [ESC, b'a', 2]));
+    }
+
+    #[test]
+    fn encode_preserves_line_order_and_count() {
+        let bytes = encode(&[Line::plain("FIRST"), Line::plain("SECOND")]);
+        let i_first = bytes.windows(5).position(|w| w == b"FIRST").unwrap();
+        let i_second = bytes.windows(6).position(|w| w == b"SECOND").unwrap();
+        assert!(i_first < i_second);
+    }
+
+    #[test]
+    fn escpos_equals_encode_of_layout() {
+        // The convenience wrapper is exactly encode(layout(..)).
+        let r = cash_receipt();
+        let c = ctx();
+        assert_eq!(escpos(&r, &c), encode(&layout(&r, &c)));
+    }
+
+    // ── drawer kick exact bytes (decimal-form assertion) ─────────────────────
+
+    #[test]
+    fn drawer_kick_decimal_form_is_esc_p_0_25_250() {
+        // ESC=27, 'p'=112, m=0, on=25, off=250.
+        assert_eq!(drawer_kick_bytes(), vec![27, 112, 0, 25, 250]);
+    }
+
+    // ── layout: conditional subtotal / tax / delivery-fee gating ──────────────
+
+    #[test]
+    fn layout_no_subtotal_when_no_discount_or_fee() {
+        let mut r = cash_receipt();
+        r.discount_minor = 0;
+        r.delivery_fee_minor = 0;
+        let lines = layout(&r, &ctx());
+        assert!(!lines.iter().any(|l| l.text.starts_with("Subtotal")));
+    }
+
+    #[test]
+    fn layout_subtotal_appears_for_delivery_fee_alone() {
+        // Delivery fee with NO discount still forces the Subtotal row.
+        let mut r = cash_receipt();
+        r.discount_minor = 0;
+        r.delivery_fee_minor = 1500;
+        let lines = layout(&r, &ctx());
+        assert!(lines.iter().any(|l| l.text.starts_with("Subtotal")));
+        assert!(lines.iter().any(|l| l.text.starts_with("Delivery Fee") && l.text.ends_with("15.00 EGP")));
+        // No discount line when discount is zero.
+        assert!(!lines.iter().any(|l| l.text.starts_with("Discount")));
+    }
+
+    #[test]
+    fn layout_omits_tax_row_when_zero() {
+        let mut r = cash_receipt();
+        r.tax_minor = 0;
+        let lines = layout(&r, &ctx());
+        assert!(!lines.iter().any(|l| l.text.starts_with("Tax")));
+        // Total still printed.
+        assert!(lines.iter().any(|l| l.text.starts_with("Total")));
+    }
+
+    #[test]
+    fn layout_discount_row_is_negative_signed() {
+        let mut r = cash_receipt();
+        r.discount_minor = 500;
+        let lines = layout(&r, &ctx());
+        let d = lines.iter().find(|l| l.text.starts_with("Discount")).expect("discount row");
+        assert!(d.text.ends_with("-5.00 EGP"));
+    }
+
+    // ── layout: delivery channel variants + minimal delivery block ────────────
+
+    #[test]
+    fn layout_delivery_in_mall_channel_flag() {
+        let mut r = cash_receipt();
+        r.is_delivery = true;
+        r.delivery_channel = Some("in_mall".into());
+        let lines = layout(&r, &ctx());
+        assert!(lines.iter().any(|l| l.text == "*** DELIVERY — In-Mall ***" && l.bold));
+    }
+
+    #[test]
+    fn layout_delivery_unknown_channel_falls_back_to_bare_flag() {
+        let mut r = cash_receipt();
+        r.is_delivery = true;
+        r.delivery_channel = Some("drone".into()); // unrecognized
+        let lines = layout(&r, &ctx());
+        assert!(lines.iter().any(|l| l.text == "*** DELIVERY ***" && l.bold));
+        assert!(!lines.iter().any(|l| l.text.contains("—")));
+    }
+
+    #[test]
+    fn layout_delivery_none_channel_bare_flag() {
+        let mut r = cash_receipt();
+        r.is_delivery = true;
+        r.delivery_channel = None;
+        let lines = layout(&r, &ctx());
+        assert!(lines.iter().any(|l| l.text == "*** DELIVERY ***"));
+    }
+
+    #[test]
+    fn layout_delivery_optional_block_fields_are_each_conditional() {
+        // Only zone + delivery_ref + payment_hint + notes set; others absent.
+        let mut r = cash_receipt();
+        r.is_delivery = true;
+        r.delivery_zone = Some("Zone 3".into());
+        r.delivery_ref = Some("DLV-9".into());
+        r.payment_hint = Some("COD".into());
+        r.delivery_notes = Some("ring bell".into());
+        let lines = layout(&r, &ctx());
+        let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+        assert!(text.iter().any(|t| t.starts_with("Zone") && t.ends_with("Zone 3")));
+        assert!(text.iter().any(|t| t.starts_with("Delivery Ref") && t.ends_with("DLV-9")));
+        assert!(text.iter().any(|t| t.starts_with("Payment (hint)") && t.ends_with("COD")));
+        // notes prints as a free-form "{label} {value}" line, not a right-aligned row.
+        assert!(text.iter().any(|t| t.starts_with("Notes:") && t.contains("ring bell")));
+        // Absent customer/phone/address are not printed.
+        assert!(!text.iter().any(|t| t.starts_with("Customer")));
+        assert!(!text.iter().any(|t| t.starts_with("Phone")));
+    }
+
+    #[test]
+    fn layout_non_delivery_prints_customer_in_footer() {
+        let mut r = cash_receipt();
+        r.is_delivery = false;
+        r.customer_name = Some("Walk-in".into());
+        let lines = layout(&r, &ctx());
+        // Non-delivery: customer appears (in the footer block), exactly once.
+        assert_eq!(lines.iter().filter(|l| l.text.starts_with("Customer")).count(), 1);
+        assert!(lines.iter().any(|l| l.text.starts_with("Customer") && l.text.ends_with("Walk-in")));
+    }
+
+    // ── layout: item / modifier / bundle indentation depth ────────────────────
+
+    #[test]
+    fn layout_addon_indent_is_two_spaces_optional_after_addon() {
+        let mut r = cash_receipt();
+        let mut latte = line("Latte", 1, 5000);
+        latte.addons = vec![ReceiptModifierView { name: "Vanilla".into(), price_minor: 300 }];
+        latte.optionals = vec![ReceiptModifierView { name: "Extra hot".into(), price_minor: 0 }];
+        r.lines = vec![latte];
+        let lines = layout(&r, &ctx());
+        let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+        // Non-bundle modifiers use a two-space prefix "  + ".
+        assert!(text.iter().any(|t| t.starts_with("  + Vanilla") && t.contains("+3.00 EGP")));
+        let free = text.iter().find(|t| t.contains("Extra hot")).unwrap();
+        assert_eq!(*free, "  + Extra hot"); // free → name only, no price
+        // Addon comes before the optional.
+        let i_addon = text.iter().position(|t| t.contains("Vanilla")).unwrap();
+        let i_opt = text.iter().position(|t| t.contains("Extra hot")).unwrap();
+        assert!(i_addon < i_opt);
+    }
+
+    #[test]
+    fn layout_bundle_component_and_addon_use_four_space_indent() {
+        let mut r = cash_receipt();
+        let mut combo = line("Combo", 1, 10000);
+        combo.is_bundle = true;
+        combo.components = vec![ReceiptComponentView {
+            name: "Burger".into(),
+            size_label: Some("Double".into()),
+            addons: vec![ReceiptModifierView { name: "Bacon".into(), price_minor: 700 }],
+            optionals: vec![ReceiptModifierView { name: "No onion".into(), price_minor: 0 }],
+        }];
+        r.lines = vec![combo];
+        let lines = layout(&r, &ctx());
+        let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+        // Component line: "  - Burger (Double)" (size inlined).
+        assert!(text.iter().any(|t| *t == "  - Burger (Double)"));
+        // Bundle addon priced, four-space indent "    + ".
+        assert!(text.iter().any(|t| t.starts_with("    + Bacon") && t.contains("+7.00 EGP")));
+        // Bundle free optional: four-space indent, no price.
+        assert!(text.iter().any(|t| *t == "    + No onion"));
+    }
+
+    #[test]
+    fn layout_non_bundle_ignores_components() {
+        // A line with components but is_bundle=false should NOT print them.
+        let mut r = cash_receipt();
+        let mut item = line("Solo", 1, 5000);
+        item.is_bundle = false;
+        item.components = vec![ReceiptComponentView {
+            name: "ShouldNotShow".into(),
+            size_label: None,
+            addons: vec![],
+            optionals: vec![],
+        }];
+        r.lines = vec![item];
+        let lines = layout(&r, &ctx());
+        assert!(!lines.iter().any(|l| l.text.contains("ShouldNotShow")));
+    }
+
+    #[test]
+    fn layout_item_size_label_inlined_in_name() {
+        let mut r = cash_receipt();
+        let mut item = line("Tea", 3, 4500);
+        item.size_label = Some("Large".into());
+        r.lines = vec![item];
+        let lines = layout(&r, &ctx());
+        assert!(lines.iter().any(|l| l.text.starts_with("3x Tea (Large)") && l.text.ends_with("45.00 EGP")));
+    }
+
+    // ── layout: order id vs order number, ref row, datetime fallback ──────────
+
+    #[test]
+    fn layout_uses_short_uppercased_id_when_no_order_number() {
+        let mut r = cash_receipt();
+        r.order_number = None;
+        r.local_order_id = "abc12345-9999-0000-0000-000000000000".into();
+        let lines = layout(&r, &ctx());
+        // short_id = first dash segment, uppercased ("abc12345" → "ABC12345").
+        // At width 32 the left column is truncated to 12 cols (dt = 19 + 1 gap),
+        // so the rendered prefix is the uppercased id clipped — still proves casing.
+        assert!(lines.iter().any(|l| l.text.starts_with("Order ABC123")));
+    }
+
+    #[test]
+    fn layout_order_ref_row_present_only_when_set() {
+        let mut r = cash_receipt();
+        r.order_ref = Some("POS-77".into());
+        let lines = layout(&r, &ctx());
+        assert!(lines.iter().any(|l| l.text.starts_with("Ref:") && l.text.contains("POS-77")));
+
+        let mut r2 = cash_receipt();
+        r2.order_ref = None;
+        let lines2 = layout(&r2, &ctx());
+        assert!(!lines2.iter().any(|l| l.text.starts_with("Ref:")));
+    }
+
+    #[test]
+    fn layout_unparseable_created_at_falls_back_to_raw() {
+        let mut r = cash_receipt();
+        r.created_at = "not-a-date".into();
+        let lines = layout(&r, &ctx());
+        // fmt_dt returns the raw string; the order row carries it verbatim.
+        assert!(lines.iter().any(|l| l.text.contains("not-a-date")));
+    }
+
+    // ── fmt_dt directly ───────────────────────────────────────────────────────
+
+    #[test]
+    fn fmt_dt_formats_in_source_offset_12h() {
+        // 13:05 UTC → "01:05 PM"; date dd/MM/yyyy.
+        assert_eq!(fmt_dt("2026-06-20T13:05:00Z"), "20/06/2026 01:05 PM");
+        // Midnight → 12:00 AM.
+        assert_eq!(fmt_dt("2026-01-09T00:00:00Z"), "09/01/2026 12:00 AM");
+        // Non-UTC offset preserved (not converted to UTC).
+        assert_eq!(fmt_dt("2026-06-20T13:05:00+02:00"), "20/06/2026 01:05 PM");
+    }
+
+    #[test]
+    fn fmt_dt_returns_input_on_parse_failure() {
+        assert_eq!(fmt_dt("garbage"), "garbage");
+        assert_eq!(fmt_dt(""), "");
+    }
+
+    // ── short_id via layout indirection already covered; divider directly ─────
+
+    #[test]
+    fn divider_is_full_width_dashes() {
+        assert_eq!(divider(5), "-----");
+        assert_eq!(divider(0), "");
+    }
+
+    #[test]
+    fn layout_clamps_width_to_minimum_sixteen() {
+        // ctx.width below 16 is clamped to 16, so dividers are 16 wide.
+        let mut c = ctx();
+        c.width = 4;
+        let lines = layout(&cash_receipt(), &c);
+        assert!(lines.iter().any(|l| l.text == "-".repeat(16)));
+    }
+
+    // ── layout_shift_report: empty / conditional sections ─────────────────────
+
+    fn z_labels() -> ShiftReportLabels {
+        ShiftReportLabels {
+            title: "Shift Report".into(),
+            opening: "Opening".into(),
+            payments: "Payments".into(),
+            cash_moves: "Cash moves".into(),
+            cash_in: "Cash in".into(),
+            cash_out: "Cash out".into(),
+            expected: "Expected".into(),
+            voided: "Voided".into(),
+            by_method: "By method".into(),
+        }
+    }
+
+    fn empty_report() -> ShiftReportView {
+        ShiftReportView {
+            expected_cash_minor: 10000,
+            opening_cash_minor: 10000,
+            total_payments_minor: 0,
+            net_payments_minor: 0,
+            voided_amount_minor: 0,
+            cash_movements_net_minor: 0,
+            cash_in_minor: 0,
+            cash_out_minor: 0,
+            payment_lines: vec![],
+            cash_movements: vec![],
+            from_server: true,
+        }
+    }
+
+    #[test]
+    fn layout_shift_report_minimal_has_core_rows_no_optional_sections() {
+        let lines = layout_shift_report(&empty_report(), "Cafe", "EGP", 32, &z_labels());
+        let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+        // Title + opening + payments + expected always present.
+        assert!(text.iter().any(|t| t.starts_with("Opening")));
+        assert!(text.iter().any(|t| t.starts_with("Payments")));
+        assert!(lines.iter().any(|l| l.bold && l.text.starts_with("Expected")));
+        // No cash-in/out rows (both zero), no movements block, no voided block.
+        assert!(!text.iter().any(|t| t.starts_with("Cash in")));
+        assert!(!text.iter().any(|t| t.starts_with("Cash out")));
+        assert!(!text.iter().any(|t| *t == "Cash moves"));
+        assert!(!text.iter().any(|t| t.starts_with("Voided")));
+        // The "By method" header still prints even with no payment lines.
+        assert!(text.iter().any(|t| *t == "By method"));
+    }
+
+    #[test]
+    fn layout_shift_report_cash_in_only_shows_in_not_out() {
+        let mut rep = empty_report();
+        rep.cash_in_minor = 2500;
+        rep.cash_out_minor = 0;
+        let lines = layout_shift_report(&rep, "Cafe", "EGP", 32, &z_labels());
+        assert!(lines.iter().any(|l| l.text.starts_with("Cash in") && l.text.ends_with("25.00 EGP")));
+        assert!(!lines.iter().any(|l| l.text.starts_with("Cash out")));
+    }
+
+    #[test]
+    fn layout_shift_report_cash_out_prints_negative_signed() {
+        let mut rep = empty_report();
+        rep.cash_out_minor = 1800; // stored positive, printed negated
+        let lines = layout_shift_report(&rep, "Cafe", "EGP", 32, &z_labels());
+        assert!(lines.iter().any(|l| l.text.starts_with("Cash out") && l.text.ends_with("-18.00 EGP")));
+    }
+
+    #[test]
+    fn layout_shift_report_blank_note_movement_labels_by_name() {
+        let mut rep = empty_report();
+        rep.cash_movements = vec![
+            crate::shift::ShiftReportCashLine { amount_minor: 500, note: "   ".into(), moved_by_name: "Mona".into(), created_at: "t".into() },
+        ];
+        let lines = layout_shift_report(&rep, "Cafe", "EGP", 32, &z_labels());
+        // A whitespace-only note falls back to the mover's name.
+        assert!(lines.iter().any(|l| l.text.trim_start().starts_with("Mona") && l.text.ends_with("5.00 EGP")));
+        // The "Cash moves" header is emitted once movements exist.
+        assert!(lines.iter().any(|l| l.text == "Cash moves"));
+    }
+
+    #[test]
+    fn layout_shift_report_voided_block_only_when_positive() {
+        let mut rep = empty_report();
+        rep.voided_amount_minor = 750;
+        let lines = layout_shift_report(&rep, "Cafe", "EGP", 32, &z_labels());
+        assert!(lines.iter().any(|l| l.text.starts_with("Voided") && l.text.ends_with("7.50 EGP")));
+
+        let mut rep0 = empty_report();
+        rep0.voided_amount_minor = 0;
+        let lines0 = layout_shift_report(&rep0, "Cafe", "EGP", 32, &z_labels());
+        assert!(!lines0.iter().any(|l| l.text.starts_with("Voided")));
+    }
+
+    #[test]
+    fn layout_shift_report_header_is_double_size_bold() {
+        let lines = layout_shift_report(&empty_report(), "Cafe Sufrix", "EGP", 32, &z_labels());
+        assert_eq!(lines[0].text, "Cafe Sufrix");
+        assert_eq!(lines[0].size, Size::Double);
+        assert!(lines[0].bold);
+        assert_eq!(lines[0].align, Align::Center);
+    }
+
+    #[test]
+    fn layout_shift_report_clamps_width_to_sixteen() {
+        let lines = layout_shift_report(&empty_report(), "Cafe", "EGP", 1, &z_labels());
+        // Dividers reflect the clamped 16-col width.
+        assert!(lines.iter().any(|l| l.text == "-".repeat(16)));
+    }
 }

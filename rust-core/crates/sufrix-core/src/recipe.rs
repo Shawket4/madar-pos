@@ -334,4 +334,239 @@ mod tests {
         let out = compute_recipe(&it, &[shot.clone(), shot], Some("M"), &[sel("a-shot", 1), sel("a-shot", 1)], &[]);
         assert_eq!(out.len(), 3, "base + two separate addon rows, not merged");
     }
+
+    // ── empty / trivial cases ───────────────────────────────────────────────
+
+    #[test]
+    fn empty_recipe_and_no_selection_yields_nothing() {
+        let it = item(vec![], vec![]);
+        let out = compute_recipe(&it, &[], Some("M"), &[], &[]);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn size_agnostic_only_recipe_ignores_size_selection() {
+        // All rows are size-agnostic → they apply regardless of the chosen size.
+        let it = item(
+            vec![
+                recipe("Water", "ml", 30.0, None, "general", Some("o-water")),
+                recipe("Sugar", "g", 5.0, None, "general", Some("o-sugar")),
+            ],
+            vec![],
+        );
+        let m = compute_recipe(&it, &[], Some("M"), &[], &[]);
+        let none = compute_recipe(&it, &[], None, &[], &[]);
+        assert_eq!(m.len(), 2);
+        assert_eq!(none.len(), 2); // no size chosen, still both agnostic rows
+    }
+
+    // ── target-size inference when no size is passed ────────────────────────
+
+    #[test]
+    fn no_size_selected_uses_first_concrete_size_present() {
+        // size_label=None on the call: target_size is inferred from the first
+        // recipe row that carries a size_label (here "M"). The "L" row is dropped.
+        let it = item(
+            vec![
+                recipe("Beans", "g", 18.0, Some("M"), "coffee_bean", Some("o-beans")),
+                recipe("Beans", "g", 24.0, Some("L"), "coffee_bean", Some("o-beans")),
+                recipe("Water", "ml", 30.0, None, "general", Some("o-water")),
+            ],
+            vec![],
+        );
+        let out = compute_recipe(&it, &[], None, &[], &[]);
+        assert_eq!(out.len(), 2); // M coffee + agnostic water
+        assert_eq!(out[0].quantity, 18.0); // the M row, not L
+    }
+
+    #[test]
+    fn unknown_selected_size_keeps_only_agnostic_rows() {
+        // A size that matches no concrete row → size-specific rows all excluded,
+        // only size-agnostic rows survive.
+        let it = item(
+            vec![
+                recipe("Beans", "g", 18.0, Some("M"), "coffee_bean", Some("o-beans")),
+                recipe("Water", "ml", 30.0, None, "general", Some("o-water")),
+            ],
+            vec![],
+        );
+        let out = compute_recipe(&it, &[], Some("XL"), &[], &[]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ingredient_name, "Water");
+    }
+
+    // ── coffee swaps ────────────────────────────────────────────────────────
+
+    #[test]
+    fn coffee_swap_replaces_coffee_bean_base_line() {
+        let it = item(
+            vec![recipe("House Beans", "g", 18.0, Some("M"), "coffee_bean", Some("o-house"))],
+            vec![],
+        );
+        let decaf = addon("a-decaf", "Decaf", "coffee_type", vec![ing("Decaf beans", "g", 99.0, Some("o-decaf"))]);
+        let out = compute_recipe(&it, &[decaf], Some("M"), &[sel("a-decaf", 1)], &[]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ingredient_name, "Decaf beans");
+        assert_eq!(out[0].quantity, 18.0, "swap inherits base qty");
+        assert_eq!(out[0].source_label, "Decaf");
+        assert!(!out[0].is_base);
+    }
+
+    #[test]
+    fn milk_addon_with_no_matching_base_category_does_not_add_or_swap() {
+        // The item has only a coffee_bean base line; a milk swap finds no `milk`
+        // base row → has_base is false → nothing changes, milk adds no line.
+        let it = item(
+            vec![recipe("Beans", "g", 18.0, Some("M"), "coffee_bean", Some("o-beans"))],
+            vec![],
+        );
+        let oat = addon("a-oat", "Oat", "milk_type", vec![ing("Oat milk", "ml", 200.0, Some("o-oat"))]);
+        let out = compute_recipe(&it, &[oat], Some("M"), &[sel("a-oat", 1)], &[]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ingredient_name, "Beans");
+        assert!(out[0].is_base);
+    }
+
+    #[test]
+    fn milk_swap_replaces_all_matching_base_lines() {
+        // Two base milk lines of the same category → both get swapped in place.
+        let it = item(
+            vec![
+                recipe("Whole milk", "ml", 150.0, None, "milk", Some("o-whole")),
+                recipe("Whole milk", "ml", 50.0, None, "milk", Some("o-whole")),
+            ],
+            vec![],
+        );
+        let oat = addon("a-oat", "Oat", "milk_type", vec![ing("Oat milk", "ml", 0.0, Some("o-oat"))]);
+        let out = compute_recipe(&it, &[oat], None, &[sel("a-oat", 1)], &[]);
+        assert_eq!(out.len(), 2);
+        assert!(out.iter().all(|r| r.ingredient_name == "Oat milk"));
+        assert_eq!(out[0].quantity, 150.0); // each keeps its own base qty
+        assert_eq!(out[1].quantity, 50.0);
+        assert!(out.iter().all(|r| !r.is_base && r.source_label == "Oat"));
+    }
+
+    #[test]
+    fn swap_default_detection_requires_both_ids_present() {
+        // Base line has NO org_ingredient_id; even if the addon ingredient has one,
+        // is_default is false (the `_` arm), so this is treated as a real swap.
+        let it = item(
+            vec![recipe("Whole milk", "ml", 200.0, Some("M"), "milk", None)],
+            vec![],
+        );
+        let oat = addon("a-oat", "Oat", "milk_type", vec![ing("Oat milk", "ml", 0.0, Some("o-oat"))]);
+        let out = compute_recipe(&it, &[oat], Some("M"), &[sel("a-oat", 1)], &[]);
+        assert_eq!(out[0].ingredient_name, "Oat milk"); // swapped
+        assert!(!out[0].is_base);
+    }
+
+    // ── unknown / missing references are skipped ────────────────────────────
+
+    #[test]
+    fn unknown_addon_id_is_skipped() {
+        let it = item(vec![recipe("Beans", "g", 18.0, Some("M"), "coffee_bean", Some("o-beans"))], vec![]);
+        // Catalog is empty → the selection's addon can't be found → skipped.
+        let out = compute_recipe(&it, &[], Some("M"), &[sel("ghost", 1)], &[]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ingredient_name, "Beans");
+    }
+
+    #[test]
+    fn unknown_optional_id_is_skipped() {
+        let it = item(vec![recipe("Beans", "g", 18.0, Some("M"), "coffee_bean", None)], vec![]);
+        let out = compute_recipe(&it, &[], Some("M"), &[], &["no-such-optional".into()]);
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn optional_missing_any_ingredient_field_contributes_no_line() {
+        // ingredient_name + unit present but quantity_used None → no line (the
+        // `if let (Some, Some, Some)` guard fails).
+        let partial = OptionalFieldView {
+            id: "opt-x".into(),
+            name: "Partial".into(),
+            price_minor: 0,
+            is_active: true,
+            ingredient_name: Some("Foam".into()),
+            ingredient_unit: Some("ml".into()),
+            quantity_used: None,
+            org_ingredient_id: None,
+        };
+        let it = item(vec![recipe("Beans", "g", 18.0, Some("M"), "coffee_bean", None)], vec![partial]);
+        let out = compute_recipe(&it, &[], Some("M"), &[], &["opt-x".into()]);
+        assert_eq!(out.len(), 1, "no quantity → no deduction line");
+    }
+
+    // ── addon qty clamping & multi-ingredient additives ─────────────────────
+
+    #[test]
+    fn additive_addon_qty_clamps_to_one_when_zero_or_negative() {
+        let it = item(vec![], vec![]);
+        let syrup = addon("a-syrup", "Caramel", "extra", vec![ing("Syrup", "ml", 10.0, Some("o-car"))]);
+        // qty 0 → clamped to 1 (10ml × 1).
+        let zero = compute_recipe(&it, &[syrup.clone()], None, &[sel("a-syrup", 0)], &[]);
+        assert_eq!(zero[0].quantity, 10.0);
+        // negative qty → also clamps to 1.
+        let neg = compute_recipe(&it, &[syrup], None, &[sel("a-syrup", -5)], &[]);
+        assert_eq!(neg[0].quantity, 10.0);
+    }
+
+    #[test]
+    fn additive_addon_emits_a_line_per_embedded_ingredient() {
+        let it = item(vec![], vec![]);
+        let combo = addon(
+            "a-combo",
+            "Combo Shot",
+            "extra",
+            vec![ing("Espresso", "ml", 30.0, Some("o-esp")), ing("Sugar", "g", 5.0, Some("o-sug"))],
+        );
+        let out = compute_recipe(&it, &[combo], None, &[sel("a-combo", 2)], &[]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].quantity, 60.0); // 30 × 2
+        assert_eq!(out[1].quantity, 10.0); // 5 × 2
+        assert!(out.iter().all(|r| r.source_label == "addon" && !r.is_base));
+    }
+
+    // ── ordering: base, then addons, then optionals ─────────────────────────
+
+    #[test]
+    fn output_order_is_base_then_addons_then_optionals() {
+        let opt = OptionalFieldView {
+            id: "opt-shot".into(),
+            name: "Extra shot".into(),
+            price_minor: 1500,
+            is_active: true,
+            ingredient_name: Some("Espresso".into()),
+            ingredient_unit: Some("shot".into()),
+            quantity_used: Some(1.0),
+            org_ingredient_id: Some("o-esp".into()),
+        };
+        let it = item(
+            vec![recipe("Beans", "g", 18.0, Some("M"), "coffee_bean", Some("o-beans"))],
+            vec![opt],
+        );
+        let syrup = addon("a-syrup", "Caramel", "extra", vec![ing("Syrup", "ml", 10.0, Some("o-car"))]);
+        let out = compute_recipe(&it, &[syrup], Some("M"), &[sel("a-syrup", 1)], &["opt-shot".into()]);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].source_label, "base"); // base first
+        assert_eq!(out[1].source_label, "addon"); // addon second
+        assert_eq!(out[2].source_label, "Extra shot"); // optional last
+    }
+
+    #[test]
+    fn swap_then_additive_addon_coexist_in_selection_order() {
+        // A milk swap followed by an additive syrup: base milk is replaced in
+        // place (stays at index 0), the syrup appends after.
+        let it = item(
+            vec![recipe("Whole milk", "ml", 200.0, Some("M"), "milk", Some("o-whole"))],
+            vec![],
+        );
+        let oat = addon("a-oat", "Oat", "milk_type", vec![ing("Oat milk", "ml", 0.0, Some("o-oat"))]);
+        let syrup = addon("a-syrup", "Caramel", "extra", vec![ing("Syrup", "ml", 10.0, Some("o-car"))]);
+        let out = compute_recipe(&it, &[oat, syrup], Some("M"), &[sel("a-oat", 1), sel("a-syrup", 1)], &[]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].ingredient_name, "Oat milk"); // swapped base line, in place
+        assert_eq!(out[0].source_label, "Oat");
+        assert_eq!(out[1].ingredient_name, "Syrup"); // additive appended
+    }
 }

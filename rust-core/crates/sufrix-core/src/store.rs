@@ -594,4 +594,609 @@ mod tests {
         assert_eq!(s.purge_acked_older_than(now_ms() - 1000).unwrap(), 0); // too fresh
         assert_eq!(s.purge_acked_older_than(now_ms() + 1000).unwrap(), 1); // now purged
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // UPGRADE / MIGRATION PATH
+    //
+    // An app updated in place inherits a DB whose `outbox` predates the
+    // offline-orchestration columns. `Store::open` MUST migrate it (adding the
+    // missing columns + the backoff-gate index) rather than crash on the index
+    // that references a column that doesn't exist yet. One test per missing
+    // column, a fully-old-schema variant, and a re-open idempotency check.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Unique on-disk path per test (no shared-fixture collisions when the suite
+    /// runs in parallel). Pre-removed so a leftover from a prior run can't taint.
+    fn temp_db(tag: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("sufrix_store_mig_{tag}.sqlite"));
+        let _ = std::fs::remove_file(&path);
+        // WAL/SHM siblings can linger and confuse a re-create; clear them too.
+        let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite-shm"));
+        path
+    }
+
+    /// Build an `outbox` table whose column set is the modern shape MINUS the
+    /// columns named in `omit`, then insert one pending row. The omitted columns
+    /// are exactly the ones the migrations are responsible for adding back. The
+    /// `outbox_due` index is intentionally NOT created (old DBs lacked it).
+    fn build_old_outbox(path: &std::path::Path, omit: &[&str]) {
+        // The full post-migration column set, in DDL order, with type+constraints.
+        let all: &[(&str, &str)] = &[
+            ("next_attempt_at", "INTEGER NOT NULL DEFAULT 0"),
+            ("synced_at", "INTEGER"),
+            ("user_id", "TEXT"),
+            ("clock_offset_ms", "INTEGER"),
+            ("shift_id", "TEXT"),
+        ];
+        // Columns that always existed pre-orchestration (never omitted).
+        let mut cols = vec![
+            "seq INTEGER PRIMARY KEY AUTOINCREMENT".to_string(),
+            "id TEXT NOT NULL UNIQUE".to_string(),
+            "op_type TEXT NOT NULL".to_string(),
+            "idempotency_key TEXT NOT NULL".to_string(),
+            "payload TEXT NOT NULL".to_string(),
+            "event_at TEXT NOT NULL".to_string(),
+            "enqueued_at TEXT NOT NULL".to_string(),
+            "status TEXT NOT NULL DEFAULT 'pending'".to_string(),
+            "attempts INTEGER NOT NULL DEFAULT 0".to_string(),
+            "last_error TEXT".to_string(),
+            "server_id TEXT".to_string(),
+            "depends_on_seq INTEGER".to_string(),
+        ];
+        for (name, decl) in all {
+            if !omit.contains(name) {
+                cols.push(format!("{name} {decl}"));
+            }
+        }
+        let ddl = format!("CREATE TABLE outbox (\n  {}\n);", cols.join(",\n  "));
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(&ddl).unwrap();
+        // The other tables exist in old DBs too; create them so a real open is faithful.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL, updated_at TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS id_map (entity_type TEXT NOT NULL, client_temp_id TEXT NOT NULL, server_id TEXT NOT NULL, PRIMARY KEY(entity_type, client_temp_id));
+             CREATE TABLE IF NOT EXISTS sync_cursors (stream TEXT PRIMARY KEY, last_server_seq INTEGER NOT NULL DEFAULT 0);
+             CREATE INDEX IF NOT EXISTS outbox_status_seq ON outbox(status, seq);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO outbox(id,op_type,idempotency_key,payload,event_at,enqueued_at)
+             VALUES('old-1','create_order','old-1','{}','2026-06-19T10:00:00Z','2026-06-19T10:00:00Z')",
+            [],
+        )
+        .unwrap();
+        // Drop the connection (and its lock) before the Store re-opens the file.
+        drop(conn);
+    }
+
+    /// After a migrating open, the single pre-existing 'old-1' row must survive,
+    /// be readable through the `COLS` mapper (proving every new column exists and
+    /// maps), and have sane defaults: ready-now backoff, NULL orchestration fields.
+    fn assert_old_row_survives_with_defaults(s: &Store) {
+        // due_for_sync exercises next_attempt_at + user scoping over the migrated row.
+        let due = s.due_for_sync(now_ms() + 10_000, None).unwrap();
+        assert_eq!(due.len(), 1, "the migrated row must be due");
+        let row = &due[0];
+        assert_eq!(row.id, "old-1");
+        assert_eq!(row.status, "pending");
+        assert_eq!(row.next_attempt_at, 0, "missing next_attempt_at defaults to 0 (ready now)");
+        assert_eq!(row.user_id, None, "legacy row has NULL user_id");
+        assert_eq!(row.clock_offset_ms, None);
+        assert_eq!(row.shift_id, None);
+        // pending() round-trips the same row through the full mapper independently.
+        assert_eq!(s.pending().unwrap().len(), 1);
+        // The backoff-gate index must now exist (open creates it post-migration).
+        let cnt: i64 = s
+            .lock()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='outbox_due'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1, "outbox_due index must exist after open");
+    }
+
+    #[test]
+    fn migrate_missing_next_attempt_at() {
+        let path = temp_db("missing_naa");
+        build_old_outbox(&path, &["next_attempt_at"]);
+        let s = Store::open(path.to_str().unwrap()).expect("open must add next_attempt_at + index");
+        assert_old_row_survives_with_defaults(&s);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn migrate_missing_synced_at() {
+        let path = temp_db("missing_synced");
+        build_old_outbox(&path, &["synced_at"]);
+        let s = Store::open(path.to_str().unwrap()).expect("open must add synced_at");
+        assert_old_row_survives_with_defaults(&s);
+        // purge keys off synced_at; with the column freshly added the row is NULL,
+        // so it must never be purged (and the query must not error on the new col).
+        s.enqueue(&op("fresh")).unwrap();
+        assert_eq!(s.purge_acked_older_than(now_ms() + 10_000).unwrap(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn migrate_missing_user_id() {
+        let path = temp_db("missing_user");
+        build_old_outbox(&path, &["user_id"]);
+        let s = Store::open(path.to_str().unwrap()).expect("open must add user_id");
+        assert_old_row_survives_with_defaults(&s);
+        // The NULL-user legacy row is included under any teller's scope.
+        let scoped: Vec<_> = s
+            .due_for_sync(now_ms() + 10_000, Some("alice"))
+            .unwrap()
+            .into_iter()
+            .map(|i| i.id)
+            .collect();
+        assert_eq!(scoped, vec!["old-1"]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn migrate_missing_clock_offset_ms() {
+        let path = temp_db("missing_clock");
+        build_old_outbox(&path, &["clock_offset_ms"]);
+        let s = Store::open(path.to_str().unwrap()).expect("open must add clock_offset_ms");
+        assert_old_row_survives_with_defaults(&s);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn migrate_missing_shift_id() {
+        let path = temp_db("missing_shift");
+        build_old_outbox(&path, &["shift_id"]);
+        let s = Store::open(path.to_str().unwrap()).expect("open must add shift_id");
+        assert_old_row_survives_with_defaults(&s);
+        // shift gating queries the freshly-added column without erroring.
+        assert!(!s.has_live_shift_writes("any-shift", -1).unwrap());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn migrate_fully_old_schema_all_columns_missing() {
+        // The realistic upgrade: NONE of the orchestration columns nor the
+        // outbox_due index exist. All five ALTERs + the index must run.
+        let path = temp_db("all_missing");
+        build_old_outbox(
+            &path,
+            &["next_attempt_at", "synced_at", "user_id", "clock_offset_ms", "shift_id"],
+        );
+        let s = Store::open(path.to_str().unwrap()).expect("open must fully migrate, not crash");
+        assert_old_row_survives_with_defaults(&s);
+        // The migrated store is fully functional end-to-end: enqueue + drain + ack.
+        let seq = s.due_for_sync(now_ms() + 10_000, None).unwrap()[0].seq;
+        s.mark_inflight(seq).unwrap();
+        s.mark_acked(seq, Some("srv")).unwrap();
+        assert_eq!(s.pending_count().unwrap(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reopen_twice_is_idempotent() {
+        // Re-running migrations on an already-current DB must be a no-op (the
+        // ALTERs raise "duplicate column" which open swallows). Open three times.
+        let path = temp_db("reopen_idem");
+        build_old_outbox(&path, &["next_attempt_at", "synced_at", "user_id", "clock_offset_ms", "shift_id"]);
+        {
+            let s = Store::open(path.to_str().unwrap()).expect("first open migrates");
+            s.enqueue(&op("after-migrate")).unwrap();
+            assert_eq!(s.pending_count().unwrap(), 2); // old-1 + after-migrate
+        }
+        {
+            let s = Store::open(path.to_str().unwrap()).expect("second open is a no-op migrate");
+            assert_eq!(s.pending_count().unwrap(), 2);
+            // old-1 still carries its migrated defaults (don't assert total count
+            // here — there are now 2 pending rows).
+            let old = s
+                .due_for_sync(now_ms() + 10_000, None)
+                .unwrap()
+                .into_iter()
+                .find(|i| i.id == "old-1")
+                .expect("old-1 still present after re-open");
+            assert_eq!(old.status, "pending");
+            assert_eq!(old.next_attempt_at, 0);
+            assert_eq!(old.user_id, None);
+            assert_eq!(old.clock_offset_ms, None);
+            assert_eq!(old.shift_id, None);
+        }
+        {
+            // Third open on the now-modern DB must also succeed unchanged.
+            let s = Store::open(path.to_str().unwrap()).expect("third open still fine");
+            assert_eq!(s.pending_count().unwrap(), 2);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn open_on_fresh_db_runs_migrations_as_noops() {
+        // A brand-new DB already has every column via SCHEMA; the ALTERs all hit
+        // "duplicate column" and are swallowed, and open still succeeds.
+        let path = temp_db("fresh_noop");
+        {
+            let s = Store::open(path.to_str().unwrap()).expect("fresh open");
+            s.enqueue(&op("x")).unwrap();
+        }
+        let s = Store::open(path.to_str().unwrap()).expect("re-open fresh DB");
+        assert_eq!(s.pending_count().unwrap(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // KV / id_map / cursors — boundary + overwrite coverage
+    // ════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn kv_empty_value_and_missing_key() {
+        let s = Store::open("").unwrap();
+        // Missing key → None.
+        assert_eq!(s.kv_get("nope").unwrap(), None);
+        // Empty-string value is a real stored value, distinct from absent.
+        s.kv_put("blank", "").unwrap();
+        assert_eq!(s.kv_get("blank").unwrap().as_deref(), Some(""));
+        // Overwrite back to non-empty.
+        s.kv_put("blank", "x").unwrap();
+        assert_eq!(s.kv_get("blank").unwrap().as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn id_map_overwrite_updates_server_id() {
+        let s = Store::open("").unwrap();
+        s.id_map_put("order", "local-1", "srv-1").unwrap();
+        // Re-put same (entity, temp) updates the server id in place.
+        s.id_map_put("order", "local-1", "srv-2").unwrap();
+        assert_eq!(s.id_map_get("order", "local-1").unwrap().as_deref(), Some("srv-2"));
+        // Same temp id under a DIFFERENT entity type is a distinct row.
+        s.id_map_put("shift", "local-1", "srv-shift").unwrap();
+        assert_eq!(s.id_map_get("shift", "local-1").unwrap().as_deref(), Some("srv-shift"));
+        assert_eq!(s.id_map_get("order", "local-1").unwrap().as_deref(), Some("srv-2"));
+    }
+
+    #[test]
+    fn cursor_defaults_zero_and_overwrites() {
+        let s = Store::open("").unwrap();
+        assert_eq!(s.cursor_get("unknown").unwrap(), 0); // default for absent stream
+        s.cursor_set("orders", 10).unwrap();
+        s.cursor_set("orders", 5).unwrap(); // set is an unconditional overwrite (not max)
+        assert_eq!(s.cursor_get("orders").unwrap(), 5);
+        // Streams are independent.
+        s.cursor_set("shifts", 99).unwrap();
+        assert_eq!(s.cursor_get("orders").unwrap(), 5);
+        assert_eq!(s.cursor_get("shifts").unwrap(), 99);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // due_for_sync — backoff boundary + FIFO + status filtering
+    // ════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn due_for_sync_gate_is_inclusive_boundary() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        // Gate the row exactly at t=1000.
+        s.mark_retry(a, "x", 1000).unwrap();
+        // now < gate → not due.
+        assert!(s.due_for_sync(999, None).unwrap().is_empty());
+        // now == gate → due (predicate is `next_attempt_at <= now_ms`).
+        assert_eq!(s.due_for_sync(1000, None).unwrap().len(), 1);
+        // now > gate → due.
+        assert_eq!(s.due_for_sync(1001, None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn due_for_sync_excludes_non_pending_statuses() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        let b = s.enqueue(&op("b")).unwrap();
+        let c = s.enqueue(&op("c")).unwrap();
+        s.mark_inflight(a).unwrap(); // inflight: excluded
+        s.mark_acked(b, Some("srv")).unwrap(); // acked: excluded
+        // dead c: excluded too.
+        s.mark_dead(c, "boom").unwrap();
+        assert!(s.due_for_sync(now_ms() + 10_000, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn due_for_sync_is_fifo_by_seq() {
+        let s = Store::open("").unwrap();
+        // Enqueue out of "alphabetical" order to prove ordering is by seq, not id.
+        s.enqueue(&op("zeta")).unwrap();
+        s.enqueue(&op("alpha")).unwrap();
+        s.enqueue(&op("mid")).unwrap();
+        let ids: Vec<_> = s.due_for_sync(now_ms() + 10_000, None).unwrap().into_iter().map(|i| i.id).collect();
+        assert_eq!(ids, vec!["zeta", "alpha", "mid"]);
+    }
+
+    #[test]
+    fn due_for_sync_empty_queue_returns_empty() {
+        let s = Store::open("").unwrap();
+        assert!(s.due_for_sync(now_ms(), None).unwrap().is_empty());
+        assert!(s.due_for_sync(now_ms(), Some("alice")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn due_for_sync_scoped_excludes_pure_other_teller() {
+        let s = Store::open("").unwrap();
+        s.enqueue(&NewOutboxOp { user_id: Some("bob".into()), ..op("b") }).unwrap();
+        // Alice's scope sees nothing (bob's op + no legacy NULL rows).
+        assert!(s.due_for_sync(now_ms() + 10_000, Some("alice")).unwrap().is_empty());
+        // Bob's scope sees his own op.
+        let ids: Vec<_> = s.due_for_sync(now_ms() + 10_000, Some("bob")).unwrap().into_iter().map(|i| i.id).collect();
+        assert_eq!(ids, vec!["b"]);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // status_of_seq / live_seq_of
+    // ════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn status_of_seq_tracks_transitions_and_unknown() {
+        let s = Store::open("").unwrap();
+        assert_eq!(s.status_of_seq(99999).unwrap(), None); // no such seq
+        let a = s.enqueue(&op("a")).unwrap();
+        assert_eq!(s.status_of_seq(a).unwrap().as_deref(), Some("pending"));
+        s.mark_inflight(a).unwrap();
+        assert_eq!(s.status_of_seq(a).unwrap().as_deref(), Some("inflight"));
+        s.mark_dead(a, "boom").unwrap();
+        assert_eq!(s.status_of_seq(a).unwrap().as_deref(), Some("dead"));
+        s.requeue_dead().unwrap();
+        assert_eq!(s.status_of_seq(a).unwrap().as_deref(), Some("pending"));
+        s.mark_acked(a, None).unwrap();
+        assert_eq!(s.status_of_seq(a).unwrap().as_deref(), Some("acked"));
+    }
+
+    #[test]
+    fn live_seq_of_covers_live_states_and_acked_and_missing() {
+        let s = Store::open("").unwrap();
+        assert_eq!(s.live_seq_of("ghost").unwrap(), None); // never enqueued
+        let a = s.enqueue(&op("a")).unwrap();
+        assert_eq!(s.live_seq_of("a").unwrap(), Some(a)); // pending counts as live
+        s.mark_inflight(a).unwrap();
+        assert_eq!(s.live_seq_of("a").unwrap(), Some(a)); // inflight counts
+        s.mark_dead(a, "x").unwrap();
+        assert_eq!(s.live_seq_of("a").unwrap(), Some(a)); // dead counts (still a real row)
+        s.mark_acked(a, Some("srv")).unwrap();
+        assert_eq!(s.live_seq_of("a").unwrap(), None); // acked is NOT a live dep target
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // has_live_shift_writes — close-last gating
+    // ════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn has_live_shift_writes_excludes_self_seq() {
+        let s = Store::open("").unwrap();
+        // Only the close itself is live for the shift.
+        let close = s.enqueue(&op_with("close", "close_shift", Some("sh1"), None)).unwrap();
+        // Excluding the close's own seq → no OTHER live writes → false.
+        assert!(!s.has_live_shift_writes("sh1", close).unwrap());
+        // Without excluding it... close_shift isn't a counted op_type anyway → still false.
+        assert!(!s.has_live_shift_writes("sh1", -1).unwrap());
+    }
+
+    #[test]
+    fn has_live_shift_writes_counts_only_relevant_op_types() {
+        let s = Store::open("").unwrap();
+        // A non-write op for the shift (e.g. open_shift) must NOT gate the close.
+        s.enqueue(&op_with("open", "open_shift", Some("sh1"), None)).unwrap();
+        assert!(!s.has_live_shift_writes("sh1", -1).unwrap());
+        // A real write (create_order) DOES gate it.
+        s.enqueue(&op_with("o1", "create_order", Some("sh1"), None)).unwrap();
+        assert!(s.has_live_shift_writes("sh1", -1).unwrap());
+        // void_order and cash_movement gate too.
+        let s2 = Store::open("").unwrap();
+        s2.enqueue(&op_with("v", "void_order", Some("sh2"), None)).unwrap();
+        assert!(s2.has_live_shift_writes("sh2", -1).unwrap());
+        let s3 = Store::open("").unwrap();
+        s3.enqueue(&op_with("c", "cash_movement", Some("sh3"), None)).unwrap();
+        assert!(s3.has_live_shift_writes("sh3", -1).unwrap());
+    }
+
+    #[test]
+    fn has_live_shift_writes_is_shift_scoped() {
+        let s = Store::open("").unwrap();
+        // A live order belongs to a DIFFERENT shift; sh1's close is unblocked.
+        s.enqueue(&op_with("o-other", "create_order", Some("sh2"), None)).unwrap();
+        assert!(!s.has_live_shift_writes("sh1", -1).unwrap());
+        assert!(s.has_live_shift_writes("sh2", -1).unwrap());
+    }
+
+    #[test]
+    fn has_live_shift_writes_ignores_acked_and_dead_writes() {
+        let s = Store::open("").unwrap();
+        let o = s.enqueue(&op_with("o1", "create_order", Some("sh1"), None)).unwrap();
+        assert!(s.has_live_shift_writes("sh1", -1).unwrap());
+        // Acked write no longer gates.
+        s.mark_acked(o, Some("srv")).unwrap();
+        assert!(!s.has_live_shift_writes("sh1", -1).unwrap());
+        // A dead write also doesn't count as "live" (only pending/inflight do).
+        let o2 = s.enqueue(&op_with("o2", "create_order", Some("sh1"), None)).unwrap();
+        s.mark_dead(o2, "boom").unwrap();
+        assert!(!s.has_live_shift_writes("sh1", -1).unwrap());
+        // Inflight write DOES gate.
+        let o3 = s.enqueue(&op_with("o3", "create_order", Some("sh1"), None)).unwrap();
+        s.mark_inflight(o3).unwrap();
+        assert!(s.has_live_shift_writes("sh1", -1).unwrap());
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // retry semantics — attempts bump vs no-count
+    // ════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn mark_retry_bumps_attempts_and_sets_gate_and_error() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        s.mark_inflight(a).unwrap();
+        s.mark_retry(a, "503 transient", 5000).unwrap();
+        let row = &s.due_for_sync(5000, None).unwrap()[0]; // back to pending, gate hit at 5000
+        assert_eq!(row.status, "pending");
+        assert_eq!(row.attempts, 1);
+        assert_eq!(row.next_attempt_at, 5000);
+        assert_eq!(row.last_error.as_deref(), Some("503 transient"));
+        // A second counted retry bumps again.
+        s.mark_retry(a, "503 again", 6000).unwrap();
+        assert_eq!(s.due_for_sync(6000, None).unwrap()[0].attempts, 2);
+    }
+
+    #[test]
+    fn mark_retry_no_count_reschedules_without_bumping_attempts() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        // First, a counted retry to push attempts to 1 and set an error.
+        s.mark_retry(a, "real failure", 1000).unwrap();
+        assert_eq!(s.due_for_sync(1000, None).unwrap()[0].attempts, 1);
+        // A no-count reschedule moves the gate but leaves attempts AND last_error.
+        s.mark_inflight(a).unwrap();
+        s.mark_retry_no_count(a, 8000).unwrap();
+        let row = &s.due_for_sync(8000, None).unwrap()[0];
+        assert_eq!(row.status, "pending");
+        assert_eq!(row.attempts, 1, "no-count must not bump attempts");
+        assert_eq!(row.next_attempt_at, 8000);
+        assert_eq!(row.last_error.as_deref(), Some("real failure"), "error preserved");
+        // It is gated until 8000.
+        assert!(s.due_for_sync(7999, None).unwrap().is_empty());
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ack / dead / purge / requeue / discard — extra edges
+    // ════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn mark_acked_with_none_server_id_still_sets_synced_at() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        s.mark_acked(a, None).unwrap();
+        assert_eq!(s.status_of_seq(a).unwrap().as_deref(), Some("acked"));
+        // synced_at was set (now_ms), so a future-cutoff purge collects it.
+        assert_eq!(s.purge_acked_older_than(now_ms() + 60_000).unwrap(), 1);
+    }
+
+    #[test]
+    fn purge_only_touches_acked_rows() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        s.enqueue(&op("b")).unwrap(); // stays pending
+        s.mark_acked(a, Some("srv")).unwrap();
+        // Generous cutoff: only the acked 'a' is removed; pending 'b' survives.
+        assert_eq!(s.purge_acked_older_than(now_ms() + 60_000).unwrap(), 1);
+        assert_eq!(s.pending_count().unwrap(), 1);
+        assert_eq!(s.pending().unwrap()[0].id, "b");
+    }
+
+    #[test]
+    fn requeue_dead_resets_attempts_error_and_gate() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        let b = s.enqueue(&op("b")).unwrap();
+        // Drive 'a' to dead with a bumped attempt + future gate + error.
+        s.mark_retry(a, "boom", 9_000_000_000_000).unwrap();
+        s.mark_dead(a, "exhausted").unwrap();
+        s.mark_dead(b, "rejected").unwrap();
+        assert_eq!(s.dead_count().unwrap(), 2);
+        // Requeue clears status→pending, attempts→0, error→NULL, gate→0.
+        assert_eq!(s.requeue_dead().unwrap(), 2);
+        assert_eq!(s.dead_count().unwrap(), 0);
+        let row = s.due_for_sync(0, None).unwrap().into_iter().find(|i| i.id == "a").unwrap();
+        assert_eq!(row.attempts, 0);
+        assert_eq!(row.next_attempt_at, 0);
+        assert_eq!(row.last_error, None);
+    }
+
+    #[test]
+    fn requeue_dead_on_empty_returns_zero() {
+        let s = Store::open("").unwrap();
+        assert_eq!(s.requeue_dead().unwrap(), 0);
+        s.enqueue(&op("a")).unwrap(); // pending, not dead
+        assert_eq!(s.requeue_dead().unwrap(), 0);
+    }
+
+    #[test]
+    fn discard_dead_only_removes_dead_rows() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        // Pending → cannot discard.
+        assert!(!s.discard_dead("a").unwrap());
+        s.mark_inflight(a).unwrap();
+        assert!(!s.discard_dead("a").unwrap()); // inflight → cannot discard
+        s.mark_dead(a, "x").unwrap();
+        assert!(s.discard_dead("a").unwrap()); // dead → removed
+        assert!(!s.discard_dead("a").unwrap()); // gone → no-op
+        // Unknown id → no-op.
+        assert!(!s.discard_dead("ghost").unwrap());
+    }
+
+    #[test]
+    fn recover_inflight_only_touches_inflight() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        let b = s.enqueue(&op("b")).unwrap();
+        s.mark_inflight(a).unwrap(); // a inflight, b pending
+        assert_eq!(s.recover_inflight().unwrap(), 1);
+        assert_eq!(s.status_of_seq(a).unwrap().as_deref(), Some("pending"));
+        assert_eq!(s.status_of_seq(b).unwrap().as_deref(), Some("pending"));
+        // Nothing inflight now → no-op.
+        assert_eq!(s.recover_inflight().unwrap(), 0);
+    }
+
+    #[test]
+    fn wipe_outbox_clears_everything() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        s.enqueue(&op("b")).unwrap();
+        s.mark_acked(a, Some("srv")).unwrap(); // mix of acked + pending
+        s.wipe_outbox().unwrap();
+        assert_eq!(s.pending_count().unwrap(), 0);
+        assert_eq!(s.dead_count().unwrap(), 0);
+        assert!(s.list_active().unwrap().is_empty());
+        // The id is free again (the unique row is gone).
+        let re = s.enqueue(&op("a")).unwrap();
+        assert_eq!(s.status_of_seq(re).unwrap().as_deref(), Some("pending"));
+    }
+
+    #[test]
+    fn enqueue_preserves_all_orchestration_fields() {
+        let s = Store::open("").unwrap();
+        let full = NewOutboxOp {
+            id: "f1".into(),
+            op_type: "create_order".into(),
+            idempotency_key: "idem-f1".into(),
+            payload: r#"{"total":1}"#.into(),
+            event_at: "2026-06-19T10:00:00Z".into(),
+            depends_on_seq: Some(7),
+            user_id: Some("alice".into()),
+            clock_offset_ms: Some(-250),
+            shift_id: Some("shift-7".into()),
+        };
+        s.enqueue(&full).unwrap();
+        let row = s.pending().unwrap().into_iter().find(|i| i.id == "f1").unwrap();
+        assert_eq!(row.op_type, "create_order");
+        assert_eq!(row.idempotency_key, "idem-f1");
+        assert_eq!(row.payload, r#"{"total":1}"#);
+        assert_eq!(row.event_at, "2026-06-19T10:00:00Z");
+        assert_eq!(row.depends_on_seq, Some(7));
+        assert_eq!(row.user_id.as_deref(), Some("alice"));
+        assert_eq!(row.clock_offset_ms, Some(-250));
+        assert_eq!(row.shift_id.as_deref(), Some("shift-7"));
+        assert_eq!(row.attempts, 0);
+        assert_eq!(row.next_attempt_at, 0);
+        assert_eq!(row.last_error, None);
+        assert_eq!(row.server_id, None);
+    }
+
+    #[test]
+    fn enqueue_idempotent_keeps_original_fields() {
+        let s = Store::open("").unwrap();
+        let seq1 = s.enqueue(&NewOutboxOp { user_id: Some("alice".into()), ..op("dup") }).unwrap();
+        // Re-enqueue same id with DIFFERENT fields → ignored, original kept.
+        let seq2 = s.enqueue(&NewOutboxOp { user_id: Some("bob".into()), ..op("dup") }).unwrap();
+        assert_eq!(seq1, seq2);
+        let row = s.pending().unwrap().into_iter().find(|i| i.id == "dup").unwrap();
+        assert_eq!(row.user_id.as_deref(), Some("alice"), "first enqueue wins (DO NOTHING)");
+        assert_eq!(s.pending_count().unwrap(), 1);
+    }
 }

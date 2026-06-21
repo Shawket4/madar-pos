@@ -835,4 +835,446 @@ mod tests {
         assert!(!bundle_available(&bv(true, Some("11:00"), Some("12:00")), now)); // before it opens
         assert!(!bundle_available(&bv(true, Some("08:00"), Some("10:00")), now)); // after it closes
     }
+
+    // ── helper constructors for hand-built BundleViews ──────────────────────
+
+    fn bundle_view(
+        active: bool,
+        from_d: Option<&str>,
+        until_d: Option<&str>,
+        from_t: Option<&str>,
+        until_t: Option<&str>,
+    ) -> BundleView {
+        BundleView {
+            id: "b".into(),
+            name: "Combo".into(),
+            description: None,
+            price_minor: 1000,
+            image_url: None,
+            is_available: active,
+            available_from_date: from_d.map(String::from),
+            available_until_date: until_d.map(String::from),
+            available_from_time: from_t.map(String::from),
+            available_until_time: until_t.map(String::from),
+            components: vec![],
+        }
+    }
+
+    // ── locale resolution (resolve via the public menu_items projection) ─────
+
+    #[test]
+    fn locale_resolution_falls_back_locale_then_lang_then_en_then_base() {
+        // name_translations has only `en`; description has `ar` and `en`.
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_MENU_ITEMS,
+            r#"[{
+              "base_price": 100,
+              "created_at": "2026-06-19T10:00:00Z",
+              "updated_at": "2026-06-19T10:00:00Z",
+              "id": "00000000-0000-0000-0000-0000000000a1",
+              "org_id": "00000000-0000-0000-0000-0000000000ff",
+              "is_active": true,
+              "name": "BaseName",
+              "name_translations": {"en": "English"},
+              "description": "BaseDesc",
+              "description_translations": {"ar": "وصف", "en": "Desc"},
+              "addon_slots": [], "allowed_addon_ids": [],
+              "optional_fields": [], "recipes": [], "sizes": []
+            }]"#,
+        );
+        // ar-EG: name has no ar/en-EG → falls through ar → en ("English").
+        let ar = menu_items(&store, "ar-EG").unwrap();
+        assert_eq!(ar[0].name, "English"); // locale & lang miss → en
+        assert_eq!(ar[0].description.as_deref(), Some("وصف")); // ar hit
+        // Underscore-separated locale also splits to lang subtag.
+        let ar_us = menu_items(&store, "ar_SA").unwrap();
+        assert_eq!(ar_us[0].description.as_deref(), Some("وصف"));
+    }
+
+    #[test]
+    fn locale_resolution_empty_translation_string_falls_through() {
+        // An empty-string translation value must be skipped (treated as a miss),
+        // falling to the next candidate, ultimately the base field.
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_MENU_ITEMS,
+            r#"[{
+              "base_price": 100,
+              "created_at": "2026-06-19T10:00:00Z",
+              "updated_at": "2026-06-19T10:00:00Z",
+              "id": "00000000-0000-0000-0000-0000000000a1",
+              "org_id": "00000000-0000-0000-0000-0000000000ff",
+              "is_active": true,
+              "name": "Fallback",
+              "name_translations": {"en": "", "ar": ""},
+              "description_translations": {},
+              "addon_slots": [], "allowed_addon_ids": [],
+              "optional_fields": [], "recipes": [], "sizes": []
+            }]"#,
+        );
+        let v = menu_items(&store, "ar").unwrap();
+        assert_eq!(v[0].name, "Fallback"); // both empty → base
+    }
+
+    #[test]
+    fn locale_resolution_exact_locale_wins_over_lang() {
+        // A region-specific key ("pt-BR") must beat the bare language ("pt").
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_MENU_ITEMS,
+            r#"[{
+              "base_price": 100,
+              "created_at": "2026-06-19T10:00:00Z",
+              "updated_at": "2026-06-19T10:00:00Z",
+              "id": "00000000-0000-0000-0000-0000000000a1",
+              "org_id": "00000000-0000-0000-0000-0000000000ff",
+              "is_active": true,
+              "name": "Base",
+              "name_translations": {"pt-BR": "Brasil", "pt": "Portugal", "en": "Eng"},
+              "description_translations": {},
+              "addon_slots": [], "allowed_addon_ids": [],
+              "optional_fields": [], "recipes": [], "sizes": []
+            }]"#,
+        );
+        assert_eq!(menu_items(&store, "pt-BR").unwrap()[0].name, "Brasil");
+        // A different region of the same language falls to the bare lang key.
+        assert_eq!(menu_items(&store, "pt-PT").unwrap()[0].name, "Portugal");
+    }
+
+    // ── soft-delete filtering ───────────────────────────────────────────────
+
+    #[test]
+    fn menu_items_drop_soft_deleted_rows() {
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_MENU_ITEMS,
+            r#"[
+              {"base_price":100,"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000a1","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "is_active":true,"name":"Gone","name_translations":{"en":"Gone"},
+               "deleted_at":"2026-06-18T10:00:00Z",
+               "description_translations":{},"addon_slots":[],"allowed_addon_ids":[],
+               "optional_fields":[],"recipes":[],"sizes":[]},
+              {"base_price":200,"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000a2","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "is_active":true,"name":"Live","name_translations":{"en":"Live"},
+               "description_translations":{},"addon_slots":[],"allowed_addon_ids":[],
+               "optional_fields":[],"recipes":[],"sizes":[]}
+            ]"#,
+        );
+        let v = menu_items(&store, "en").unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].name, "Live");
+    }
+
+    #[test]
+    fn menu_items_keep_inactive_rows_but_flag_them() {
+        // is_active=false is NOT a soft-delete: the row stays (so the host can grey
+        // it out); only deleted_at drops it.
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_MENU_ITEMS,
+            r#"[{
+              "base_price":100,"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+              "id":"00000000-0000-0000-0000-0000000000a1","org_id":"00000000-0000-0000-0000-0000000000ff",
+              "is_active":false,"name":"Hidden","name_translations":{"en":"Hidden"},
+              "description_translations":{},"addon_slots":[],"allowed_addon_ids":[],
+              "optional_fields":[],"recipes":[],"sizes":[]
+            }]"#,
+        );
+        let v = menu_items(&store, "en").unwrap();
+        assert_eq!(v.len(), 1);
+        assert!(!v[0].is_active);
+    }
+
+    #[test]
+    fn categories_drop_soft_deleted_and_resolve_locale() {
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_CATEGORIES,
+            r#"[
+              {"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000c1","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "is_active":true,"name":"Coffee","name_translations":{"ar":"قهوة"},
+               "deleted_at":"2026-06-18T10:00:00Z","image_url":null},
+              {"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000c2","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "is_active":true,"name":"Tea","name_translations":{"ar":"شاي"},
+               "deleted_at":null,"image_url":"http://img/tea.png"}
+            ]"#,
+        );
+        let v = categories(&store, "ar").unwrap();
+        assert_eq!(v.len(), 1); // soft-deleted Coffee dropped
+        assert_eq!(v[0].name, "شاي"); // ar resolved
+        assert_eq!(v[0].image_url.as_deref(), Some("http://img/tea.png")); // flat()
+        // Locale with no translation → base name.
+        assert_eq!(categories(&store, "fr").unwrap()[0].name, "Tea");
+    }
+
+    #[test]
+    fn categories_null_image_url_flattens_to_none() {
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_CATEGORIES,
+            r#"[{"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000c2","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "is_active":true,"name":"Tea","name_translations":{},"deleted_at":null,"image_url":null}]"#,
+        );
+        let v = categories(&store, "en").unwrap();
+        assert_eq!(v[0].image_url, None); // double-option null → None
+    }
+
+    // ── payment methods & discounts ─────────────────────────────────────────
+
+    #[test]
+    fn payment_methods_resolve_label_translations_when_present() {
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_PAYMENT_METHODS,
+            r##"[{"color":"#000","created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "icon":"cash","id":"00000000-0000-0000-0000-0000000000e1","is_active":true,"is_cash":true,
+               "name":"Cash","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "label_translations":{"ar":"نقدي"}}]"##,
+        );
+        let pm = payment_methods(&store, "ar").unwrap();
+        assert_eq!(pm[0].name, "نقدي"); // translation resolves
+        assert_eq!(pm[0].icon, "cash");
+        assert_eq!(pm[0].color, "#000");
+        // Unknown locale → base name.
+        assert_eq!(payment_methods(&store, "fr").unwrap()[0].name, "Cash");
+    }
+
+    #[test]
+    fn discounts_project_all_rows_with_type_and_value() {
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_DISCOUNTS,
+            r#"[
+              {"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000f1","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "dtype":"percentage","value":10,"is_active":true,"name":"Ten Off",
+               "name_translations":{"ar":"خصم"}},
+              {"created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "id":"00000000-0000-0000-0000-0000000000f2","org_id":"00000000-0000-0000-0000-0000000000ff",
+               "dtype":"fixed","value":500,"is_active":false,"name":"Five EGP",
+               "name_translations":{}}
+            ]"#,
+        );
+        // Discounts are NOT filtered by is_active (host decides) — both surface.
+        let d = discounts(&store, "ar").unwrap();
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].name, "خصم");
+        assert_eq!(d[0].dtype, "percentage");
+        assert_eq!(d[0].value, 10);
+        assert!(d[0].is_active);
+        assert_eq!(d[1].dtype, "fixed");
+        assert_eq!(d[1].value, 500);
+        assert!(!d[1].is_active);
+        assert_eq!(d[1].name, "Five EGP"); // no translation → base
+    }
+
+    // ── addons: lenient skip + ordering preserved ───────────────────────────
+
+    #[test]
+    fn addons_skip_malformed_rows_keep_good_ones() {
+        // A bad addon row (missing required default_price) must not blank the list.
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_ADDONS,
+            r#"[
+              {"id":"00000000-0000-0000-0000-0000000000d0","name":"Broken","addon_type":"x"},
+              {"addon_type":"milk_type","created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "default_price":1500,"id":"00000000-0000-0000-0000-0000000000d1","is_active":true,
+               "name":"Oat","name_translations":{},"org_id":"00000000-0000-0000-0000-0000000000ff",
+               "ingredients":[]}
+            ]"#,
+        );
+        let a = addons(&store, "en").unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].name, "Oat");
+        assert!(a[0].ingredients.is_empty());
+    }
+
+    #[test]
+    fn addon_ingredient_numeric_quantity_used_also_parses() {
+        // value_to_f64 must accept a JSON NUMBER (not only a BigDecimal string).
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_ADDONS,
+            r#"[{"addon_type":"extra","created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "default_price":0,"id":"00000000-0000-0000-0000-0000000000d1","is_active":true,
+               "name":"Shot","name_translations":{},"org_id":"00000000-0000-0000-0000-0000000000ff",
+               "ingredients":[{"ingredient_name":"Espresso","ingredient_unit":"ml","quantity_used":30}]}]"#,
+        );
+        let a = addons(&store, "en").unwrap();
+        assert_eq!(a[0].ingredients[0].quantity, 30.0);
+    }
+
+    #[test]
+    fn addon_ingredient_bad_quantity_used_falls_back_to_zero() {
+        // A non-numeric, non-parsable string → value_to_f64 yields 0.0 (no panic).
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_ADDONS,
+            r#"[{"addon_type":"extra","created_at":"2026-06-19T10:00:00Z","updated_at":"2026-06-19T10:00:00Z",
+               "default_price":0,"id":"00000000-0000-0000-0000-0000000000d1","is_active":true,
+               "name":"Shot","name_translations":{},"org_id":"00000000-0000-0000-0000-0000000000ff",
+               "ingredients":[{"ingredient_name":"Espresso","ingredient_unit":"ml","quantity_used":"oops"}]}]"#,
+        );
+        let a = addons(&store, "en").unwrap();
+        assert_eq!(a[0].ingredients[0].quantity, 0.0);
+    }
+
+    // ── bundles: projection + availability date/time gating ─────────────────
+
+    #[test]
+    fn bundles_project_status_components_and_clamp_quantity() {
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_BUNDLES,
+            r#"[{
+              "id":"00000000-0000-0000-0000-0000000000b1","name":"Combo",
+              "name_translations":{"ar":"كومبو"},"description":"two drinks",
+              "description_translations":{},"price":9000,"status":"active",
+              "image_url":"http://img/combo.png",
+              "available_from_date":"2026-06-01","available_until_date":"2026-06-30",
+              "available_from_time":"08:00","available_until_time":"22:00",
+              "components":[
+                {"item_id":"00000000-0000-0000-0000-0000000000a1","item_name":"Latte","quantity":2},
+                {"item_id":"00000000-0000-0000-0000-0000000000a2","item_name":"Cookie","quantity":0}
+              ]
+            }]"#,
+        );
+        let b = bundles(&store, "ar").unwrap();
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].name, "كومبو");
+        assert_eq!(b[0].price_minor, 9000);
+        assert!(b[0].is_available); // status == active
+        assert_eq!(b[0].available_from_date.as_deref(), Some("2026-06-01"));
+        assert_eq!(b[0].available_until_time.as_deref(), Some("22:00"));
+        assert_eq!(b[0].components.len(), 2);
+        assert_eq!(b[0].components[0].quantity, 2);
+        assert_eq!(b[0].components[1].quantity, 1, "qty<1 clamps to 1");
+    }
+
+    #[test]
+    fn bundles_non_active_status_is_unavailable_and_empty_windows_drop() {
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_BUNDLES,
+            r#"[{
+              "id":"00000000-0000-0000-0000-0000000000b1","name":"Draft Combo",
+              "name_translations":{},"description_translations":{},"price":100,
+              "status":"draft",
+              "available_from_date":"","available_until_date":"",
+              "available_from_time":"","available_until_time":"",
+              "components":[]
+            }]"#,
+        );
+        let b = bundles(&store, "en").unwrap();
+        assert!(!b[0].is_available); // status != active
+        // Empty-string window fields are filtered to None.
+        assert_eq!(b[0].available_from_date, None);
+        assert_eq!(b[0].available_until_time, None);
+    }
+
+    #[test]
+    fn bundles_skip_malformed_rows() {
+        // A bundle missing required `price`/`status` is skipped, not fatal.
+        let store = Store::open("").unwrap();
+        seed(
+            &store,
+            K_BUNDLES,
+            r#"[
+              {"id":"00000000-0000-0000-0000-0000000000b0","name":"Broken"},
+              {"id":"00000000-0000-0000-0000-0000000000b1","name":"Good",
+               "name_translations":{},"description_translations":{},"price":100,
+               "status":"active","components":[]}
+            ]"#,
+        );
+        let b = bundles(&store, "en").unwrap();
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].name, "Good");
+    }
+
+    #[test]
+    fn bundle_available_date_window_inclusive_boundaries() {
+        // On the from-date and on the until-date are both inside (inclusive).
+        let on_from = chrono::DateTime::parse_from_rfc3339("2026-06-01T12:00:00+00:00").unwrap();
+        let on_until = chrono::DateTime::parse_from_rfc3339("2026-06-30T12:00:00+00:00").unwrap();
+        let before = chrono::DateTime::parse_from_rfc3339("2026-05-31T12:00:00+00:00").unwrap();
+        let after = chrono::DateTime::parse_from_rfc3339("2026-07-01T12:00:00+00:00").unwrap();
+        let b = bundle_view(true, Some("2026-06-01"), Some("2026-06-30"), None, None);
+        assert!(bundle_available(&b, on_from)); // == from
+        assert!(bundle_available(&b, on_until)); // == until
+        assert!(!bundle_available(&b, before)); // day before from
+        assert!(!bundle_available(&b, after)); // day after until
+    }
+
+    #[test]
+    fn bundle_available_time_window_inclusive_boundaries() {
+        // mins < from / mins > until are out; equality is in.
+        let b = bundle_view(true, None, None, Some("09:00"), Some("17:00"));
+        let at_open = chrono::DateTime::parse_from_rfc3339("2026-06-15T09:00:00+00:00").unwrap();
+        let at_close = chrono::DateTime::parse_from_rfc3339("2026-06-15T17:00:00+00:00").unwrap();
+        let one_before = chrono::DateTime::parse_from_rfc3339("2026-06-15T08:59:00+00:00").unwrap();
+        let one_after = chrono::DateTime::parse_from_rfc3339("2026-06-15T17:01:00+00:00").unwrap();
+        assert!(bundle_available(&b, at_open)); // == from minute
+        assert!(bundle_available(&b, at_close)); // == until minute
+        assert!(!bundle_available(&b, one_before));
+        assert!(!bundle_available(&b, one_after));
+    }
+
+    #[test]
+    fn bundle_available_accepts_rfc3339_date_prefix() {
+        // parse_ymd takes the first 10 chars, so a full timestamp string works.
+        let b = bundle_view(true, Some("2026-06-01T00:00:00Z"), Some("2026-06-30T23:59:59Z"), None, None);
+        let mid = chrono::DateTime::parse_from_rfc3339("2026-06-15T12:00:00+00:00").unwrap();
+        assert!(bundle_available(&b, mid));
+    }
+
+    #[test]
+    fn bundle_available_garbage_window_is_ignored_not_fatal() {
+        // Unparseable date/time strings yield None from parse_ymd/parse_hm, so the
+        // window simply doesn't constrain (and there's no panic).
+        let b = bundle_view(true, Some("not-a-date"), None, Some("nope"), None);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-15T12:00:00+00:00").unwrap();
+        assert!(bundle_available(&b, now));
+    }
+
+    #[test]
+    fn bundle_available_time_with_seconds_parses() {
+        // parse_hm tolerates an "HH:MM:SS" form (extra :SS ignored).
+        let b = bundle_view(true, None, None, Some("09:30:45"), Some("10:30:00"));
+        let inside = chrono::DateTime::parse_from_rfc3339("2026-06-15T10:00:00+00:00").unwrap();
+        let before = chrono::DateTime::parse_from_rfc3339("2026-06-15T09:15:00+00:00").unwrap();
+        assert!(bundle_available(&b, inside));
+        assert!(!bundle_available(&b, before)); // 09:15 < 09:30
+    }
+
+    // ── lenient parse: completely malformed kv JSON IS an error ──────────────
+
+    #[test]
+    fn menu_items_non_array_json_is_error() {
+        // parse_kv_lenient parses the outer Vec<Value> eagerly; a non-array top
+        // level is a hard error (distinct from per-row tolerance).
+        let store = Store::open("").unwrap();
+        seed(&store, K_MENU_ITEMS, r#"{"not":"an array"}"#);
+        assert!(menu_items(&store, "en").is_err());
+    }
 }

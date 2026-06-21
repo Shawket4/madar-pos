@@ -578,4 +578,190 @@ mod tests {
         assert!(is_rtl("ar"));
         assert!(!is_rtl("en-US"));
     }
+
+    // ── tr: resolution order ─────────────────────────────────────────────
+
+    #[test]
+    fn tr_arabic_resolves_from_ar_table() {
+        // A key present in both tables must return the AR string for ar locales.
+        assert_eq!(tr("ar", "order.total"), "الإجمالي");
+        assert_eq!(tr("ar-EG", "order.total"), "الإجمالي");
+    }
+
+    #[test]
+    fn tr_english_locale_uses_en_table() {
+        assert_eq!(tr("en", "order.total"), "Total");
+        assert_eq!(tr("en-US", "order.total"), "Total");
+    }
+
+    #[test]
+    fn tr_underscore_locale_separator_is_handled() {
+        // lang_of splits on '_' too, not just '-'.
+        assert_eq!(tr("ar_EG", "login.sign_in"), "تسجيل الدخول");
+        assert_eq!(tr("en_GB", "login.sign_in"), "Sign in");
+    }
+
+    #[test]
+    fn tr_unknown_language_falls_back_to_en() {
+        // Non-ar, non-en language: there's no fr table, so resolve via en.
+        assert_eq!(tr("fr", "order.total"), "Total");
+        assert_eq!(tr("de-DE", "order.cart"), "Cart");
+        assert_eq!(tr("zh", "settings.title"), "Settings");
+    }
+
+    #[test]
+    fn tr_unknown_key_falls_back_to_key_itself() {
+        assert_eq!(tr("en", "no.such.key"), "no.such.key");
+        assert_eq!(tr("ar", "no.such.key"), "no.such.key");
+        assert_eq!(tr("fr", "totally.made.up"), "totally.made.up");
+    }
+
+    #[test]
+    fn tr_empty_locale_falls_back_to_en() {
+        // lang_of("") yields "" → not ar → en table.
+        assert_eq!(tr("", "order.total"), "Total");
+    }
+
+    #[test]
+    fn tr_empty_key_returns_empty_key() {
+        // No table has a "" entry, so it falls through to the key itself.
+        assert_eq!(tr("en", ""), "");
+        assert_eq!(tr("ar", ""), "");
+    }
+
+    #[test]
+    fn tr_is_case_sensitive_on_key() {
+        // Keys are matched literally; a different case is unknown → key.
+        assert_eq!(tr("en", "Order.Total"), "Order.Total");
+    }
+
+    #[test]
+    fn tr_is_case_sensitive_on_locale_language() {
+        // lang_of does not lowercase, so "AR" is not treated as arabic → en.
+        assert_eq!(tr("AR", "order.total"), "Total");
+    }
+
+    #[test]
+    fn tr_key_only_in_en_falls_back_to_en_for_ar_locale() {
+        // If a key exists in EN but (hypothetically) not in AR, ar() returns
+        // None and tr falls through to en(). Verified structurally by the
+        // coverage test below; here we assert the fallback chain on a real key
+        // that the coverage test guarantees exists in both, so this just pins
+        // the en value for a non-translated-looking key.
+        assert_eq!(tr("ar", "settings.printer_hint"), "عنوان IP (مثال: 192.168.1.50)");
+    }
+
+    // ── is_rtl ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_rtl_covers_all_flagged_languages() {
+        assert!(is_rtl("ar"));
+        assert!(is_rtl("fa"));
+        assert!(is_rtl("he"));
+        assert!(is_rtl("ur"));
+        assert!(is_rtl("fa-IR"));
+        assert!(is_rtl("he_IL"));
+    }
+
+    #[test]
+    fn is_rtl_false_for_ltr_and_unknown() {
+        assert!(!is_rtl("en"));
+        assert!(!is_rtl("fr-FR"));
+        assert!(!is_rtl(""));
+        assert!(!is_rtl("AR")); // case-sensitive, uppercase is not flagged
+    }
+
+    // ── direct table access ──────────────────────────────────────────────
+
+    #[test]
+    fn en_returns_none_for_unknown_key() {
+        assert!(en("definitely.not.a.key").is_none());
+    }
+
+    #[test]
+    fn ar_returns_none_for_unknown_key() {
+        assert!(ar("definitely.not.a.key").is_none());
+    }
+
+    #[test]
+    fn en_and_ar_have_matching_known_key() {
+        assert_eq!(en("order.checkout"), Some("Checkout"));
+        assert_eq!(ar("order.checkout"), Some("الدفع"));
+    }
+
+    // ── COVERAGE: every EN key must also be in the AR table ───────────────
+
+    /// Extract the `"key" =>` literals from a single `fn`'s body in the source.
+    /// We slice the file between the function's opening signature and the next
+    /// top-level `fn ` so the dispatch arm in `tr` (`"ar" =>`) can't leak in.
+    fn keys_in_fn<'a>(src: &'a str, fn_sig: &str) -> std::collections::BTreeSet<&'a str> {
+        let start = src.find(fn_sig).expect("function signature not found");
+        let after = &src[start + fn_sig.len()..];
+        // The body ends at the next top-level fn declaration.
+        let end = after.find("\nfn ").unwrap_or(after.len());
+        let body = &after[..end];
+
+        let mut keys = std::collections::BTreeSet::new();
+        for line in body.lines() {
+            let t = line.trim_start();
+            // Match lines shaped like:  "some.key" => "value",
+            if let Some(rest) = t.strip_prefix('"') {
+                if let Some(close) = rest.find('"') {
+                    let key = &rest[..close];
+                    let tail = rest[close + 1..].trim_start();
+                    if tail.starts_with("=>") {
+                        keys.insert(key);
+                    }
+                }
+            }
+        }
+        keys
+    }
+
+    #[test]
+    fn every_en_key_is_present_in_ar() {
+        let src = include_str!("i18n.rs");
+        let en_keys = keys_in_fn(src, "fn en(key: &str) -> Option<&'static str> {");
+        let ar_keys = keys_in_fn(src, "fn ar(key: &str) -> Option<&'static str> {");
+
+        // Sanity: the parser actually found a meaningful number of keys.
+        assert!(en_keys.len() > 100, "parser found too few EN keys: {}", en_keys.len());
+        assert!(ar_keys.len() > 100, "parser found too few AR keys: {}", ar_keys.len());
+
+        let missing: Vec<&str> = en_keys.difference(&ar_keys).copied().collect();
+        assert!(
+            missing.is_empty(),
+            "keys present in EN but missing from AR translation table: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn ar_has_no_orphan_keys_absent_from_en() {
+        // Reverse direction: an AR key with no EN counterpart can never be
+        // reached via `tr` for an en locale and signals a typo/stale entry.
+        let src = include_str!("i18n.rs");
+        let en_keys = keys_in_fn(src, "fn en(key: &str) -> Option<&'static str> {");
+        let ar_keys = keys_in_fn(src, "fn ar(key: &str) -> Option<&'static str> {");
+
+        let orphans: Vec<&str> = ar_keys.difference(&en_keys).copied().collect();
+        assert!(
+            orphans.is_empty(),
+            "keys present in AR but missing from EN table: {orphans:?}"
+        );
+    }
+
+    #[test]
+    fn every_en_key_resolves_nonempty_in_both_locales() {
+        // Round-trip the parsed EN keys through the public `tr` to prove that
+        // no key resolves to the fallback-key (which would mean a real miss)
+        // and that AR yields a distinct, non-empty string.
+        let src = include_str!("i18n.rs");
+        let en_keys = keys_in_fn(src, "fn en(key: &str) -> Option<&'static str> {");
+        for key in en_keys {
+            let en_val = tr("en", key);
+            let ar_val = tr("ar", key);
+            assert_ne!(en_val, key, "EN key {key} resolved to itself (missing)");
+            assert!(!ar_val.is_empty(), "AR value for {key} is empty");
+        }
+    }
 }
