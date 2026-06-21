@@ -40,6 +40,8 @@ pub mod receipt;
 pub mod recipe;
 /// Category styling (icon + gradient palette) — port of Flutter's `CatStyle`.
 pub mod catstyle;
+/// Delivery-order management (teller side) — list/advance/cancel/finalize.
+pub mod delivery;
 /// HTTP layer — drives the generated `sufrix-api` reqwest client (PLAN §R4 net/).
 pub mod net;
 /// Session & auth — online login, offline unlock, token custody (PLAN §7.2).
@@ -1457,6 +1459,171 @@ impl SufrixCore {
             .await
             .map_err(|e| CoreError::Transient { detail: format!("printer flush: {e}") })?;
         Ok(())
+    }
+}
+
+// ── delivery-order management (online; teller works the live branch queue) ───
+impl SufrixCore {
+    /// The signed-in session's branch id, or a validation error.
+    fn session_branch_id(&self) -> Result<String, CoreError> {
+        let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+        let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated { detail: "not signed in".into() })?;
+        s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
+            field: "branch_id".into(),
+            detail: "session has no branch".into(),
+        })
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl SufrixCore {
+    /// The branch's delivery queue (newest first). `status` is a comma-separated
+    /// wire filter (e.g. "received,confirmed"); `None` = all. Online-only.
+    pub async fn list_delivery_orders(
+        &self,
+        status: Option<String>,
+    ) -> Result<Vec<delivery::DeliveryOrderView>, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let branch = self.session_branch_id()?;
+        let loc = self.current_locale();
+        let orders = d::list_delivery_orders(
+            &self.api.config(),
+            d::ListDeliveryOrdersParams { branch_id: branch, status, limit: Some(200) },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(orders.iter().map(|o| delivery::order_view(o, &loc)).collect())
+    }
+
+    /// A single delivery order by id.
+    pub async fn delivery_order_detail(&self, id: String) -> Result<delivery::DeliveryOrderView, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let loc = self.current_locale();
+        let o = d::get_delivery_order(&self.api.config(), d::GetDeliveryOrderParams { id })
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(delivery::order_view(&o, &loc))
+    }
+
+    /// Set a delivery order's status to an explicit wire value.
+    pub async fn delivery_set_status(
+        &self,
+        id: String,
+        status: String,
+    ) -> Result<delivery::DeliveryOrderView, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let loc = self.current_locale();
+        let o = d::set_status(
+            &self.api.config(),
+            d::SetStatusParams { id, status_input: sufrix_api::models::StatusInput::new(status) },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(delivery::order_view(&o, &loc))
+    }
+
+    /// Advance one step in the lifecycle from `current` (received→confirmed→…→
+    /// delivered). Errors if there's no further forward step.
+    pub async fn delivery_advance_status(
+        &self,
+        id: String,
+        current: String,
+    ) -> Result<delivery::DeliveryOrderView, CoreError> {
+        let next = delivery::next_status(&current)
+            .ok_or_else(|| CoreError::Validation { field: "status".into(), detail: "no further status".into() })?;
+        self.delivery_set_status(id, next.to_string()).await
+    }
+
+    /// Set the per-order extra prep time (non-negative multiple of 5 minutes).
+    pub async fn delivery_set_prep_time(
+        &self,
+        id: String,
+        extra_minutes: i32,
+    ) -> Result<delivery::DeliveryOrderView, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let loc = self.current_locale();
+        let o = d::set_prep_time(
+            &self.api.config(),
+            d::SetPrepTimeParams { id, prep_time_input: sufrix_api::models::PrepTimeInput::new(extra_minutes) },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(delivery::order_view(&o, &loc))
+    }
+
+    /// Cancel a delivery order. `restore_inventory = false` means the food was
+    /// made and is wasted (the frozen plan is deducted + logged as waste).
+    pub async fn delivery_cancel(
+        &self,
+        id: String,
+        reason: Option<String>,
+        restore_inventory: bool,
+    ) -> Result<delivery::DeliveryOrderView, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let loc = self.current_locale();
+        let mut input = sufrix_api::models::CancelInput::new();
+        input.reason = Some(reason.filter(|s| !s.trim().is_empty()));
+        input.restore_inventory = Some(restore_inventory);
+        let o = d::cancel_delivery_order(&self.api.config(), d::CancelDeliveryOrderParams { id, cancel_input: input })
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(delivery::order_view(&o, &loc))
+    }
+
+    /// Finalize a delivery order into a real completed sale on the current open
+    /// shift — replays the frozen snapshot. `payment_method_id` resolves to the
+    /// raw wire method. Returns the new order id/ref + any oversold warnings.
+    pub async fn delivery_finalize(
+        &self,
+        id: String,
+        payment_method_id: String,
+    ) -> Result<delivery::DeliveryFinalizeView, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let raw = checkout::raw_payment_method(&self.store, &payment_method_id)?.ok_or_else(|| {
+            CoreError::Validation { field: "payment_method".into(), detail: "unknown payment method".into() }
+        })?;
+        let shift = shift::current(&self.store)?
+            .filter(|s| s.is_open)
+            .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
+        let shift_uuid = uuid::Uuid::parse_str(&shift.id)
+            .map_err(|_| CoreError::Validation { field: "shift_id".into(), detail: "bad shift id".into() })?;
+        let input = sufrix_api::models::FinalizeInput::new(raw.name, shift_uuid);
+        let res = d::finalize_delivery_order(&self.api.config(), d::FinalizeDeliveryOrderParams { id, finalize_input: input })
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(delivery::DeliveryFinalizeView {
+            order_id: res.order_id.to_string(),
+            order_ref: res.order_ref.flatten().filter(|s| !s.is_empty()),
+            warnings: res.warnings,
+        })
+    }
+
+    /// The branch's delivery settings + accepting overrides.
+    pub async fn delivery_settings(&self) -> Result<delivery::DeliverySettingsView, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let branch = self.session_branch_id()?;
+        let s = d::get_branch_settings(&self.api.config(), d::GetBranchSettingsParams { branch_id: branch })
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(delivery::settings_view(&s))
+    }
+
+    /// Set a channel's accepting override. `channel` = "in_mall"/"outside",
+    /// `mode` = "auto"/"open"/"closed". 409 if opening a dashboard-disabled channel.
+    pub async fn delivery_set_accepting(
+        &self,
+        channel: String,
+        mode: String,
+    ) -> Result<delivery::DeliverySettingsView, CoreError> {
+        use sufrix_api::apis::delivery_api as d;
+        let branch = self.session_branch_id()?;
+        let branch_uuid = uuid::Uuid::parse_str(&branch)
+            .map_err(|_| CoreError::Validation { field: "branch_id".into(), detail: "bad branch id".into() })?;
+        let input = sufrix_api::models::AcceptingInput::new(branch_uuid, channel, mode);
+        let s = d::set_accepting(&self.api.config(), d::SetAcceptingParams { accepting_input: input })
+            .await
+            .map_err(net::map_api_error)?;
+        Ok(delivery::settings_view(&s))
     }
 }
 

@@ -459,7 +459,7 @@ pub(crate) fn queued_cash_total(store: &Store) -> CoreResult<i64> {
 }
 
 /// The raw cached payment method (carries the untranslated `name` + `is_cash`).
-fn raw_payment_method(store: &Store, id: &str) -> CoreResult<Option<models::OrgPaymentMethod>> {
+pub(crate) fn raw_payment_method(store: &Store, id: &str) -> CoreResult<Option<models::OrgPaymentMethod>> {
     let list: Vec<models::OrgPaymentMethod> = match store.kv_get(menu::K_PAYMENT_METHODS)? {
         Some(j) => serde_json::from_str(&j).unwrap_or_default(),
         None => Vec::new(),
