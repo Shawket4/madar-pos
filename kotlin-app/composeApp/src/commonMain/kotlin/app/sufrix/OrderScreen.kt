@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -43,6 +44,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.core.CartLineView
@@ -108,7 +111,8 @@ fun OrderScreen(model: AppModel) {
                             model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it },
                             categoryName = { id -> model.categories.firstOrNull { it.id == id }?.name ?: "" },
                             cartQty = { itemId -> model.cartQtyForItem(itemId) },
-                            onAdd = { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) },
+                            wide = true,
+                            onAdd = { item -> model.openItemDetail(item) },
                         )
                     }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(c.border))
@@ -122,7 +126,8 @@ fun OrderScreen(model: AppModel) {
                         model.categories, visible, currency, selectedCategory, { selectedCategory = it }, search, { search = it },
                         categoryName = { id -> model.categories.firstOrNull { it.id == id }?.name ?: "" },
                         cartQty = { itemId -> model.cartQtyForItem(itemId) },
-                        onAdd = { item -> if (model.hasOptions(item)) model.openItemDetail(item) else model.addToCart(item) },
+                        wide = false,
+                        onAdd = { item -> model.openItemDetail(item) },
                     )
                 }
                 CartBar(model, currency) { showCart = true }
@@ -251,7 +256,7 @@ private fun OrderTopBar(model: AppModel) {
     }
 }
 
-// ── Catalog column (category strip + search + grid) ─────────────────────────────
+// ── Catalog column (category nav + search + grid) ───────────────────────────────
 @Composable
 private fun CatalogColumn(
     categories: List<CategoryView>,
@@ -263,51 +268,106 @@ private fun CatalogColumn(
     onSearch: (String) -> Unit,
     categoryName: (String?) -> String,
     cartQty: (String) -> Long,
+    wide: Boolean,
     onAdd: (MenuItemView) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize()) {
-        CategoryStrip(categories, selectedCategory, onSelect)
-        SearchField(
-            search, onSearch, t("order.search"),
-            Modifier.padding(horizontal = Space.lg).padding(bottom = Space.sm),
-        )
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, onAdd)
+    val c = sufrixColors()
+    if (wide) {
+        // Tablet/desktop: a vertical category rail beside the search + grid.
+        Row(Modifier.fillMaxSize()) {
+            CategoryRail(categories, selectedCategory, onSelect)
+            Box(Modifier.width(1.dp).fillMaxHeight().background(c.borderLight))
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, onAdd)
+                }
+            }
+        }
+    } else {
+        // Phone: a horizontal underline-tab strip above the search + grid.
+        Column(Modifier.fillMaxSize()) {
+            CategoryTabs(categories, selectedCategory, onSelect)
+            SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, onAdd)
+            }
         }
     }
 }
 
-// ── Category strip ──────────────────────────────────────────────────────────────
+// ── Category navigation (phone underline tabs · wide vertical rail) ──────────────
 @Composable
-private fun CategoryStrip(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-            .padding(horizontal = Space.lg, vertical = Space.md),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+private fun CategoryTabs(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit) {
+    val c = sufrixColors()
+    Column(Modifier.fillMaxWidth().background(c.surface)) {
+        Row(
+            Modifier.fillMaxWidth().height(46.dp).horizontalScroll(rememberScrollState())
+                .padding(horizontal = Space.lg),
+            horizontalArrangement = Arrangement.spacedBy(Space.lg),
+        ) {
+            CategoryTab(t("order.all"), selected == null) { onSelect(null) }
+            cats.filter { it.isActive }.forEach { cat ->
+                CategoryTab(cat.name, selected == cat.id) { onSelect(cat.id) }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+    }
+}
+
+@Composable
+private fun CategoryTab(label: String, active: Boolean, onClick: () -> Unit) {
+    val c = sufrixColors()
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    Column(
+        Modifier.fillMaxHeight().pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        CategoryChip(t("order.all"), active = selected == null) { onSelect(null) }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            Text(
+                label, color = if (active) c.accent else c.textMuted, fontFamily = SufrixFont,
+                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp,
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) c.accent else Color.Transparent))
+    }
+}
+
+@Composable
+private fun CategoryRail(cats: List<CategoryView>, selected: String?, onSelect: (String?) -> Unit) {
+    val c = sufrixColors()
+    Column(
+        Modifier.width(96.dp).fillMaxHeight().background(c.surface)
+            .verticalScroll(rememberScrollState()).padding(vertical = Space.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        RailTile(t("order.all"), selected == null) { onSelect(null) }
         cats.filter { it.isActive }.forEach { cat ->
-            CategoryChip(cat.name, active = selected == cat.id) { onSelect(cat.id) }
+            RailTile(cat.name, selected == cat.id) { onSelect(cat.id) }
         }
     }
 }
 
 @Composable
-private fun CategoryChip(label: String, active: Boolean, onClick: () -> Unit) {
+private fun RailTile(label: String, active: Boolean, onClick: () -> Unit) {
     val c = sufrixColors()
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     Text(
-        label,
-        color = if (active) c.textOnAccent else c.textSecondary,
-        fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-        modifier = Modifier.pressScale(interaction).clip(CircleShape)
-            .background(if (active) c.accent else c.surface)
-            .border(1.dp, if (active) Color.Transparent else c.border, CircleShape)
+        label, color = if (active) c.accent else c.textSecondary, fontFamily = SufrixFont,
+        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 10.sp,
+        textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Space.sm).pressScale(interaction)
+            .clip(RoundedCornerShape(Radii.sm)).background(if (active) c.accentBg else Color.Transparent)
             .clickable(interactionSource = interaction, indication = null) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
             }
-            .padding(horizontal = Space.lg, vertical = Space.sm),
+            .padding(vertical = Space.md, horizontal = Space.xs),
     )
 }
 
@@ -352,9 +412,9 @@ private fun ItemGridOrEmpty(
 private fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
     val c = sufrixColors()
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
+        modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
             .border(1.dp, c.border, RoundedCornerShape(Radii.sm))
-            .padding(horizontal = Space.lg, vertical = 12.dp),
+            .padding(horizontal = Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {

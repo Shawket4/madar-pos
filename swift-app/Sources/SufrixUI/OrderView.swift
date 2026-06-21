@@ -43,12 +43,12 @@ struct OrderView: View {
                     }
                     if wide {
                         HStack(spacing: 0) {
-                            catalogColumn
+                            catalogColumn(wide: true)
                             Rectangle().fill(theme.colors.border).frame(width: 1)
                             CartPanel(app: app, onCheckout: { showTenderWide = true }).frame(width: 340)
                         }
                     } else {
-                        catalogColumn
+                        catalogColumn(wide: false)
                         CartBar(app: app, currency: currency) { showCart = true }
                     }
                 }
@@ -121,22 +121,34 @@ struct OrderView: View {
         }
     }
 
-    private var catalogColumn: some View {
-        VStack(spacing: 0) {
-            CategoryStrip(categories: app.categories, selected: $selectedCategory)
-            SearchField(text: $search, placeholder: t("order.search"))
-                .padding(.horizontal, Space.lg)
-                .padding(.bottom, Space.sm)
-            ItemGridOrEmpty(
-                items: visibleItems, currency: currency, searching: !search.isEmpty,
-                categoryName: { id in app.categories.first { $0.id == id }?.name ?? "" },
-                cartQty: { itemId in app.cartQtyForItem(itemId) },
-                onAdd: { item in
-                    if app.hasOptions(item) { app.openItemDetail(item) } else { app.addToCart(item) }
-                }
-            )
+    @ViewBuilder private func catalogColumn(wide: Bool) -> some View {
+        if wide {
+            // Tablet/desktop: a vertical category rail beside the search + grid.
+            HStack(spacing: 0) {
+                CategoryRail(categories: app.categories, selected: $selectedCategory)
+                Rectangle().fill(theme.colors.borderLight).frame(width: 1)
+                VStack(spacing: 0) { searchAndGrid }
+            }
+        } else {
+            // Phone: a horizontal underline-tab strip above the search + grid.
+            VStack(spacing: 0) {
+                CategoryTabs(categories: app.categories, selected: $selectedCategory)
+                searchAndGrid
+            }
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var searchAndGrid: some View {
+        SearchField(text: $search, placeholder: t("order.search"))
+            .padding(.horizontal, Space.lg)
+            .padding(.top, Space.sm)
+            .padding(.bottom, Space.sm)
+        ItemGridOrEmpty(
+            items: visibleItems, currency: currency, searching: !search.isEmpty,
+            categoryName: { id in app.categories.first { $0.id == id }?.name ?? "" },
+            cartQty: { itemId in app.cartQtyForItem(itemId) },
+            onAdd: { item in app.openItemDetail(item) }
+        )
     }
 }
 
@@ -225,7 +237,8 @@ private struct OrderTopBar: View {
 
 // MARK: - Category strip
 
-private struct CategoryStrip: View {
+/// Phone: a horizontal underline-tab strip (the Flutter CategoryStrip).
+private struct CategoryTabs: View {
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     let categories: [CategoryView]
@@ -233,46 +246,82 @@ private struct CategoryStrip: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Space.sm) {
-                CategoryChip(label: t("order.all"), active: selected == nil) {
-                    selected = nil
-                }
+            HStack(spacing: Space.lg) {
+                tab(t("order.all"), id: nil)
                 ForEach(categories.filter { $0.isActive }, id: \.id) { c in
-                    CategoryChip(label: c.name, active: selected == c.id) {
-                        selected = c.id
-                    }
+                    tab(c.name, id: c.id)
                 }
             }
             .padding(.horizontal, Space.lg)
-            .padding(.vertical, Space.md)
         }
+        .frame(height: 46)
+        .background(theme.colors.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    private func tab(_ label: String, id: String?) -> some View {
+        let active = selected == id
+        return Button {
+            Haptics.selection()
+            selected = id
+        } label: {
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Text(label)
+                    .font(.ui(13, active ? .bold : .medium))
+                    .foregroundStyle(active ? theme.colors.accent : theme.colors.textMuted)
+                Spacer(minLength: 0)
+                Rectangle()
+                    .fill(active ? theme.colors.accent : Color.clear)
+                    .frame(height: 2)
+                    .clipShape(RoundedRectangle(cornerRadius: 1))
+            }
+            .frame(height: 46)
+        }
+        .buttonStyle(.pressable(scale: 0.97))
     }
 }
 
-private struct CategoryChip: View {
+/// Tablet/desktop: a 94pt vertical category rail (the Flutter CategoryRail).
+private struct CategoryRail: View {
     @Environment(\.theme) private var theme
-    let label: String
-    let active: Bool
-    let action: () -> Void
+    @Environment(\.localize) private var t
+    let categories: [CategoryView]
+    @Binding var selected: String?
 
     var body: some View {
-        Button {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 3) {
+                tile(t("order.all"), id: nil)
+                ForEach(categories.filter { $0.isActive }, id: \.id) { c in
+                    tile(c.name, id: c.id)
+                }
+            }
+            .padding(.vertical, Space.sm)
+        }
+        .frame(width: 96)
+        .background(theme.colors.surface)
+    }
+
+    private func tile(_ label: String, id: String?) -> some View {
+        let active = selected == id
+        return Button {
             Haptics.selection()
-            action()
+            selected = id
         } label: {
             Text(label)
-                .font(.ui(13, .semibold))
-                .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
-                .padding(.horizontal, Space.lg)
-                .padding(.vertical, Space.sm)
-                .background(active ? theme.colors.accent : theme.colors.surface)
-                .overlay(
-                    Capsule().strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: 1)
-                )
-                .clipShape(Capsule())
+                .font(.ui(10, active ? .bold : .medium))
+                .foregroundStyle(active ? theme.colors.accent : theme.colors.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Space.md)
+                .padding(.horizontal, Space.xs)
+                .background(active ? theme.colors.accentBg : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
-        .buttonStyle(.pressable)
-        .animation(Motion.standard, value: active)
+        .buttonStyle(.pressable(scale: 0.95))
+        .padding(.horizontal, Space.sm)
     }
 }
 
@@ -344,9 +393,9 @@ private struct SearchField: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, Space.lg)
-        .padding(.vertical, 12)
-        .background(theme.colors.surface)
+        .padding(.horizontal, Space.md)
+        .frame(height: 40)
+        .background(theme.colors.surfaceAlt)
         .overlay(
             RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
                 .strokeBorder(theme.colors.border, lineWidth: 1)

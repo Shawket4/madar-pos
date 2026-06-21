@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.core.AddonSelection
@@ -68,6 +69,9 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     var optionals by remember { mutableStateOf<Set<String>>(emptySet()) }
     var qty by remember { mutableStateOf(1) }
     var seeded by remember { mutableStateOf(false) }
+    // Override: reveal the FULL org addon catalog (every type), not just the
+    // item's assigned slots + global types. Mirrors the dashboard's "show all".
+    var showAll by remember { mutableStateOf(false) }
 
     LaunchedEffect(item.id) {
         if (seeded) return@LaunchedEffect
@@ -102,11 +106,15 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
     val coffeeLabel = t("order.addon_coffee_type")
     val extraLabel = t("order.addon_extra")
     fun typeLabel(type: String) = when (type) {
-        "milk_type" -> milkLabel; "coffee_type" -> coffeeLabel; "extra" -> extraLabel; else -> type
+        "milk_type" -> milkLabel; "coffee_type" -> coffeeLabel; "extra" -> extraLabel
+        else -> type.split('_').joinToString(" ") { it.replaceFirstChar { ch -> ch.uppercase() } }
     }
 
     val addonsByType = model.itemAddons.groupBy { it.addonType }
     val slotTypes = item.addonSlots.map { it.addonType }.toSet()
+    val baseTypes = listOf("milk_type", "coffee_type", "extra")
+    // "Show all" reveals every catalog type not already on screen.
+    val hasHiddenAddonTypes = addonsByType.keys.any { it !in slotTypes && it !in baseTypes }
     val groups = buildList {
         item.addonSlots.forEach { s ->
             val addons = addonsByType[s.addonType] ?: emptyList()
@@ -114,7 +122,8 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
             val isMulti = (s.maxSelections?.toInt() ?: 2) > 1
             add(Group(s.id, s.label ?: typeLabel(s.addonType), addons, isMulti, s.maxSelections?.toInt(), s.isRequired, s.minSelections.toInt()))
         }
-        listOf("milk_type", "coffee_type", "extra").forEach { type ->
+        val extraTypes = if (showAll) baseTypes + addonsByType.keys.filter { it !in baseTypes }.sorted() else baseTypes
+        extraTypes.forEach { type ->
             if (type in slotTypes) return@forEach
             val addons = addonsByType[type] ?: emptyList()
             if (addons.isEmpty()) return@forEach
@@ -204,6 +213,14 @@ fun ItemDetailSheet(model: AppModel, item: MenuItemView, onClose: () -> Unit) {
                     onToggleMulti = { toggleMulti(g, it) },
                     onInc = { incMulti(g, it) },
                     onDec = { decMulti(g, it) },
+                )
+            }
+            if (showAll || hasHiddenAddonTypes) {
+                Text(
+                    (if (showAll) "▲ " else "＋ ") + t(if (showAll) "order.show_assigned_addons" else "order.show_all_addons"),
+                    color = c.accent, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                    modifier = Modifier.fillMaxWidth().clickable { showAll = !showAll }.padding(vertical = Space.sm),
+                    textAlign = TextAlign.Center,
                 )
             }
             val fields = item.optionalFields.filter { it.isActive }

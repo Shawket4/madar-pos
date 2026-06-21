@@ -20,6 +20,9 @@ struct ItemDetailView: View {
     @State private var optionals: Set<String> = []
     @State private var qty = 1
     @State private var seeded = false
+    /// Override: reveal the FULL org addon catalog (every type), not just the
+    /// item's assigned slots + global types. Mirrors the dashboard's "show all".
+    @State private var showAll = false
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -39,6 +42,9 @@ struct ItemDetailView: View {
         Dictionary(grouping: app.itemAddons, by: { $0.addonType })
     }
 
+    /// Global types shown by default; "show all" expands to EVERY catalog type.
+    private let baseTypes = ["milk_type", "coffee_type", "extra"]
+
     private var groups: [Group] {
         var out: [Group] = []
         let slotTypes = Set(item.addonSlots.map { $0.addonType })
@@ -50,7 +56,13 @@ struct ItemDetailView: View {
                              isMulti: isMulti, maxSel: s.maxSelections.map { Int($0) },
                              isRequired: s.isRequired, minSel: Int(s.minSelections)))
         }
-        for type in ["milk_type", "coffee_type", "extra"] where !slotTypes.contains(type) {
+        // Unslotted global types, then (when overriding) every remaining type.
+        var extraTypes = baseTypes
+        if showAll {
+            let rest = addonsByType.keys.filter { !baseTypes.contains($0) }.sorted()
+            extraTypes += rest
+        }
+        for type in extraTypes where !slotTypes.contains(type) {
             let addons = addonsByType[type] ?? []
             if addons.isEmpty { continue }
             out.append(Group(id: "type:\(type)", title: typeLabel(type), addons: addons,
@@ -59,12 +71,18 @@ struct ItemDetailView: View {
         return out
     }
 
+    /// True when "show all" would reveal addon types not already on screen.
+    private var hasHiddenAddonTypes: Bool {
+        let slotTypes = Set(item.addonSlots.map { $0.addonType })
+        return addonsByType.keys.contains { !slotTypes.contains($0) && !baseTypes.contains($0) }
+    }
+
     private func typeLabel(_ type: String) -> String {
         switch type {
         case "milk_type": return t("order.addon_milk_type")
         case "coffee_type": return t("order.addon_coffee_type")
         case "extra": return t("order.addon_extra")
-        default: return type
+        default: return type.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
 
@@ -130,6 +148,7 @@ struct ItemDetailView: View {
                     VStack(alignment: .leading, spacing: Space.lg) {
                         if !item.sizes.isEmpty { sizeSection }
                         ForEach(groups) { groupCard($0) }
+                        if showAll || hasHiddenAddonTypes { showAllToggle }
                         if !item.optionalFields.isEmpty { optionalsSection }
                     }
                     .frame(maxWidth: 560)
@@ -192,6 +211,24 @@ struct ItemDetailView: View {
         .padding(.vertical, Space.md)
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+    }
+
+    private var showAllToggle: some View {
+        Button {
+            Haptics.selection()
+            withAnimation(Motion.standard) { showAll.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: showAll ? "chevron.up" : "plus.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(showAll ? t("order.show_assigned_addons") : t("order.show_all_addons"))
+                    .font(.ui(13, .semibold))
+            }
+            .foregroundStyle(theme.colors.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Space.sm)
+        }
+        .buttonStyle(.pressable)
     }
 
     private var sizeSection: some View {
