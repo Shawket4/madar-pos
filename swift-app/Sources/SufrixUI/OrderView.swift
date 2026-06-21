@@ -944,6 +944,8 @@ private struct CartFooter: View {
                     .buttonStyle(.pressable(scale: 0.97))
                 }
                 SufrixButton(label: t("order.checkout"), icon: "creditcard") { onCheckout() }
+                    // Hardware-keyboard shortcut (iPad/Mac): ⌘↩ to check out.
+                    .keyboardShortcut(.return, modifiers: .command)
             }
             .padding(.top, Space.xs)
         }

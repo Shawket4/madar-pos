@@ -62,7 +62,17 @@ import androidx.compose.ui.unit.sp
 import app.sufrix.core.BundleView
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import app.sufrix.ui.SufrixColors
 import app.sufrix.ui.isRtlLayout
 import app.sufrix.core.CatStyleView
@@ -124,7 +134,20 @@ fun OrderScreen(model: AppModel) {
         .filter { selectedCategory == null || it.categoryId == selectedCategory }
         .filter { search.isBlank() || it.name.contains(search, ignoreCase = true) }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
+    // Hardware-keyboard shortcut (desktop): Ctrl/⌘+Enter checks out a non-empty
+    // cart. The root holds focus; non-matching keys fall through (search still types).
+    val checkoutFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { checkoutFocus.requestFocus() } }
+
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(c.bg)
+            .focusRequester(checkoutFocus).focusable()
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && (e.isCtrlPressed || e.isMetaPressed) && e.key == Key.Enter) {
+                    if (model.cartLines.isNotEmpty()) { showTender = true; true } else false
+                } else false
+            }
+    ) {
         val wide = maxWidth >= 760.dp
         Column(Modifier.fillMaxSize()) {
             OrderTopBar(model)
