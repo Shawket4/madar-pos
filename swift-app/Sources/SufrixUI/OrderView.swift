@@ -31,7 +31,11 @@ struct OrderView: View {
         app.menuItems
             .filter { $0.isActive }
             .filter { selectedCategory == nil || $0.categoryId == selectedCategory }
-            .filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }
+            .filter {
+                search.isEmpty
+                    || $0.name.localizedCaseInsensitiveContains(search)
+                    || ($0.description?.localizedCaseInsensitiveContains(search) ?? false)
+            }
     }
 
     var body: some View {
@@ -779,6 +783,11 @@ private struct CartLineRow: View {
                     if isBundle { StatusChip(label: t("order.combos"), tone: .accent) }
                 }
                 if isBundle { bundleBreakdown } else if hasModifiers { modifierPills }
+                if let note = line.notes, !note.isEmpty {
+                    Text("“\(note)”")
+                        .font(.ui(11)).italic().foregroundStyle(theme.colors.textMuted)
+                        .lineLimit(2)
+                }
                 Text(Money.format(line.lineTotalMinor, currency))
                     .font(.money(13, .bold)).foregroundStyle(theme.colors.accent)
             }

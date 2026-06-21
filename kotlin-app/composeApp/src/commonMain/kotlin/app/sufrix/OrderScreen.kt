@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -132,7 +133,11 @@ fun OrderScreen(model: AppModel) {
     val visible = model.menuItems
         .filter { it.isActive }
         .filter { selectedCategory == null || it.categoryId == selectedCategory }
-        .filter { search.isBlank() || it.name.contains(search, ignoreCase = true) }
+        .filter {
+            search.isBlank() ||
+                it.name.contains(search, ignoreCase = true) ||
+                (it.description?.contains(search, ignoreCase = true) ?: false)
+        }
 
     // Hardware-keyboard shortcut (desktop): Ctrl/⌘+Enter checks out a non-empty
     // cart. The root holds focus; non-matching keys fall through (search still types).
@@ -857,6 +862,9 @@ private fun CartLineRowBody(
                     line.addons.forEach { Pill(if (it.qty > 1) "${it.name} ×${it.qty}" else it.name, c.navy, c.navyBg) }
                     line.optionals.forEach { Pill(it.name, c.warning, c.warningBg) }
                 }
+            }
+            line.notes?.takeIf { it.isNotBlank() }?.let {
+                Text("“$it”", color = c.textMuted, fontFamily = SufrixFont, fontStyle = FontStyle.Italic, fontSize = 11.sp, maxLines = 2)
             }
             Text(Money.format(line.lineTotalMinor, currency), color = c.accent, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }

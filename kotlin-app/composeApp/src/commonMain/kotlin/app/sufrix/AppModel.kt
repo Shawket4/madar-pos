@@ -490,10 +490,10 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
 
     /** Void a synced order (queues offline). Reloads history on success so the
      *  row flips to Voided. Returns whether it succeeded (the sheet dismisses). */
-    suspend fun voidOrder(orderId: String, reason: String, note: String?): Boolean {
+    suspend fun voidOrder(orderId: String, reason: String, note: String?, restoreInventory: Boolean = true): Boolean {
         isBusy = true; error = null
         return try {
-            core.voidOrder(orderId, reason, note?.takeIf { it.isNotBlank() }, true)
+            core.voidOrder(orderId, reason, note?.takeIf { it.isNotBlank() }, restoreInventory)
             loadHistory()
             refreshPending()
             true

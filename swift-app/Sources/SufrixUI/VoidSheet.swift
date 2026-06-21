@@ -14,6 +14,7 @@ struct VoidSheet: View {
 
     @State private var reason = "mistake"
     @State private var note = ""
+    @State private var restoreInventory = true
 
     private var currency: String { app.session?.currencyCode ?? "" }
     private let reasons: [(key: String, label: String)] = [
@@ -61,6 +62,11 @@ struct VoidSheet: View {
 
                     SufrixTextField(placeholder: t("void.note"), text: $note, icon: "note.text", disabled: app.isBusy)
 
+                    Toggle(isOn: $restoreInventory) {
+                        Text(t("void.restock")).font(.ui(14)).foregroundStyle(theme.colors.textPrimary)
+                    }
+                    .tint(theme.colors.accent)
+
                     if let error = app.errorMessage {
                         NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
                     }
@@ -68,7 +74,7 @@ struct VoidSheet: View {
                     VStack(spacing: Space.sm) {
                         SufrixButton(label: t("void.confirm"), icon: "trash", variant: .danger, loading: app.isBusy) {
                             Task {
-                                if await app.voidOrder(orderId: order.id, reason: reason, note: note) { onDone() }
+                                if await app.voidOrder(orderId: order.id, reason: reason, note: note, restoreInventory: restoreInventory) { onDone() }
                             }
                         }
                         SufrixButton(label: t("void.cancel"), variant: .ghost) { onDone() }

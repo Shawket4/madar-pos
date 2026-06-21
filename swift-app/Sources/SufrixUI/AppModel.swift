@@ -438,13 +438,13 @@ final class AppModel: ObservableObject {
 
     /// Void a synced order (queues offline). Reloads history on success so the
     /// row flips to Voided. Returns whether it succeeded (the sheet dismisses).
-    func voidOrder(orderId: String, reason: String, note: String?) async -> Bool {
+    func voidOrder(orderId: String, reason: String, note: String?, restoreInventory: Bool = true) async -> Bool {
         isBusy = true; errorMessage = nil
         defer { isBusy = false }
         do {
             try await core.voidOrder(orderId: orderId, reason: reason,
                                      note: note?.isEmpty == true ? nil : note,
-                                     restoreInventory: true)
+                                     restoreInventory: restoreInventory)
             await loadHistory()
             refreshPending()
             return true

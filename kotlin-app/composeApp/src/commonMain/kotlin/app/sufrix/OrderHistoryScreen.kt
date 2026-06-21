@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -266,6 +267,7 @@ private fun VoidOverlay(model: AppModel, order: OrderSummaryView, onDone: () -> 
     val scope = rememberCoroutineScope()
     var reason by remember { mutableStateOf("mistake") }
     var note by remember { mutableStateOf("") }
+    var restock by remember { mutableStateOf(true) }
     val currency = model.session?.currencyCode ?: ""
     val reasons = listOf(
         "mistake" to "void.reason_mistake",
@@ -303,10 +305,14 @@ private fun VoidOverlay(model: AppModel, order: OrderSummaryView, onDone: () -> 
             Text(t("void.reason"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
             reasons.forEach { (key, label) -> ReasonRow(t(label), reason == key) { reason = key } }
             SufrixTextField(note, { note = it }, t("void.note"), enabled = !model.isBusy)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text(t("void.restock"), color = c.textPrimary, fontFamily = SufrixFont, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Switch(checked = restock, onCheckedChange = { restock = it })
+            }
             model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
             SufrixButton(
                 t("void.confirm"),
-                { scope.launch { if (model.voidOrder(order.id, reason, note)) onDone() } },
+                { scope.launch { if (model.voidOrder(order.id, reason, note, restock)) onDone() } },
                 variant = BtnVariant.DANGER, loading = model.isBusy,
             )
             SufrixButton(t("void.cancel"), { onDone() }, variant = BtnVariant.GHOST)

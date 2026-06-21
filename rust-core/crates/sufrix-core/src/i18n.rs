@@ -257,6 +257,7 @@ fn en(key: &str) -> Option<&'static str> {
         "void.reason_quality" => "Quality issue",
         "void.reason_other" => "Other",
         "void.note" => "Note (optional)",
+        "void.restock" => "Restock ingredients",
         "void.confirm" => "Void order",
         "void.cancel" => "Cancel",
         // settings
@@ -511,6 +512,7 @@ fn ar(key: &str) -> Option<&'static str> {
         "void.reason_quality" => "مشكلة في الجودة",
         "void.reason_other" => "أخرى",
         "void.note" => "ملاحظة (اختياري)",
+        "void.restock" => "إعادة المكوّنات للمخزون",
         "void.confirm" => "إبطال الطلب",
         "void.cancel" => "إلغاء",
         "settings.title" => "الإعدادات",
