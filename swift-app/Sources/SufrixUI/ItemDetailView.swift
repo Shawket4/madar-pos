@@ -149,7 +149,11 @@ struct ItemDetailView: View {
     private func toggleMulti(_ g: Group, _ aid: String) {
         var m = multi[g.id] ?? [:]
         if m[aid] != nil { m[aid] = nil } else {
-            if let mx = g.maxSel, m.count >= mx { return }
+            if let mx = g.maxSel, m.count >= mx {
+                Haptics.warning()
+                app.showToast("\(g.title): \(t("order.max_reached")) (≤\(mx))", icon: "hand.raised", tone: .warning)
+                return
+            }
             m[aid] = 1
         }
         multi[g.id] = m.isEmpty ? nil : m

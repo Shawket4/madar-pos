@@ -953,5 +953,6 @@ extension View {
         environment(\.theme, theme)
             .environment(\.localize, t)
             .environment(\.layoutDirection, app.isRTL ? .rightToLeft : .leftToRight)
+            .toastHost(app)
     }
 }

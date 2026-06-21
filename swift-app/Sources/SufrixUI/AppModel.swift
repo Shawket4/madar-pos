@@ -52,6 +52,45 @@ final class AppModel: ObservableObject {
     /// The last placed order's receipt (drives the confirmation screen).
     @Published private(set) var receipt: ReceiptView?
     @Published private(set) var isPlacingOrder = false
+
+    // ── transient toast / snackbar ──────────────────────────────────────────
+    /// The active toast (nil = none). Rendered by `.toastHost(app)`.
+    @Published private(set) var toast: ToastData?
+    private var toastAction: (() -> Void)?
+    private var toastSeq = 0
+    private var toastTask: Task<Void, Never>?
+
+    /// Flash a transient message at the bottom of the screen. Optionally with one
+    /// action (e.g. "Undo"); auto-dismisses after `seconds`.
+    func showToast(
+        _ text: String,
+        icon: String? = nil,
+        tone: ChipTone = .neutral,
+        actionLabel: String? = nil,
+        action: (() -> Void)? = nil,
+        seconds: Double = 2.6
+    ) {
+        toastSeq += 1
+        let id = toastSeq
+        toastAction = action
+        withAnimation(Motion.standard) {
+            toast = ToastData(id: id, text: text, icon: icon, tone: tone, actionLabel: actionLabel)
+        }
+        toastTask?.cancel()
+        toastTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            if toast?.id == id { withAnimation(Motion.standard) { toast = nil } }
+        }
+    }
+
+    /// Invoke the active toast's action and dismiss it.
+    func runToastAction() {
+        let action = toastAction
+        toastAction = nil
+        toastTask?.cancel()
+        withAnimation(Motion.standard) { toast = nil }
+        action?()
+    }
     /// Theme preference — defaults to light (the original navy palette).
     @Published var themeMode: ThemeMode {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: Self.themeKey) }

@@ -13,6 +13,16 @@ enum Haptics {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         #endif
     }
+    static func warning() {
+        #if os(iOS)
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        #endif
+    }
+    static func success() {
+        #if os(iOS)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
+    }
 }
 
 /// Button style: scale on press. Pair with `Haptics.selection()` in the tap

@@ -100,6 +100,8 @@ fun ItemDetailSheet(
     val c = sufrixColors()
     val currency = model.session?.currencyCode ?: ""
     val isConfiguring = onConfigure != null
+    // Resolved here (composable scope) so the non-composable toggleMulti lambda can use it.
+    val maxReachedLabel = t("order.max_reached")
 
     var size by remember { mutableStateOf<String?>(null) }
     val single = remember { mutableStateMapOf<String, String>() }     // groupId -> addonId
@@ -221,7 +223,13 @@ fun ItemDetailSheet(
     }
     val toggleMulti: (Group, String) -> Unit = { g, aid ->
         val m = (multi[g.id] ?: emptyMap()).toMutableMap()
-        if (m.containsKey(aid)) m.remove(aid) else if (g.maxSel == null || m.size < g.maxSel) m[aid] = 1
+        if (m.containsKey(aid)) {
+            m.remove(aid)
+        } else if (g.maxSel == null || m.size < g.maxSel) {
+            m[aid] = 1
+        } else {
+            model.showToast("${g.title}: $maxReachedLabel (≤${g.maxSel})", ChipTone.WARNING)
+        }
         multi = multi.toMutableMap().apply { if (m.isEmpty()) remove(g.id) else put(g.id, m) }
     }
     val incMulti: (Group, String) -> Unit = { g, aid ->

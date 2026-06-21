@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import app.sufrix.core.AppRoute
 import app.sufrix.ui.LocalLocalize
 import app.sufrix.ui.SufrixTheme
+import app.sufrix.ui.ToastHost
 import app.sufrix.ui.sufrixColors
 
 // Shared Compose host (Android + desktop). Thin: the core decides the route
@@ -34,6 +35,8 @@ fun App(model: AppModel) {
                         AppRoute.OPEN_SHIFT -> OpenShiftScreen(model)
                         AppRoute.ORDER -> OrderScreen(model)
                     }
+                    // Toast layer — last child so it draws over the route + any sheets.
+                    ToastHost(model.toast, onAction = { model.runToastAction() }, onDismiss = { model.dismissToast(it) })
                 }
             }
         }

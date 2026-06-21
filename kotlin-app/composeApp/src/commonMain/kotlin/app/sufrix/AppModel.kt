@@ -33,7 +33,9 @@ import app.sufrix.core.ShiftSummaryView
 import app.sufrix.core.ShiftView
 import app.sufrix.core.SufrixCore
 import app.sufrix.core.TokenStore
+import app.sufrix.ui.ChipTone
 import app.sufrix.ui.ThemeMode
+import app.sufrix.ui.ToastData
 
 /**
  * Host secure-bytes vault — the core's [TokenStore] plus the host-only reads the
@@ -126,6 +128,43 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         private set
     var isPlacingOrder by mutableStateOf(false)
         private set
+
+    // ── transient toast / snackbar ──────────────────────────────────────────
+    /** The active toast (null = none). Rendered by [ui.ToastHost] at the root. */
+    var toast by mutableStateOf<ToastData?>(null)
+        private set
+    private var toastAction: (() -> Unit)? = null
+    private var toastSeq = 0
+
+    /** Flash a transient message at the bottom of the screen, optionally with one
+     *  action (e.g. "Undo"). [ui.ToastHost] auto-dismisses after [seconds]. */
+    fun showToast(
+        text: String,
+        tone: ChipTone = ChipTone.NEUTRAL,
+        actionLabel: String? = null,
+        action: (() -> Unit)? = null,
+        seconds: Double = 2.6,
+    ) {
+        toastSeq += 1
+        toastAction = action
+        toast = ToastData(toastSeq, text, tone, actionLabel, seconds)
+    }
+
+    /** Dismiss the toast if it's still the one with [id] (timer-safe). */
+    fun dismissToast(id: Int) {
+        if (toast?.id == id) {
+            toast = null
+            toastAction = null
+        }
+    }
+
+    /** Invoke the active toast's action and dismiss it. */
+    fun runToastAction() {
+        val action = toastAction
+        toastAction = null
+        toast = null
+        action?.invoke()
+    }
 
     init {
         core.setTokenStore(vault)

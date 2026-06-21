@@ -39,6 +39,7 @@ struct RootView: View {
             }
             .environment(\.localize, { app.t($0) })
             .environment(\.layoutDirection, app.isRTL ? .rightToLeft : .leftToRight)
+            .toastHost(app)
         }
     }
 }
