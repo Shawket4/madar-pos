@@ -3,6 +3,7 @@ package app.sufrix
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -131,6 +132,20 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
             Text("✕", color = c.textMuted, fontSize = 18.sp, modifier = Modifier.clickable { onClose() })
         }
 
+        // Order summary card — totals at a glance, at the top of the sheet.
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surfaceAlt).padding(Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            SummaryRow(t("order.subtotal"), Money.format(model.cartTotals.subtotalMinor, currency))
+            if (model.cartTotals.discountMinor > 0)
+                SummaryRow(t("order.discount"), "−${Money.format(model.cartTotals.discountMinor, currency)}")
+            if (model.cartTotals.taxMinor > 0)
+                SummaryRow(t("order.tax"), Money.format(model.cartTotals.taxMinor, currency))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+            SummaryRow(t("order.total"), Money.format(total, currency), emphasized = true)
+        }
+
         Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(t("order.payment_method"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -191,21 +206,17 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text(t("order.cash_received"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 AmountField(amountMinor = tendered, onAmountMinor = { tendered = it }, currencyCode = currency)
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    QuickCash(t("order.exact"), tendered == dueCash) { tendered = dueCash }
+                    listOf(5000L, 10000L, 20000L).filter { it >= dueCash }.take(2).forEach { p ->
+                        QuickCash(Money.format(p, currency), tendered == p) { tendered = p }
+                    }
+                }
+                if (tendered > 0L) ChangeBanner(change, (dueCash - tendered).coerceAtLeast(0L), currency)
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            if (model.cartTotals.discountMinor > 0) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(t("order.discount"), color = c.success, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                    Box(Modifier.weight(1f))
-                    Text("−${Money.format(model.cartTotals.discountMinor, currency)}", color = c.success, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                }
-            }
-            SummaryRow(t("order.total"), Money.format(total, currency), emphasized = true)
-            if (tip > 0) SummaryRow(t("order.tip"), Money.format(tip, currency))
-            if (isCash && !splitMode) SummaryRow(t("order.change"), Money.format(change, currency))
-        }
+        if (tip > 0L) SummaryRow(t("order.tip"), Money.format(tip, currency))
 
         model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
 
@@ -253,6 +264,35 @@ private fun MethodChip(label: String, active: Boolean, onClick: () -> Unit) {
             .clickable(interactionSource = interaction, indication = null) { onClick() }
             .padding(vertical = 14.dp, horizontal = Space.lg),
     )
+}
+
+/** A quick-tender amount chip (Exact / round-number presets) that fills cash. */
+@Composable
+private fun QuickCash(label: String, active: Boolean, onClick: () -> Unit) {
+    val c = sufrixColors()
+    Box(
+        Modifier.clip(RoundedCornerShape(Radii.xl)).background(if (active) c.accent else c.surfaceAlt)
+            .border(1.dp, if (active) Color.Transparent else c.border, RoundedCornerShape(Radii.xl))
+            .clickable { onClick() }.padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Text(label, color = if (active) c.textOnAccent else c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+    }
+}
+
+/** Green "Change due" / red "Short by" banner under the cash field. */
+@Composable
+private fun ChangeBanner(change: Long, short: Long, currency: String) {
+    val c = sufrixColors()
+    val ok = short <= 0L
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(if (ok) c.successBg else c.dangerBg)
+            .padding(horizontal = Space.md, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (ok) t("order.change_due") else t("order.short_by"), color = if (ok) c.success else c.danger, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Box(Modifier.weight(1f))
+        Text(Money.format(if (ok) change else short, currency), color = if (ok) c.success else c.danger, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 15.sp)
+    }
 }
 
 @Composable
