@@ -74,8 +74,11 @@ async fn ensure_open_shift(core: &SufrixCore) {
     // is dedicated to these tests, so the only open shift is ours.)
     let current = core.refresh_shift().await.ok().flatten();
     if current.map(|s| s.is_open) != Some(true) {
-        // A 409 (branch already open from a prior run) is fine — refresh adopts it.
-        let _ = core.open_shift(10_000, None).await;
+        // Pass an edit_reason so the open succeeds regardless of whatever cash
+        // carryover a prior test left (the backend's continuity check otherwise
+        // 400s an opening that differs from the last declared closing). A 409
+        // (branch already open) is fine — refresh adopts it.
+        let _ = core.open_shift(10_000, Some("integration fixture".into())).await;
         core.sync_now().await.ok();
         let _ = core.refresh_shift().await;
     }
@@ -228,6 +231,80 @@ async fn offline_backlog_replays_exactly_once_across_a_reconnect() {
     let done = live.sync_status().expect("status");
     assert_eq!(done.pending, 0, "the offline backlog must fully drain ({done:?})");
     assert_eq!(done.failed, 0, "nothing may dead-letter from the replay ({done:?})");
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// The full offline DAY: open a shift, sell, and close it — all OFFLINE (dead-url
+/// core) — then reconnect and drain the whole dependency chain in order. Proves
+/// the foundation: an offline-opened shift replays (idempotent on its client id),
+/// the order gated behind it sends only after it acks, and the close lands LAST.
+/// Mutates the fixture's shift, so run the integration tests with --test-threads=1.
+#[tokio::test]
+#[ignore]
+async fn full_offline_day_open_sell_close_replays_in_dependency_order() {
+    let base = env("SUFRIX_IT_BASE", "http://127.0.0.1:8082");
+    let branch = env("SUFRIX_IT_BRANCH", "0000beef-0000-0000-0000-0000000000b1");
+    let teller = env("SUFRIX_IT_TELLER", "RTeller");
+
+    let db = std::env::temp_dir().join(format!("sufrix_it_day_{}.sqlite", std::process::id()));
+    let db_path = db.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&db);
+
+    // 1) ONLINE: login + catalog, and make sure the branch has NO open shift (so we
+    //    can open one OFFLINE). Capture the session blob.
+    let captured = Arc::new(Mutex::new(None));
+    let live = core_at(base.clone(), db_path.clone());
+    live.set_token_store(Box::new(CaptureStore(captured.clone())));
+    live.login(LoginRequest {
+        mode: LoginMode::Pin,
+        name: Some(teller),
+        pin: Some("1234".into()),
+        branch_id: Some(branch),
+        email: None,
+        password: None,
+        org_id: None,
+    })
+    .await
+    .expect("login");
+    live.refresh_connectivity().await;
+    live.refresh_catalog().await.expect("catalog");
+    if let Ok(Some(s)) = live.refresh_shift().await {
+        if s.is_open {
+            live.close_shift(0, None).await.ok();
+            live.sync_now().await.ok();
+        }
+    }
+    let blob = captured
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .expect("session blob");
+
+    // 2) OFFLINE day on the dead-url core sharing the store: open → sell → close.
+    let offline = core_at("http://127.0.0.1:1".into(), db_path.clone());
+    offline.restore_session(blob.clone());
+    // Offline can't know the server's exact cash carryover, so an open that may
+    // deviate carries an edit_reason (the backend requires one to override the
+    // continuity check — otherwise the open 400s and the day cascade-fails).
+    offline.open_shift(10_000, Some("offline shift open".into())).await.expect("open queues offline");
+    let item = offline.list_menu_items().expect("items").into_iter().next().expect("a menu item");
+    offline.cart_add(item.id.clone(), item.name.clone(), item.base_price_minor).expect("add");
+    offline.checkout(cash_checkout(&offline)).await.expect("checkout queues offline");
+    offline.close_shift(11_000, None).await.expect("close queues offline");
+
+    let queued = offline.sync_status().expect("status");
+    assert!(queued.pending >= 3, "open + order + close must be queued offline (got {queued:?})");
+    assert_eq!(queued.failed, 0, "a dead port is offline, not a rejection ({queued:?})");
+
+    // 3) RECONNECT: drain the whole chain. open_shift goes first (root), the order
+    //    only after it acks, the close LAST. Replay twice for lost-ack safety.
+    live.sync_now().await.expect("drain");
+    live.sync_now().await.expect("replay drain");
+
+    let done = live.sync_status().expect("status");
+    assert_eq!(done.pending, 0, "the full offline day must drain ({done:?})");
+    assert_eq!(done.failed, 0, "nothing may dead-letter — open/order/close all replay-safe ({done:?})");
 
     let _ = std::fs::remove_file(&db);
 }
