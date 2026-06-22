@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.sufrix.core.AppRoute
 import app.sufrix.core.BranchView
+import app.sufrix.core.PrinterBrand
 import app.sufrix.core.CartLineView
 import app.sufrix.core.CartTotals
 import app.sufrix.core.CashMovementView
@@ -364,6 +365,7 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     }
 
     /** Set the printer dialect (Settings); persisted in the host vault. */
+    @JvmName("applyPrinterBrand")
     fun setPrinterBrand(value: PrinterBrand) {
         printerBrand = value
         vault.printerBrand = if (value == PrinterBrand.STAR) "star" else "epson"

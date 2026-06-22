@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -132,7 +133,7 @@ fun ShiftReportPreviewScreen(model: AppModel, onClose: () -> Unit) {
         ) {
             Text("‹", color = c.textPrimary, fontFamily = SufrixFont, fontSize = 22.sp,
                 modifier = Modifier.clip(CircleShape).clickable { onClose() }.padding(horizontal = 6.dp))
-            Spacer(Modifier.width8())
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(t("shift.report_title"), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 18.sp)
                 model.shift?.let { Text(it.tellerName, color = c.textSecondary, fontFamily = SufrixFont, fontSize = 12.sp) }
@@ -160,5 +161,3 @@ fun ShiftReportPreviewScreen(model: AppModel, onClose: () -> Unit) {
         }
     }
 }
-
-private fun Modifier.width8() = this.then(androidx.compose.foundation.layout.width(8.dp))

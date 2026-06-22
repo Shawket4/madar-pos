@@ -3,7 +3,10 @@ package app.sufrix
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -93,6 +96,7 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
     var selected by remember { mutableStateOf<String?>(null) }
     var tendered by remember { mutableStateOf(0L) }
     var tip by remember { mutableStateOf(0L) }
+    var tipMethod by remember { mutableStateOf<String?>(null) }
     var customerName by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     // Split a single bill across several methods (allocated amounts must sum to total).
@@ -122,140 +126,200 @@ private fun TenderForm(model: AppModel, currency: String, onClose: () -> Unit) {
         else -> selected != null && (!isCash || tendered >= dueCash)
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.xl),
-        verticalArrangement = Arrangement.spacedBy(Space.xl),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t("order.tender"), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 22.sp)
-            Box(Modifier.weight(1f))
-            Text("✕", color = c.textMuted, fontSize = 18.sp, modifier = Modifier.clickable { onClose() })
-        }
-
-        // Order summary card — totals at a glance, at the top of the sheet.
+    Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surfaceAlt).padding(Space.lg),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Space.xl),
         ) {
-            SummaryRow(t("order.subtotal"), Money.format(model.cartTotals.subtotalMinor, currency))
-            if (model.cartTotals.discountMinor > 0)
-                SummaryRow(t("order.discount"), "−${Money.format(model.cartTotals.discountMinor, currency)}")
-            if (model.cartTotals.taxMinor > 0)
-                SummaryRow(t("order.tax"), Money.format(model.cartTotals.taxMinor, currency))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
-            SummaryRow(t("order.total"), Money.format(total, currency), emphasized = true)
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(t("order.payment_method"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(t("order.tender"), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 22.sp)
                 Box(Modifier.weight(1f))
-                if (model.paymentMethods.size > 1) {
-                    Text(
-                        (if (splitMode) "● " else "▭ ") + t("order.split_payment"),
-                        color = if (splitMode) c.accent else c.textMuted,
-                        fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp,
-                        modifier = Modifier.clickable { splitMode = !splitMode },
-                    )
+                Text("✕", color = c.textMuted, fontSize = 18.sp, modifier = Modifier.clickable { onClose() })
+            }
+
+            // Order summary card — totals at a glance.
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surfaceAlt).padding(Space.lg),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                SummaryRow(t("order.subtotal"), Money.format(model.cartTotals.subtotalMinor, currency))
+                if (model.cartTotals.discountMinor > 0)
+                    SummaryRow(t("order.discount"), "−${Money.format(model.cartTotals.discountMinor, currency)}")
+                if (model.cartTotals.taxMinor > 0)
+                    SummaryRow(t("order.tax"), Money.format(model.cartTotals.taxMinor, currency))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+                SummaryRow(t("order.total"), Money.format(total, currency), emphasized = true)
+            }
+
+            // Payment — brand-colored method chips, or a split allocator.
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel(t("order.payment_method"))
+                    Box(Modifier.weight(1f))
+                    if (model.paymentMethods.size > 1) {
+                        Text(
+                            (if (splitMode) "● " else "▭ ") + t("order.split_payment"),
+                            color = if (splitMode) c.accent else c.textMuted,
+                            fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp,
+                            modifier = Modifier.clip(CircleShape).background(if (splitMode) c.accentBg else c.surfaceAlt)
+                                .clickable { splitMode = !splitMode }.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                if (splitMode) {
+                    model.paymentMethods.forEach { m ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                            Box(Modifier.size(9.dp).clip(CircleShape).background(hexColor(m.color)))
+                            Text(m.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.width(82.dp))
+                            Box(Modifier.weight(1f)) {
+                                AmountField(amountMinor = splitAmounts[m.id] ?: 0L, onAmountMinor = { splitAmounts[m.id] = it }, currencyCode = currency)
+                            }
+                        }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm))
+                            .background(if (splitRemaining == 0L) c.successBg else c.warningBg)
+                            .padding(horizontal = Space.md, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(t("order.split_remaining"), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                        Box(Modifier.weight(1f))
+                        Text(Money.format(splitRemaining, currency), color = if (splitRemaining == 0L) c.success else c.danger, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                } else {
+                    model.paymentMethods.forEach { m -> PayChip(m, active = m.id == selected) { selected = m.id } }
                 }
             }
-            if (splitMode) {
-                model.paymentMethods.forEach { m ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        Text(m.name, color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.width(92.dp))
-                        Box(Modifier.weight(1f)) {
-                            AmountField(amountMinor = splitAmounts[m.id] ?: 0L, onAmountMinor = { splitAmounts[m.id] = it }, currencyCode = currency)
+
+            // Cash tendered (cash, non-split) — quick chips + change banner.
+            if (isCash && !splitMode) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    SectionLabel(t("order.cash_received"))
+                    AmountField(amountMinor = tendered, onAmountMinor = { tendered = it }, currencyCode = currency)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        QuickCash(t("order.exact"), tendered == dueCash) { tendered = dueCash }
+                        listOf(5000L, 10000L, 20000L).filter { it >= dueCash }.take(2).forEach { p ->
+                            QuickCash(Money.format(p, currency), tendered == p) { tendered = p }
+                        }
+                    }
+                    if (tendered > 0L) ChangeBanner(change, (dueCash - tendered).coerceAtLeast(0L), currency)
+                }
+            }
+
+            // Tip card — optional, with which method pays the tip.
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surfaceAlt)
+                    .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.lg),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("♡ " + t("order.tip"))
+                    Box(Modifier.weight(1f))
+                    if (tip > 0L) StatusChip(Money.format(tip, currency), ChipTone.SUCCESS)
+                }
+                if (model.paymentMethods.size > 1) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        model.paymentMethods.forEach { m ->
+                            val activeTip = (tipMethod ?: selected) == m.id
+                            Row(
+                                Modifier.clip(CircleShape).background(if (activeTip) hexColor(m.color) else c.surface)
+                                    .border(1.dp, if (activeTip) Color.Transparent else c.border, CircleShape)
+                                    .clickable { tipMethod = m.id }.padding(horizontal = 11.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                if (activeTip) Text("✓", color = c.textOnAccent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                Text(m.name, color = if (activeTip) c.textOnAccent else c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(t("order.split_remaining"), color = c.textSecondary, fontFamily = SufrixFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
-                    Box(Modifier.weight(1f))
-                    Text(Money.format(splitRemaining, currency), color = if (splitRemaining == 0L) c.success else c.danger, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            } else {
-                model.paymentMethods.forEach { m ->
-                    MethodChip(m.name, active = m.id == selected) { selected = m.id }
-                }
+                AmountField(amountMinor = tip, onAmountMinor = { tip = it }, currencyCode = currency)
             }
-        }
 
-        val activeDiscounts = model.discounts.filter { it.isActive }
-        if (activeDiscounts.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text(t("order.discount"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                MethodChip(t("order.no_discount"), active = model.cartDiscountId == null) { model.setDiscount(null) }
-                activeDiscounts.forEach { d ->
-                    MethodChip(discountLabel(d), active = model.cartDiscountId == d.id) { model.setDiscount(d.id) }
-                }
-            }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Text(t("order.customer"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-            SufrixTextField(customerName, { customerName = it }, t("order.customer_hint"))
-            SufrixTextField(notes, { notes = it }, t("order.notes_hint"))
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Text(t("order.tip"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-            AmountField(amountMinor = tip, onAmountMinor = { tip = it }, currencyCode = currency)
-        }
-
-        if (isCash && !splitMode) {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text(t("order.cash_received"), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                AmountField(amountMinor = tendered, onAmountMinor = { tendered = it }, currencyCode = currency)
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    QuickCash(t("order.exact"), tendered == dueCash) { tendered = dueCash }
-                    listOf(5000L, 10000L, 20000L).filter { it >= dueCash }.take(2).forEach { p ->
-                        QuickCash(Money.format(p, currency), tendered == p) { tendered = p }
+            // Discount.
+            val activeDiscounts = model.discounts.filter { it.isActive }
+            if (activeDiscounts.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    SectionLabel(t("order.discount"))
+                    MethodChip(t("order.no_discount"), active = model.cartDiscountId == null, check = true) { model.setDiscount(null) }
+                    activeDiscounts.forEach { d ->
+                        MethodChip(discountLabel(d), active = model.cartDiscountId == d.id, check = true) { model.setDiscount(d.id) }
                     }
                 }
-                if (tendered > 0L) ChangeBanner(change, (dueCash - tendered).coerceAtLeast(0L), currency)
             }
+
+            // Customer + notes.
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                SectionLabel(t("order.customer"))
+                SufrixTextField(customerName, { customerName = it }, t("order.customer_hint"))
+                SufrixTextField(notes, { notes = it }, t("order.notes_hint"))
+            }
+
+            model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
         }
 
-        if (tip > 0L) SummaryRow(t("order.tip"), Money.format(tip, currency))
+        // Sticky footer — Place Order.
+        Column(Modifier.fillMaxWidth().background(c.surface)) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+            Box(Modifier.padding(Space.lg)) {
+                SufrixButton(
+                    t("order.place_order"),
+                    {
+                        scope.launch {
+                            if (splitMode) {
+                                val primary = splitPrimary ?: return@launch
+                                model.placeOrder(primary, 0L, tipMinor = tip, tipPaymentMethodId = tipMethod,
+                                    customerName = customerName.ifBlank { null }, notes = notes.ifBlank { null }, splits = splitLegs)
+                            } else {
+                                val id = selected ?: return@launch
+                                model.placeOrder(id, if (isCash) tendered else 0L, tipMinor = tip, tipPaymentMethodId = tipMethod,
+                                    customerName = customerName.ifBlank { null }, notes = notes.ifBlank { null })
+                            }
+                        }
+                    },
+                    loading = model.isPlacingOrder,
+                    enabled = canPlace,
+                )
+            }
+        }
+    }
+}
 
-        model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
+/** Section label — small uppercase muted heading, matching the Swift sectionLabel. */
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text.uppercase(), color = sufrixColors().textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+}
 
-        SufrixButton(
-            t("order.place_order"),
-            {
-                scope.launch {
-                    if (splitMode) {
-                        val primary = splitPrimary ?: return@launch
-                        model.placeOrder(
-                            primary, 0L,
-                            tipMinor = tip,
-                            customerName = customerName.ifBlank { null },
-                            notes = notes.ifBlank { null },
-                            splits = splitLegs,
-                        )
-                    } else {
-                        val id = selected ?: return@launch
-                        model.placeOrder(
-                            id, if (isCash) tendered else 0L,
-                            tipMinor = tip,
-                            customerName = customerName.ifBlank { null },
-                            notes = notes.ifBlank { null },
-                        )
-                    }
-                }
-            },
-            loading = model.isPlacingOrder,
-            enabled = canPlace,
-        )
+/** Payment method tile — a brand-colored dot + label + check when active; fills
+ *  with the method's brand color when selected. Mirrors the Swift PayChip. */
+@Composable
+private fun PayChip(method: PaymentMethodView, active: Boolean, onClick: () -> Unit) {
+    val c = sufrixColors()
+    val brand = hexColor(method.color)
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().pressScale(interaction).clip(RoundedCornerShape(Radii.sm))
+            .background(if (active) brand else c.surface)
+            .border(1.dp, if (active) Color.Transparent else c.border, RoundedCornerShape(Radii.sm))
+            .clickable(interactionSource = interaction, indication = null) { onClick() }
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        Box(Modifier.size(10.dp).clip(CircleShape).background(if (active) c.textOnAccent else brand))
+        Text(method.name, color = if (active) c.textOnAccent else c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Box(Modifier.weight(1f))
+        if (active) Text("✓", color = c.textOnAccent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
 
 @Composable
-private fun MethodChip(label: String, active: Boolean, onClick: () -> Unit) {
+private fun MethodChip(label: String, active: Boolean, check: Boolean = false, onClick: () -> Unit) {
     val c = sufrixColors()
     val interaction = remember { MutableInteractionSource() }
     Text(
-        label,
+        if (active && check) "✓  $label" else label,
         color = if (active) c.textOnAccent else c.textPrimary,
         fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
         modifier = Modifier.fillMaxWidth().pressScale(interaction).clip(RoundedCornerShape(Radii.sm))

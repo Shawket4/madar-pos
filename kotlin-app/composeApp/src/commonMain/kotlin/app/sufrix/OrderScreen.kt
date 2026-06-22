@@ -658,7 +658,7 @@ private fun catEmoji(key: String): String = when (key) {
 }
 
 /** `#RRGGBB` → Compose Color (opaque). Pairs with the core's CatStyleView. */
-private fun hexColor(hex: String): Color {
+internal fun hexColor(hex: String): Color {
     val s = hex.removePrefix("#")
     return Color(("FF$s").toLong(16))
 }
