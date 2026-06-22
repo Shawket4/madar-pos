@@ -498,6 +498,27 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         }
     }
 
+    // ── receipt preview (history reprint) ─────────────────────────────────────
+    /** A past order projected to a ReceiptView, driving the preview sheet. */
+    var previewReceipt by mutableStateOf<ReceiptView?>(null)
+    /** Fetch + project a synced order so the teller can preview before reprinting. */
+    suspend fun openOrderReceiptPreview(orderId: String) {
+        previewReceipt = runCatching { core.orderReceiptView(orderId) }.getOrNull()
+    }
+    /** Print an arbitrary ReceiptView (the preview sheet's Print). Toast-driven. */
+    suspend fun printReceiptView(r: ReceiptView) {
+        val (host, port) = parsePrinter(printerHost)
+        if (host.isBlank()) { showToast(t("receipt.no_printer"), ChipTone.WARNING); return }
+        val bytes = core.renderReceipt(r, branchName, session?.currencyCode ?: "", 32u, printerBrand)
+        try {
+            core.sendToPrinter(host, port, bytes)
+            if (r.isCash) runCatching { core.sendToPrinter(host, port, core.cashDrawerKick(printerBrand)) }
+            showToast(t("receipt.printed"), ChipTone.SUCCESS)
+        } catch (e: Exception) {
+            showToast(t("receipt.print_failed"), ChipTone.DANGER)
+        }
+    }
+
     /** Load the current shift's orders (synced + queued). Best-effort. Also
      *  refreshes the stats pill from the same list (voided excluded, in core). */
     suspend fun loadHistory() {
@@ -537,6 +558,14 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     /** Load the shift report (best-effort) for the close-shift system-cash row. */
     suspend fun loadShiftReport() {
         shiftReport = runCatching { core.shiftReport() }.getOrNull()
+    }
+
+    /** Drives the mid-shift Z-report preview sheet (print without closing). */
+    var showReportPreview by mutableStateOf(false)
+    /** Open the mid-shift report preview: reset stale print state, then show it. */
+    fun openShiftReportPreview() {
+        printState = PrintState.IDLE
+        showReportPreview = true
     }
 
     /** Close the open shift with the counted cash + optional note. On success the
@@ -599,6 +628,32 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
         isLoadingShifts = false
     }
 
+    /** A past shift's synced orders, lazily loaded on row expansion + cached. */
+    var shiftOrders by mutableStateOf<Map<String, List<OrderSummaryView>>>(emptyMap())
+        private set
+    var loadingShiftOrders by mutableStateOf<Set<String>>(emptySet())
+        private set
+    suspend fun loadOrdersForShift(shiftId: String) {
+        if (shiftOrders.containsKey(shiftId)) return
+        loadingShiftOrders = loadingShiftOrders + shiftId
+        val orders = runCatching { core.listOrdersForShift(shiftId) }.getOrDefault(emptyList())
+        shiftOrders = shiftOrders + (shiftId to orders)
+        loadingShiftOrders = loadingShiftOrders - shiftId
+    }
+    /** Fetch + print a PAST shift's Z-report (history per-row print). Toast-driven. */
+    suspend fun reprintShiftReport(shiftId: String) {
+        val (host, port) = parsePrinter(printerHost)
+        if (host.isBlank()) { showToast(t("receipt.no_printer"), ChipTone.WARNING); return }
+        try {
+            val report = core.shiftReportFor(shiftId)
+            val bytes = core.renderShiftReport(report, branchName, session?.currencyCode ?: "", 32u, printerBrand)
+            core.sendToPrinter(host, port, bytes)
+            showToast(t("receipt.printed"), ChipTone.SUCCESS)
+        } catch (e: Exception) {
+            showToast(t("receipt.print_failed"), ChipTone.DANGER)
+        }
+    }
+
     // ── cart ───────────────────────────────────────────────────────────────────
     /** Add one unit of [item]. Sync (the core just touches kv) so the tap feels
      *  instant; the core merges into the matching line. */
@@ -659,6 +714,16 @@ class AppModel(val core: SufrixCore, private val vault: HostVault) {
     fun discardDraft(id: String) {
         runCatching { core.discardDraft(id) }
         loadDrafts()
+    }
+
+    /** Tab-style switch to a held order: park the current cart first (if any) so
+     *  nothing is lost, then load the selected held order into the cart. */
+    fun switchToHeldOrder(id: String) {
+        if (cartLines.isNotEmpty()) {
+            val name = java.time.LocalTime.now().toString().take(5)
+            runCatching { core.holdCart(name) }
+        }
+        restoreDraft(id)
     }
 
     // ── delivery orders (online; teller works the live branch queue) ──────────────

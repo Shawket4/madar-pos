@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.sufrix.core.CashMovementView
+import app.sufrix.core.OrderSummaryView
 import app.sufrix.core.ShiftSummaryView
 import app.sufrix.ui.AmountField
 import app.sufrix.ui.ChipTone
@@ -83,6 +84,11 @@ fun CashMovementsScreen(model: AppModel) {
                 verticalArrangement = Arrangement.spacedBy(Space.lg),
             ) {
                 model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
+                if (model.cashMovements.isNotEmpty()) {
+                    val totalIn = model.cashMovements.filter { it.amountMinor > 0 }.sumOf { it.amountMinor }
+                    val totalOut = model.cashMovements.filter { it.amountMinor < 0 }.sumOf { -it.amountMinor }
+                    CashSummaryStrip(totalIn, totalOut, totalIn - totalOut, currency)
+                }
                 RecordCard(
                     isIn, { isIn = it }, amountMinor, { amountMinor = it }, note, { note = it },
                     currency, model.isBusy, canRecord,
@@ -147,6 +153,31 @@ private fun DirectionChip(label: String, active: Boolean, tone: Color, modifier:
 }
 
 @Composable
+private fun CashSummaryStrip(totalIn: Long, totalOut: Long, net: Long, currency: String) {
+    val c = sufrixColors()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        Stat(Modifier.weight(1f), t("cash.total_in"), Money.format(totalIn, currency), c.success)
+        Stat(Modifier.weight(1f), t("cash.total_out"), Money.format(totalOut, currency), c.danger)
+        Stat(Modifier.weight(1f), t("cash.net"),
+            (if (net < 0) "−" else "") + Money.format(abs(net), currency),
+            if (net < 0) c.danger else c.textPrimary)
+    }
+}
+
+@Composable
+private fun Stat(modifier: Modifier, label: String, value: String, tone: Color) {
+    val c = sufrixColors()
+    Column(
+        modifier.clip(RoundedCornerShape(Radii.md)).background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.md),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label.uppercase(), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+        Text(value, color = tone, fontFamily = SufrixFont, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1)
+    }
+}
+
+@Composable
 private fun MovementsList(movements: List<CashMovementView>, currency: String) {
     val c = sufrixColors()
     SectionTitle(t("cash.history"))
@@ -201,7 +232,9 @@ private fun SectionTitle(label: String) {
 fun ShiftHistoryScreen(model: AppModel) {
     val c = sufrixColors()
     val currency = model.session?.currencyCode ?: ""
+    var expandedId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { model.loadShiftHistory() }
+    LaunchedEffect(expandedId) { expandedId?.let { model.loadOrdersForShift(it) } }
 
     Column(Modifier.fillMaxSize().background(c.bg)) {
         ScreenHeader(t("shifts.title")) { model.showShiftHistory = false }
@@ -221,7 +254,10 @@ fun ShiftHistoryScreen(model: AppModel) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 items(model.shiftHistory, key = { it.id }) { s ->
-                    Box(Modifier.widthIn(max = 560.dp).fillMaxWidth()) { ShiftRow(s, currency) }
+                    Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+                        ShiftRow(model, s, currency, expanded = expandedId == s.id,
+                            onToggle = { expandedId = if (expandedId == s.id) null else s.id })
+                    }
                 }
             }
         }
@@ -229,30 +265,73 @@ fun ShiftHistoryScreen(model: AppModel) {
 }
 
 @Composable
-private fun ShiftRow(s: ShiftSummaryView, currency: String) {
+private fun ShiftRow(model: AppModel, s: ShiftSummaryView, currency: String, expanded: Boolean, onToggle: () -> Unit) {
     val c = sufrixColors()
+    val scope = rememberCoroutineScope()
+    var printing by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.lg),
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
+            .border(1.dp, c.border, RoundedCornerShape(Radii.md)),
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(shortDate(s.openedAt), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Box(Modifier.weight(1f))
-            StatusChip(
-                if (s.isOpen) t("shifts.open_now") else t("shifts.closed"),
-                if (s.isOpen) ChipTone.SUCCESS else ChipTone.NEUTRAL,
-            )
+        Column(
+            Modifier.fillMaxWidth().clickable { onToggle() }.padding(Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(shortDate(s.openedAt), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Box(Modifier.weight(1f))
+                StatusChip(if (s.isOpen) t("shifts.open_now") else t("shifts.closed"), if (s.isOpen) ChipTone.SUCCESS else ChipTone.NEUTRAL)
+                Text(if (expanded) "  ⌄" else "  ›", color = c.textMuted, fontSize = 14.sp)
+            }
+            Metric(t("shifts.opening"), Money.format(s.openingCashMinor, currency))
+            s.closingDeclaredMinor?.let { Metric(t("shifts.declared"), Money.format(it, currency)) }
+            s.discrepancyMinor?.takeIf { it != 0L }?.let { disc ->
+                Metric(t("shifts.discrepancy"), "${if (disc > 0L) "+" else "−"}${Money.format(abs(disc), currency)}", valueColor = c.danger)
+            }
         }
-        Metric(t("shifts.opening"), Money.format(s.openingCashMinor, currency))
-        s.closingDeclaredMinor?.let { Metric(t("shifts.declared"), Money.format(it, currency)) }
-        s.discrepancyMinor?.takeIf { it != 0L }?.let { disc ->
-            Metric(
-                t("shifts.discrepancy"),
-                "${if (disc > 0L) "+" else "−"}${Money.format(abs(disc), currency)}",
-                valueColor = c.danger,
-            )
+        if (expanded) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = Space.lg).padding(bottom = Space.md),
+                verticalArrangement = Arrangement.spacedBy(Space.xs),
+            ) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+                Row(Modifier.fillMaxWidth().padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                    Text(t("shifts.orders").uppercase(), color = c.textMuted, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Box(Modifier.weight(1f))
+                    Text(
+                        if (printing) "…" else "🖨 ${t("shift.print_report")}",
+                        color = c.accent, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                        modifier = Modifier.clickable(enabled = !printing) {
+                            printing = true; scope.launch { model.reprintShiftReport(s.id); printing = false }
+                        },
+                    )
+                }
+                val orders = model.shiftOrders[s.id]
+                when {
+                    model.loadingShiftOrders.contains(s.id) ->
+                        Text("…", color = c.textMuted, fontFamily = SufrixFont, fontSize = 13.sp, modifier = Modifier.padding(vertical = Space.sm))
+                    orders.isNullOrEmpty() ->
+                        Text(t("shifts.no_orders"), color = c.textMuted, fontFamily = SufrixFont, fontSize = 12.sp, modifier = Modifier.padding(vertical = Space.sm))
+                    else -> orders.forEach { o -> ShiftOrderRow(o, currency) }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun ShiftOrderRow(o: OrderSummaryView, currency: String) {
+    val c = sufrixColors()
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.xs)).background(c.surfaceAlt)
+            .padding(horizontal = Space.sm, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        Text(o.orderNumber?.let { "#$it" } ?: t("history.order"), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        if (o.status == "voided") StatusChip(t("history.voided"), ChipTone.DANGER)
+        Box(Modifier.weight(1f))
+        Text(o.paymentLabel, color = c.textMuted, fontFamily = SufrixFont, fontSize = 11.sp)
+        Text(Money.format(o.totalMinor, currency), color = c.textPrimary, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }
 

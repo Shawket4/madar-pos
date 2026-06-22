@@ -154,7 +154,7 @@ fun OrderHistoryScreen(model: AppModel) {
                             detail = model.orderDetail?.takeIf { it.id == item.id },
                             onToggle = { expandedId = if (expandedId == item.id) null else item.id },
                             onVoid = { voidTarget = item },
-                            onReprint = { scope.launch { model.reprintOrder(item.id) } },
+                            onReprint = { scope.launch { model.openOrderReceiptPreview(item.id) } },
                         )
                     }
                 }

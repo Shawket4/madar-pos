@@ -270,6 +270,14 @@ fun OrderScreen(model: AppModel) {
             SettingsScreen(model)
         }
 
+        // Mid-shift Z-report preview + print (no need to close the shift).
+        if (model.showReportPreview) {
+            ShiftReportPreviewScreen(model) { model.showReportPreview = false }
+        }
+
+        // Receipt preview before (re)printing a past order.
+        model.previewReceipt?.let { ReceiptPreviewScreen(model, it) { model.previewReceipt = null } }
+
         // Item customization sheet.
         model.detailItem?.let { ItemDetailSheet(model, it, onClose = { model.closeItemDetail() }) }
 
@@ -319,6 +327,9 @@ private fun MoreDrawer(model: AppModel, modifier: Modifier = Modifier) {
             }
             MoreRow("↺", t("shifts.title"), c.textPrimary) {
                 model.showMore = false; model.showShiftHistory = true
+            }
+            MoreRow("🖨", t("shift.print_report"), c.textPrimary) {
+                model.showMore = false; model.openShiftReportPreview()
             }
             MoreRow("⤓", t("drafts.title"), c.textPrimary) {
                 model.showMore = false; model.loadDrafts(); model.showDrafts = true
@@ -727,6 +738,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, placeholder: 
 @Composable
 private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? = null, onCheckout: () -> Unit) {
     val c = sufrixColors()
+    LaunchedEffect(Unit) { model.loadDrafts() }
     Column(Modifier.fillMaxSize().background(c.bg)) {
         Row(
             Modifier.fillMaxWidth().padding(Space.lg),
@@ -747,6 +759,10 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+
+        // Held-order tabs — flip between parked carts (switching parks the current
+        // one first, so nothing is lost). The bottom Hold button stays.
+        if (model.drafts.isNotEmpty()) HeldOrdersTabs(model)
 
         if (model.cartLines.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -772,6 +788,56 @@ private fun CartPanel(model: AppModel, currency: String, onClose: (() -> Unit)? 
                 }
             }
             CartFooter(model.cartTotals, currency, onCheckout, onHold = { model.holdCart() })
+        }
+    }
+}
+
+/** Held-order tabs above the cart — Current + a tab per parked order. Tapping a
+ *  held tab parks the current cart first, then loads that one (lossless). */
+@Composable
+private fun HeldOrdersTabs(model: AppModel) {
+    val c = sufrixColors()
+    Column(Modifier.fillMaxWidth().background(c.surface)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = Space.lg, vertical = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            HeldTab(t("drafts.current"), model.cartTotals.itemCount.toInt(), active = true, onTap = null, onClose = null)
+            model.drafts.forEach { d ->
+                HeldTab(d.name, d.itemCount.toInt(), active = false,
+                    onTap = { model.switchToHeldOrder(d.id) },
+                    onClose = { model.discardDraft(d.id) })
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
+    }
+}
+
+@Composable
+private fun HeldTab(label: String, count: Int, active: Boolean, onTap: (() -> Unit)?, onClose: (() -> Unit)?) {
+    val c = sufrixColors()
+    val fg = if (active) c.textOnAccent else c.textSecondary
+    Row(
+        Modifier.clip(CircleShape).background(if (active) c.accent else c.surfaceAlt)
+            .border(1.dp, if (active) Color.Transparent else c.border, CircleShape)
+            .then(if (onTap != null) Modifier.clickable { onTap() } else Modifier)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(label, color = fg, fontFamily = SufrixFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+        if (count > 0) {
+            Box(
+                Modifier.clip(CircleShape)
+                    .background(if (active) c.textOnAccent.copy(alpha = 0.25f) else c.surface)
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+            ) {
+                Text("$count", color = fg, fontFamily = SufrixFont, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            }
+        }
+        if (onClose != null) {
+            Text("✕", color = fg, fontSize = 9.sp, modifier = Modifier.clickable { onClose() })
         }
     }
 }

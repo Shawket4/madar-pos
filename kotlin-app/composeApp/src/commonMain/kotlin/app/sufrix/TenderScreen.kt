@@ -271,30 +271,8 @@ private fun ReceiptConfirmation(model: AppModel, receipt: ReceiptView, currency:
             if (receipt.queuedOffline) ChipTone.WARNING else ChipTone.SUCCESS,
         )
 
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surface)
-                .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.lg),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            receipt.lines.forEach { line -> ReceiptLineRow(line, currency) }
-        }
-
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            SummaryRow(t("order.subtotal"), Money.format(receipt.subtotalMinor, currency))
-            if (receipt.discountMinor > 0) {
-                SummaryRow(t("order.discount"), "−${Money.format(receipt.discountMinor, currency)}")
-            }
-            SummaryRow(t("order.tax"), Money.format(receipt.taxMinor, currency))
-            if (receipt.deliveryFeeMinor > 0) {
-                SummaryRow(t("receipt.delivery_fee"), Money.format(receipt.deliveryFeeMinor, currency))
-            }
-            SummaryRow(t("order.total"), Money.format(receipt.totalMinor, currency), emphasized = true)
-            if (receipt.tipMinor > 0) SummaryRow(t("order.tip"), Money.format(receipt.tipMinor, currency))
-            if (receipt.isCash) {
-                SummaryRow(t("order.cash_received"), Money.format(receipt.amountTenderedMinor, currency))
-                SummaryRow(t("order.change"), Money.format(receipt.changeMinor, currency))
-            }
-        }
+        // The printable receipt, exactly as it will print (preview before print).
+        ReceiptPaper(receipt, model.branchName, currency)
 
         // Print receipt — best-effort send to the configured network printer.
         when (model.printState) {
