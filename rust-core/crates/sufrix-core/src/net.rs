@@ -144,21 +144,61 @@ pub(crate) fn map_api_error<T>(e: ApiError<T>) -> CoreError {
     match e {
         // Transport failures — classified the same way for typed + raw calls.
         ApiError::Reqwest(re) => classify_reqwest(&re),
-        ApiError::Io(io) => CoreError::Transient { detail: io.to_string() },
+        ApiError::Io(io) => {
+            if io_is_connectivity(&io) {
+                CoreError::Offline { detail: io.to_string() }
+            } else {
+                CoreError::Transient { detail: io.to_string() }
+            }
+        }
         // A 2xx body we couldn't decode = wire drift / our bug, never the user's.
         ApiError::Serde(se) => CoreError::Internal { detail: format!("decode: {se}") },
         ApiError::ResponseError(rc) => status_to_error(rc.status.as_u16(), &rc.content),
     }
 }
 
-/// A refused/unreachable connection means we're offline; timeouts/other are
-/// transient (sync retries).
+/// Classify a transport error. ANY failure to complete the round-trip means we
+/// can't reach the server right now, so it's treated as **Offline** — the drain
+/// then reschedules WITHOUT burning the retry budget. This is critical for the
+/// real offline mode: a flaky cellular / captive-portal / slow-proxy link almost
+/// never gives a clean connection-refused; it gives a TIMEOUT or a request error.
+/// The old `is_connect()`-only rule mapped those to Transient → counted retries →
+/// a genuine queued sale dead-lettered after 8 attempts. Only an error that is
+/// NOT a transport/connectivity failure stays Transient. (Mirrors the Flutter
+/// reference's `isNetworkError`, which treats every timeout/socket error as the
+/// network class.)
 fn classify_reqwest(e: &reqwest::Error) -> CoreError {
-    if e.is_connect() {
+    let io_connectivity = {
+        use std::error::Error as _;
+        let mut src = e.source();
+        let mut hit = false;
+        while let Some(s) = src {
+            if let Some(io) = s.downcast_ref::<std::io::Error>() {
+                hit = io_kind_is_connectivity(io.kind());
+                break;
+            }
+            src = s.source();
+        }
+        hit
+    };
+    if e.is_connect() || e.is_timeout() || e.is_request() || io_connectivity {
         CoreError::Offline { detail: e.to_string() }
     } else {
         CoreError::Transient { detail: e.to_string() }
     }
+}
+
+/// Whether an `io::Error` is a connectivity failure (→ Offline, uncounted retry).
+fn io_is_connectivity(io: &std::io::Error) -> bool {
+    io_kind_is_connectivity(io.kind())
+}
+
+fn io_kind_is_connectivity(k: std::io::ErrorKind) -> bool {
+    use std::io::ErrorKind::*;
+    matches!(
+        k,
+        ConnectionRefused | ConnectionReset | ConnectionAborted | NotConnected | BrokenPipe | TimedOut | UnexpectedEof
+    )
 }
 
 /// Map an HTTP status + raw body to a `CoreError` variant.
@@ -375,8 +415,29 @@ mod tests {
     }
 
     #[test]
-    fn map_api_error_io_is_transient() {
-        let io = std::io::Error::new(std::io::ErrorKind::TimedOut, "read timed out");
+    fn map_api_error_io_connectivity_kinds_are_offline() {
+        // A connectivity io error (timeout / reset / refused) is OFFLINE, so the
+        // drain reschedules WITHOUT burning the retry budget — a queued sale must
+        // not dead-letter just because the network flaked.
+        for kind in [
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::ConnectionReset,
+            std::io::ErrorKind::ConnectionRefused,
+            std::io::ErrorKind::BrokenPipe,
+            std::io::ErrorKind::UnexpectedEof,
+        ] {
+            let io = std::io::Error::new(kind, "net");
+            assert!(
+                matches!(map_api_error::<()>(ApiError::Io(io)), CoreError::Offline { .. }),
+                "io {kind:?} must map to Offline"
+            );
+        }
+    }
+
+    #[test]
+    fn map_api_error_io_non_connectivity_is_transient() {
+        // A genuine non-transport io error (e.g. bad data) is still Transient.
+        let io = std::io::Error::new(std::io::ErrorKind::InvalidData, "bad");
         assert!(matches!(map_api_error::<()>(ApiError::Io(io)), CoreError::Transient { .. }));
     }
 

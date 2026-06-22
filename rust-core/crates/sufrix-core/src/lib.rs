@@ -147,6 +147,14 @@ impl SufrixCore {
         let store = store::Store::open(&config.db_path)?;
         let api = net::ApiClient::new(config.base_url.clone())?;
         let locale = RwLock::new(config.locale.clone());
+        // Restore the last-known server skew so even a cold OFFLINE boot (no ping
+        // yet) stamps queued ops with corrected, non-future times.
+        let skew = store
+            .kv_get("clock_skew_secs")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
         Ok(Arc::new(Self {
             config,
             store,
@@ -154,7 +162,7 @@ impl SufrixCore {
             api,
             session: RwLock::new(None),
             token_store: Mutex::new(None),
-            clock_skew_secs: std::sync::atomic::AtomicI64::new(0),
+            clock_skew_secs: std::sync::atomic::AtomicI64::new(skew),
             auth_paused: std::sync::atomic::AtomicBool::new(false),
             diag: Mutex::new(std::collections::VecDeque::new()),
         }))
@@ -498,10 +506,25 @@ impl SufrixCore {
                 .await
                 {
                     Ok(order) => SendOutcome::Acked(Some(order.id.to_string())),
-                    // A replay of an already-saved order returns 200 (idempotency
-                    // dedup); a 409 means the target shift closed before it landed
-                    // → genuinely NOT recorded → surface, don't lose the sale.
-                    Err(e) => classify_send(net::map_api_error(e), Idem::No),
+                    Err(e) => {
+                        let err = net::map_api_error(e);
+                        // A 2xx response we couldn't DECODE means the order WAS
+                        // created (POST succeeded) but the response body drifted
+                        // from the generated type (e.g. a BigDecimal field
+                        // serialized as a JSON string). The order is persisted and
+                        // idempotent, so treating this as applied is correct —
+                        // retrying would re-hit the same un-decodable body forever
+                        // and then dead-letter a real sale.
+                        if matches!(&err, CoreError::Internal { detail } if detail.starts_with("decode:")) {
+                            self.push_diag("warn", "order saved; response body could not be parsed (wire drift) — counted as synced");
+                            SendOutcome::Acked(None)
+                        } else {
+                            // A replay of an already-saved order returns 200
+                            // (idempotency dedup); a 409 means the target shift
+                            // closed before it landed → genuinely NOT recorded.
+                            classify_send(err, Idem::No)
+                        }
+                    }
                 }
             }
             "void_order" => {
@@ -553,6 +576,19 @@ impl SufrixCore {
             Some(then) => now_skew_ms - then,
             None => 0,
         }
+    }
+
+    /// Wall-clock time CORRECTED by the last-known server skew. Queued ops must be
+    /// stamped with this (not raw `Utc::now()`) so a till whose clock is wrong
+    /// doesn't future-date its writes — the backend's `reject_if_future` would
+    /// 400 a future-stamped open_shift/order and dead-letter the whole chain.
+    /// Mirrors Flutter's `TimeUtils.now = DateTime.now() + offset`; the drain's
+    /// `rebase_delta_ms` then only corrects for CHANGES in the skew between
+    /// enqueue and send. The stamped offset is recorded per row in
+    /// `clock_offset_ms` (via `outbox_meta`), keeping the two halves consistent.
+    fn corrected_now(&self) -> chrono::DateTime<chrono::Utc> {
+        let skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed) * 1000;
+        chrono::Utc::now() + chrono::Duration::milliseconds(skew_ms)
     }
 }
 
@@ -1270,7 +1306,7 @@ impl SufrixCore {
         let teller_uuid = uuid::Uuid::parse_str(&teller_id)
             .map_err(|_| CoreError::Validation { field: "teller_id".into(), detail: "bad uuid".into() })?;
         let shift_id = uuid::Uuid::new_v4();
-        let opened_at = chrono::Utc::now().fixed_offset();
+        let opened_at = self.corrected_now().fixed_offset();
         let opening_cash = opening_cash_minor as i32;
         // A non-empty discrepancy reason ⇒ the teller deviated from the carried-
         // over closing. The server re-derives this authoritatively; we mirror it
@@ -1334,7 +1370,7 @@ impl SufrixCore {
             .filter(|s| s.is_open)
             .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
 
-        let closed_at = chrono::Utc::now().fixed_offset();
+        let closed_at = self.corrected_now().fixed_offset();
         let mut request = sufrix_api::models::CloseShiftRequest::new(closing_cash_minor as i32);
         request.cash_note = Some(cash_note);
         request.closed_at = Some(Some(closed_at));
@@ -1425,7 +1461,7 @@ impl SufrixCore {
         // The client_ref IS the outbox id — stable across replays so the backend
         // dedups on its `client_ref` unique index.
         let client_ref = uuid::Uuid::new_v4();
-        let created_at = chrono::Utc::now().fixed_offset();
+        let created_at = self.corrected_now().fixed_offset();
         let mut request = sufrix_api::models::CashMovementRequest::new(amount_minor as i32, note.clone());
         request.client_ref = Some(Some(client_ref));
         request.created_at = Some(Some(created_at));
@@ -1541,7 +1577,7 @@ impl SufrixCore {
             .filter(|s| s.is_open)
             .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
 
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = self.corrected_now().to_rfc3339();
         let prepared = checkout::prepare(
             &self.store,
             &self.current_locale(),
@@ -1604,6 +1640,8 @@ impl SufrixCore {
             Ok(skew) => {
                 if let Some(s) = skew {
                     self.clock_skew_secs.store(s, std::sync::atomic::Ordering::Relaxed);
+                    // Persist so a later cold offline boot stamps corrected times.
+                    let _ = self.store.kv_put("clock_skew_secs", &s.to_string());
                 }
                 if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
                     sess.snapshot.online = true;
@@ -1778,7 +1816,7 @@ impl SufrixCore {
         if !self.is_authenticated() {
             return Err(CoreError::Unauthenticated { detail: "not signed in".into() });
         }
-        let voided_at = chrono::Utc::now().fixed_offset();
+        let voided_at = self.corrected_now().fixed_offset();
         let mut request = sufrix_api::models::VoidOrderRequest::new(reason);
         request.note = Some(note);
         request.restore_inventory = Some(Some(restore_inventory));
