@@ -1620,6 +1620,9 @@ impl SufrixCore {
 
     /// Force a sync now — drains the outbox. Cancellable/idempotent.
     pub async fn sync_now(&self) -> Result<(), CoreError> {
+        // An explicit sync clears the offline (no-count) backoff so a backlog built
+        // during an outage flushes NOW, not after the ~15s network-retry window.
+        let _ = self.store.clear_network_backoff();
         self.drain_outbox().await
     }
 
@@ -1646,6 +1649,9 @@ impl SufrixCore {
                 if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
                     sess.snapshot.online = true;
                 }
+                // Connectivity is CONFIRMED — un-gate the offline backlog so it
+                // drains on this pass instead of waiting out the network window.
+                let _ = self.store.clear_network_backoff();
                 let _ = self.drain_outbox().await; // best-effort
                 true
             }

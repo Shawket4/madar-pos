@@ -362,6 +362,19 @@ impl Store {
         Ok(())
     }
 
+    /// Clear the connectivity (no-count) backoff gate so a freshly-confirmed
+    /// reconnect drains its backlog NOW instead of waiting out the ~15s network
+    /// retry window. Only touches items rescheduled purely for connectivity
+    /// (`attempts=0`, a positive gate) — a counted server-error backoff
+    /// (`attempts>0`) keeps its exponential gate. Returns rows un-gated.
+    pub fn clear_network_backoff(&self) -> CoreResult<u32> {
+        let n = self.lock().execute(
+            "UPDATE outbox SET next_attempt_at=0 \
+             WHERE status='pending' AND attempts=0 AND next_attempt_at>0",
+            [])?;
+        Ok(n as u32)
+    }
+
     /// Drop acked recovery-log rows older than `cutoff_ms` (kept ~48h so a crash
     /// between server ack and local writes never loses the record).
     pub fn purge_acked_older_than(&self, cutoff_ms: i64) -> CoreResult<u32> {
@@ -916,6 +929,27 @@ mod tests {
         let s = Store::open("").unwrap();
         assert!(s.due_for_sync(now_ms(), None).unwrap().is_empty());
         assert!(s.due_for_sync(now_ms(), Some("alice")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn clear_network_backoff_ungates_only_no_count_pending() {
+        let s = Store::open("").unwrap();
+        let net = s.enqueue(&op("net")).unwrap();
+        let srv = s.enqueue(&op("srv")).unwrap();
+        s.enqueue(&op("fresh")).unwrap(); // never attempted; gate already 0
+        // A connectivity blip reschedules WITHOUT counting (attempts stays 0).
+        s.mark_retry_no_count(net, now_ms() + 60_000).unwrap();
+        // A server error backs off WITH a count bump (attempts=1).
+        s.mark_retry(srv, "5xx", now_ms() + 60_000).unwrap();
+        // Before: only "fresh" is due (net + srv gated into the future).
+        let before: Vec<_> = s.due_for_sync(now_ms(), None).unwrap().into_iter().map(|i| i.id).collect();
+        assert_eq!(before, vec!["fresh"]);
+        // The reconnect path un-gates ONLY the no-count item.
+        assert_eq!(s.clear_network_backoff().unwrap(), 1);
+        let after: Vec<_> = s.due_for_sync(now_ms(), None).unwrap().into_iter().map(|i| i.id).collect();
+        assert!(after.contains(&"net".to_string()), "the connectivity-gated item is now due");
+        assert!(!after.contains(&"srv".to_string()), "the counted server backoff stays gated");
+        assert!(after.contains(&"fresh".to_string()));
     }
 
     #[test]

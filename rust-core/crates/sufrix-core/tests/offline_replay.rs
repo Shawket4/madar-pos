@@ -13,9 +13,27 @@
 //! Fixture defaults match the throwaway org/branch/teller seeded for these
 //! tests (override via env). The teller PIN is `1234`.
 
+use std::sync::{Arc, Mutex};
 use sufrix_core::checkout::{CheckoutInput, ReceiptView};
-use sufrix_core::session::{LoginMode, LoginRequest};
+use sufrix_core::session::{LoginMode, LoginRequest, TokenStore};
 use sufrix_core::{SufrixConfig, SufrixCore};
+
+/// Captures the session blob the core hands its vault at login, so a second core
+/// can restore the SAME authenticated session (incl. the bearer token).
+struct CaptureStore(Arc<Mutex<Option<Vec<u8>>>>);
+impl TokenStore for CaptureStore {
+    fn save_blob(&self, blob: Vec<u8>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(blob);
+    }
+    fn clear_blob(&self) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
+fn core_at(base: String, db_path: String) -> Arc<SufrixCore> {
+    SufrixCore::new(SufrixConfig { base_url: base, environment: "dev".into(), db_path, locale: "en".into() })
+        .expect("core")
+}
 
 fn env(k: &str, default: &str) -> String {
     std::env::var(k).unwrap_or_else(|_| default.to_string())
@@ -140,6 +158,78 @@ async fn offline_then_replay_lands_exactly_once() {
         history.iter().filter(|o| o.id == order_id).count() <= 1,
         "order must not appear twice in history ({matches} candidate rows)"
     );
+}
+
+/// THE real-offline proof the other tests don't give: build an actual backlog
+/// while OFFLINE (a second core pointed at a dead port, sharing the on-disk store
+/// + the restored online session/token, so every inline drain fails and ops pile
+/// up on disk), then bring the live core back and drain — twice — and confirm the
+/// whole queue replays EXACTLY ONCE with nothing dead-lettered. This exercises the
+/// path a teller actually hits: sell through an outage, then reconnect.
+#[tokio::test]
+#[ignore]
+async fn offline_backlog_replays_exactly_once_across_a_reconnect() {
+    let base = env("SUFRIX_IT_BASE", "http://127.0.0.1:8082");
+    let branch = env("SUFRIX_IT_BRANCH", "0000beef-0000-0000-0000-0000000000b1");
+    let teller = env("SUFRIX_IT_TELLER", "RTeller");
+
+    let db = std::env::temp_dir().join(format!("sufrix_it_offline_{}.sqlite", std::process::id()));
+    let db_path = db.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&db);
+
+    // 1) ONLINE on a PERSISTENT store: login (the vault captures the session blob),
+    //    pull the catalog, ensure a shift is open. All written to the shared file.
+    let captured = Arc::new(Mutex::new(None));
+    let live = core_at(base.clone(), db_path.clone());
+    live.set_token_store(Box::new(CaptureStore(captured.clone())));
+    live.login(LoginRequest {
+        mode: LoginMode::Pin,
+        name: Some(teller),
+        pin: Some("1234".into()),
+        branch_id: Some(branch),
+        email: None,
+        password: None,
+        org_id: None,
+    })
+    .await
+    .expect("login");
+    live.refresh_connectivity().await;
+    live.refresh_catalog().await.expect("catalog");
+    ensure_open_shift(&live).await;
+    live.sync_now().await.ok();
+    let blob = captured
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .expect("session blob captured at login");
+
+    // 2) OFFLINE: a core at a dead port, sharing the SAME store, with the online
+    //    session restored (so it carries the bearer). Its inline drains all fail,
+    //    so a real backlog accumulates on disk.
+    let offline = core_at("http://127.0.0.1:1".into(), db_path.clone());
+    offline.restore_session(blob.clone());
+    let item = offline.list_menu_items().expect("items").into_iter().next().expect("a menu item");
+    for _ in 0..2 {
+        offline.cart_add(item.id.clone(), item.name.clone(), item.base_price_minor).expect("add");
+        let r = offline.checkout(cash_checkout(&offline)).await.expect("offline checkout queues");
+        assert!(r.queued_offline, "an offline sale must queue, not report sent");
+    }
+    let _ = offline.record_cash_movement(1_500, "offline drawer float".into()).await;
+
+    let queued = offline.sync_status().expect("status");
+    assert!(queued.pending >= 3, "expected 2 orders + cash queued offline (got {queued:?})");
+    assert_eq!(queued.failed, 0, "a dead port must NOT dead-letter — it's offline, not rejected ({queued:?})");
+
+    // 3) RECONNECT: the live core (same store, real backend) drains the backlog,
+    //    twice (a lost-ack replay), and the queue empties with no dupes / no dead.
+    live.sync_now().await.expect("drain");
+    live.sync_now().await.expect("replay drain");
+
+    let done = live.sync_status().expect("status");
+    assert_eq!(done.pending, 0, "the offline backlog must fully drain ({done:?})");
+    assert_eq!(done.failed, 0, "nothing may dead-letter from the replay ({done:?})");
+
+    let _ = std::fs::remove_file(&db);
 }
 
 /// A cash movement is OFFLINE-FIRST: recording it queues + drains through the
