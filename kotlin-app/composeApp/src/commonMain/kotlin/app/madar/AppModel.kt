@@ -46,6 +46,7 @@ import app.madar.core.MadarCore
 import app.madar.core.TimeStyle
 import app.madar.core.TokenStore
 import app.madar.ui.ChipTone
+import app.madar.ui.RealtimeAlertData
 import app.madar.ui.ThemeMode
 import app.madar.ui.ToastData
 
@@ -1111,16 +1112,44 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     var deliveryTick by mutableStateOf(0); private set
     private var realtimeBridge: RealtimeBridge? = null
 
+    // ── in-app realtime alert banner (the visual companion to the OS notification) ──
+    /** The active in-app alert (null = none). Rendered at the app root, alongside
+     *  the OS notification + ping + haptic. Mirrors the Flutter NewOrderBanner,
+     *  generalized to every alerting event. */
+    var realtimeAlert by mutableStateOf<RealtimeAlertData?>(null)
+        private set
+    private var alertSeq = 0
+    /** Raise the in-app banner. Called from [bannerPlayer] on the core's thread;
+     *  snapshot state is thread-safe so this is safe off the main thread. */
+    fun showRealtimeAlert(title: String, body: String, tag: String) {
+        alertSeq += 1
+        realtimeAlert = RealtimeAlertData(alertSeq, title, body, tag)
+    }
+    fun dismissRealtimeAlert(id: Int) { if (realtimeAlert?.id == id) realtimeAlert = null }
+    /** Wraps the injected platform [player] so an alert ALSO raises the in-app
+     *  banner — fired at the SAME deduped point the core posts the OS notification,
+     *  so the banner, chime, haptic and notification stay in lockstep. */
+    private val bannerPlayer: RealtimePlayer by lazy {
+        object : RealtimePlayer {
+            override fun playPing() = player.playPing()
+            override fun postNotification(title: String, body: String, tag: String) {
+                player.postNotification(title, body, tag)
+                showRealtimeAlert(title, body, tag)
+            }
+            override fun haptic() = player.haptic()
+        }
+    }
+
     /** Open the device's ONE session-level realtime subscription. The CORE owns the
      *  policy — it derives the topics from the signed-in role, refreshes the right
      *  board via the bridge (tick counters), and raises deduped, localized alerts via
-     *  the injected [player] (ping + OS notification + haptic). Idempotent (the core
-     *  no-ops if already running). Call after login / on boot when signed in. */
+     *  the injected [player] (ping + OS notification + haptic + in-app banner).
+     *  Idempotent (the core no-ops if already running). Call after login / on boot. */
     suspend fun startRealtime() {
         if (session == null || deviceConfig.branchId == null) return
         val bridge = RealtimeBridge(this)
         realtimeBridge = bridge
-        runCatching { core.startRealtime(bridge, player) }
+        runCatching { core.startRealtime(bridge, bannerPlayer) }
     }
     /**
      * Bring up the device-level LAN offline relay (Phase E). Idempotent + self-

@@ -1020,6 +1020,26 @@ final class AppModel: ObservableObject {
     /// The pure platform alert primitive the core calls (ping + notification + haptic).
     private let alertPlayer = RealtimeAlertPlayer()
 
+    // ── in-app realtime alert banner (the visual companion to the OS notification) ──
+    /// The active in-app alert (nil = none). Rendered at the app root, alongside
+    /// the OS notification + ping + haptic. Mirrors the Flutter NewOrderBanner,
+    /// generalized to every alerting event.
+    @Published var realtimeAlert: RealtimeAlert?
+    private var alertSeq = 0
+    /// Raise the in-app banner (+ auto-dismiss). Called from `alertPlayer` on the
+    /// main actor at the same deduped point the core posts the OS notification.
+    func showRealtimeBanner(_ title: String, _ body: String, _ tag: String) {
+        alertSeq += 1
+        let id = alertSeq
+        realtimeAlert = RealtimeAlert(id: id, title: title, body: body, tag: tag)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            self?.dismissRealtimeAlert(id)
+        }
+    }
+    func dismissRealtimeAlert(_ id: Int) {
+        if realtimeAlert?.id == id { realtimeAlert = nil }
+    }
+
     /// Open the device's ONE session-level realtime subscription. The CORE owns all
     /// the policy — it derives the topics from the signed-in role, refreshes the right
     /// board via the bridge, and raises deduped, localized alerts via `alertPlayer`
@@ -1028,6 +1048,7 @@ final class AppModel: ObservableObject {
     func startRealtime() {
         guard session != nil, deviceConfig.branchId != nil else { return }
         RealtimeAlertPlayer.requestAuthorization()
+        alertPlayer.owner = self // raise the in-app banner alongside the OS notification
         let bridge = RealtimeBridge(owner: self)
         realtimeBridge = bridge
         Task { try? await core.startRealtime(listener: bridge, player: alertPlayer) }

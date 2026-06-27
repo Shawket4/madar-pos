@@ -11,6 +11,9 @@ import UIKit
 // NSObject so it can be the `UNUserNotificationCenterDelegate` (an @objc protocol).
 final class RealtimeAlertPlayer: NSObject, RealtimePlayer, UNUserNotificationCenterDelegate {
     private var audio: AVAudioPlayer?
+    /// The model that raises the in-app banner — set by AppModel. Weak so the
+    /// player (retained for the app's lifetime) never keeps the model alive.
+    weak var owner: AppModel?
 
     override init() {
         super.init()
@@ -60,6 +63,9 @@ final class RealtimeAlertPlayer: NSObject, RealtimePlayer, UNUserNotificationCen
         // so a delivery order's create→update never stacks duplicate banners.
         let req = UNNotificationRequest(identifier: tag, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
+        // Raise the in-app banner at the SAME deduped point as the OS notification
+        // (called off the main thread by the core → hop to the main actor).
+        Task { @MainActor [weak owner] in owner?.showRealtimeBanner(title, body, tag) }
     }
 
     func haptic() { Haptics.success() }

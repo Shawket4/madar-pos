@@ -11,12 +11,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import app.madar.core.AppRoute
 import app.madar.ui.LocalLocalize
 import app.madar.ui.MadarTheme
+import app.madar.ui.RealtimeAlertBanner
 import app.madar.ui.ToastHost
 import app.madar.ui.madarColors
 
@@ -63,6 +65,13 @@ fun App(model: AppModel) {
                         }
                         // Toast layer — last child so it draws over the route + any sheets.
                         ToastHost(model.toast, onAction = { model.runToastAction() }, onDismiss = { model.dismissToast(it) })
+                        // In-app realtime alert banner — top-anchored, the visual
+                        // companion to the OS notification (chime + haptic + this).
+                        RealtimeAlertBanner(
+                            model.realtimeAlert,
+                            onDismiss = { model.dismissRealtimeAlert(it) },
+                            modifier = Modifier.align(Alignment.TopCenter),
+                        )
                     }
                 }
             }

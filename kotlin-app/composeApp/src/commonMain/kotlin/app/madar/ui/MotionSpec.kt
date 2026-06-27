@@ -26,11 +26,12 @@ object MotionSpec {
     /** A touch bouncier spring for value pops (PIN dots, qty steppers, badges). */
     fun <T> bouncy(): SpringSpecT<T> = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 520f)
 
-    /** Standard eased tween — color, opacity, border, cross-fades (Swift easeOut 0.22). */
-    fun <T> standard(): AnimationSpec<T> = tween(durationMillis = 220, easing = EaseOut)
+    /** Standard eased tween — color, opacity, border, cross-fades (Swift easeOut
+     *  0.22). FiniteAnimationSpec so it also feeds slide/fade transitions. */
+    fun <T> standard(): FiniteAnimationSpec<T> = tween(durationMillis = 220, easing = EaseOut)
 
     /** Slower content cross-fade (route/tab swaps). */
-    fun <T> gentle(): AnimationSpec<T> = tween(durationMillis = 300, easing = EaseInOut)
+    fun <T> gentle(): FiniteAnimationSpec<T> = tween(durationMillis = 300, easing = EaseInOut)
 }
 
 // `spring()` returns SpringSpec<T> which is a FiniteAnimationSpec — alias keeps the
