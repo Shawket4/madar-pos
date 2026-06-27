@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- No system ActionBar/title bar — the Compose UI renders all of its own
+         chrome. MainActivity is a plain ComponentActivity (not AppCompat), so a
+         platform NoActionBar parent is sufficient. Edge-to-edge + system-bar
+         insets are handled in code (MainActivity.enableEdgeToEdge + App root). -->
+    <style name="Theme.Madar" parent="@android:style/Theme.Material.Light.NoActionBar" />
+</resources>

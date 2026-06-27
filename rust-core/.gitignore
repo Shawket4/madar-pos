@@ -3,6 +3,6 @@
 # Real secrets live here; ship .env.example instead.
 .env
 # Generated client is reproducible from the spec via tool/generate_api.sh.
-/crates/sufrix-api
+/crates/madar-api
 # UniFFI binding output.
 /bindings

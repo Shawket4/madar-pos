@@ -16,19 +16,19 @@ case "$(uname -s)" in
   Linux)  EXT=so ;;
   *)      EXT=dll ;;
 esac
-LIB="$CORE_DIR/target/$PROFILE/libsufrix_core.$EXT"
+LIB="$CORE_DIR/target/$PROFILE/libmadar_core.$EXT"
 
 echo "── Building cdylib ($PROFILE)…"
-cargo build $BUILD_FLAG -p sufrix-core
+cargo build $BUILD_FLAG -p madar-core
 
 echo "── Generating Swift bindings…"
 rm -rf bindings/swift && mkdir -p bindings/swift
-cargo run $BUILD_FLAG -p sufrix-core --bin uniffi-bindgen -- generate \
+cargo run $BUILD_FLAG -p madar-core --bin uniffi-bindgen -- generate \
   --library "$LIB" --language swift --out-dir bindings/swift --no-format
 
 echo "── Generating Kotlin bindings…"
 rm -rf bindings/kotlin && mkdir -p bindings/kotlin
-cargo run $BUILD_FLAG -p sufrix-core --bin uniffi-bindgen -- generate \
+cargo run $BUILD_FLAG -p madar-core --bin uniffi-bindgen -- generate \
   --library "$LIB" --language kotlin --out-dir bindings/kotlin --no-format
 
 echo "Done. Bindings in $CORE_DIR/bindings/{swift,kotlin}"

@@ -1,0 +1,785 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		03683CB4AC48F7EA8408C994 /* SufrixTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */; };
+		05F9EB4973CAABC247B17E32 /* BundleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A6454292C0709AACE8B45A /* BundleDetailView.swift */; };
+		08F89ED6EB076D4896A826C5 /* MadarMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8795563D490E093CEE91C055 /* MadarMark.swift */; };
+		09873816146F1EF42544076B /* KitchenDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */; };
+		106B95670F968FF0DDE7E32C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DC44A1146E760945E5C0544A /* Assets.xcassets */; };
+		17523B0F7711948AE39DAEFF /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = E1DBA34D4FA0D50D4C76A885 /* Fonts */; };
+		19893C16878B7DD0DE521664 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = 8C6605B4728E0ADB8518EBBD /* Sounds */; };
+		1D8885BEA2CCA0D67B583E1B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DC44A1146E760945E5C0544A /* Assets.xcassets */; };
+		21EB774F46284F8D02C7B53C /* PressableScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */; };
+		239E908C3ECC66D03A3F7B24 /* IncomingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FF0E6F55971DD7E3028220 /* IncomingView.swift */; };
+		26727D4F1A77B19A5ECC8900 /* ReceiptPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */; };
+		2A0CAE7F0DCBC5A79133310D /* SufrixApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* SufrixApp.swift */; };
+		2A887437B40C0FA04E59DB3C /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */; };
+		2C95DFE71E228CB531FE596F /* ShiftReportPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5267241C1AC9273C755769A /* ShiftReportPreview.swift */; };
+		2DBC5CA87ADB1AC071A22C23 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = E1DBA34D4FA0D50D4C76A885 /* Fonts */; };
+		2F6A2EC4A1F049378F7F738D /* WaiterTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1581A20D3AE0F7B94D0257A6 /* WaiterTicketsView.swift */; };
+		315886ADC18887E2F6C400F8 /* DeliveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A934869271B71AB908A0D7 /* DeliveryView.swift */; };
+		31C6F8926C1C375793B5F543 /* Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = C69DBAA7B29A7FDF8241A0D6 /* Tokens.swift */; };
+		342DCEB44D6760BF6C6612BC /* DraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C58D216E7C2B0D37BD01891 /* DraftsView.swift */; };
+		347B2D01475D02367F08884C /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */; };
+		35F363E5612C959E7B6BF95E /* CloseShiftView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D3E9FD2997E5756AC262D6D /* CloseShiftView.swift */; };
+		3CEFD7590804DEEFF00BE17F /* PinPad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 686C827C426C041E668CA778 /* PinPad.swift */; };
+		3DEF027201C82DF692464AEE /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */; };
+		406ACEF15D8B58429962ECF2 /* WaiterTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1581A20D3AE0F7B94D0257A6 /* WaiterTicketsView.swift */; };
+		41A7616FECBA6A13A5D67BB7 /* OrderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FDEE697B035556197EC4B4 /* OrderView.swift */; };
+		42E8F665FB5A0EC487C1C8D7 /* Toast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A7BF24EAFACE649636D4B69 /* Toast.swift */; };
+		433926E6FB2BD54BA621BC54 /* Chips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792643251885F57217F40A9B /* Chips.swift */; };
+		4394F456530EDA726A724599 /* MadarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF6074347CE26F389673AF9 /* MadarIcon.swift */; };
+		470F41ED0522355D6B3A3AB6 /* BundleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A6454292C0709AACE8B45A /* BundleDetailView.swift */; };
+		47F35994C30761504684CAC5 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8575D6F7B26B1A8B923D513 /* ContentView.swift */; };
+		4B9E14EC8E1C710D6CFE4883 /* MadarSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A961800CB4E1087339EE466 /* MadarSheet.swift */; };
+		4C5E66497AD87F22B99C0765 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8575D6F7B26B1A8B923D513 /* ContentView.swift */; };
+		52B6DF3DF0AB091938D3343B /* SettleTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */; };
+		59DB993E64C20A1AAF1D2426 /* MadarCoreFFI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */; };
+		5B3978C7E29D218874B903CC /* MenuItemCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */; };
+		5B9E72C3B5C44F3A5A167B47 /* OpenShiftView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFEF7EC990C77923E9CC282B /* OpenShiftView.swift */; };
+		5DCF9304631011EC7CA35F92 /* Skeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */; };
+		6305C4121F26EA0F35026990 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */; };
+		6494EE6529F2C0AAB60CBC42 /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82B289DA69BD5025D17B4 /* SyncView.swift */; };
+		649B98786D9C7FB457C7FF19 /* VoidSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE62D3E6261191D17405952 /* VoidSheet.swift */; };
+		6553D25445EE87CB459C4652 /* SufrixTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */; };
+		6915093EC1BC9A75A3F70343 /* Toast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A7BF24EAFACE649636D4B69 /* Toast.swift */; };
+		6AA0762EDC259BA844B87E11 /* CashAndShiftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 169E08DA5AF85857B87F99A4 /* CashAndShiftsView.swift */; };
+		6B05893F1978CD59DCF06C7D /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82B289DA69BD5025D17B4 /* SyncView.swift */; };
+		6D1A6C0B6E0C72088C5F84A7 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C6E66BFD4496F8B04F180AC /* Money.swift */; };
+		77E9823DD682EFB7A76DCF91 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */; };
+		7924261AAFD365A645259200 /* Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = C69DBAA7B29A7FDF8241A0D6 /* Tokens.swift */; };
+		7B0E14A6DEF5085C07BC731A /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1112C4D55E34623013A136B5 /* LoginView.swift */; };
+		802229CC624A23ABDC17D71E /* MadarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF6074347CE26F389673AF9 /* MadarIcon.swift */; };
+		82903BFE2A159A50EAB06D16 /* KitchenDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */; };
+		858852E6484187E9073DBBB0 /* MadarSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A961800CB4E1087339EE466 /* MadarSheet.swift */; };
+		863353F1C0538F15DE5D76DF /* AmountField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */; };
+		8993040D17F0F30AB691B911 /* SufrixButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* SufrixButton.swift */; };
+		89FE8AB7518E42196F9E8AF6 /* IconCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B8D71C4ABB9C77FEB5D791D /* IconCatalog.swift */; };
+		90056101E664424A53B432D4 /* SufrixButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* SufrixButton.swift */; };
+		911BA6D1C522F65F45F05AB7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */; };
+		94CD9E84942A2F2F8264FBE2 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = 8C6605B4728E0ADB8518EBBD /* Sounds */; };
+		9BED347D34E21BB606FDE7B7 /* ReauthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E562E93C40F1D2174325680 /* ReauthView.swift */; };
+		9CA2F9E6F8CA21F6A74E230A /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */; };
+		9D8D31FC6F1195ACC8611E79 /* CloseShiftView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D3E9FD2997E5756AC262D6D /* CloseShiftView.swift */; };
+		A09513491F3768F72F079FD0 /* OrderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FDEE697B035556197EC4B4 /* OrderView.swift */; };
+		A5DDD9E9B9A1CA2E27B0BBA6 /* TenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82FE46CC8890F953EC459FF3 /* TenderView.swift */; };
+		A5E2BB0E5ACDA4433C82A667 /* TenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82FE46CC8890F953EC459FF3 /* TenderView.swift */; };
+		A652E413D4124C8FEF623559 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 067006020CB739A6553EECD9 /* AppModel.swift */; };
+		A91663ED44D70484BCF0E3D9 /* MadarMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8795563D490E093CEE91C055 /* MadarMark.swift */; };
+		AAEDEEB7E37A80AD19FB527A /* PinPad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 686C827C426C041E668CA778 /* PinPad.swift */; };
+		AC1B9778E5DA441A90CD1283 /* RealtimeAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */; };
+		AD5F76A4B1C39FB3813211EB /* Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69673262F97BDC545F95A72C /* Layout.swift */; };
+		B2D859ED67BFCBA58564908F /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C6E66BFD4496F8B04F180AC /* Money.swift */; };
+		B99B1844FCA5D506F078E512 /* RealtimeAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */; };
+		BA6CC4DCA324A7FE75E70E31 /* BrandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */; };
+		BC485D607C31E46BC95A52E0 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 067006020CB739A6553EECD9 /* AppModel.swift */; };
+		C05382CB0C3A98AC46AB4A97 /* Skeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */; };
+		C2FF9B24DC12758D87A5B478 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */; };
+		C340E0E525DAC4B389DD5ACC /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */; };
+		C709B7853F0C5FD2A2EBB106 /* SufrixApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* SufrixApp.swift */; };
+		C8FF91E53F40CFF2B86C418F /* AmountField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */; };
+		CF11A2BF8BF4A716C367CD4C /* MadarCoreFFI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */; };
+		CF209FD9BBDC247E00FD5F88 /* MadarCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF309BBD8B8E2B65F262C4E7 /* MadarCore.xcframework */; };
+		D44AE419F0200F3DAEB678AF /* ReauthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E562E93C40F1D2174325680 /* ReauthView.swift */; };
+		D81F35500086B9EDB65CA212 /* IncomingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FF0E6F55971DD7E3028220 /* IncomingView.swift */; };
+		DD8ED53021FFA067725CA056 /* Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69673262F97BDC545F95A72C /* Layout.swift */; };
+		DE656521EEE33521D3B1B351 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */; };
+		E28A3CDC3EC971143788C523 /* Chips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792643251885F57217F40A9B /* Chips.swift */; };
+		E3DCDC8190F4B45DEFFDE83B /* ReceiptPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */; };
+		E4469CA1D1DDB4714A6958DD /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9558F18E801A8ABB88C139D0 /* Typography.swift */; };
+		E580DD79C7FAE7E4698E9937 /* DeliveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A934869271B71AB908A0D7 /* DeliveryView.swift */; };
+		E627A48878BE7A9471EBB228 /* BrandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */; };
+		E6AC4470E10FC6F2F4E40108 /* IconCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B8D71C4ABB9C77FEB5D791D /* IconCatalog.swift */; };
+		E7F698135860F0FE17D6207A /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9558F18E801A8ABB88C139D0 /* Typography.swift */; };
+		E9F703AB1073B9BB91F2358E /* DraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C58D216E7C2B0D37BD01891 /* DraftsView.swift */; };
+		F30526588BFBD22695BF37DF /* ShiftReportPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5267241C1AC9273C755769A /* ShiftReportPreview.swift */; };
+		F31CF888870D24B825422276 /* VoidSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE62D3E6261191D17405952 /* VoidSheet.swift */; };
+		F482408AFB4C2CC6CF1E716A /* PressableScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */; };
+		F7BD30750401DEE0F016DEDB /* MenuItemCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */; };
+		F8546F39A54821E58055A5B4 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1112C4D55E34623013A136B5 /* LoginView.swift */; };
+		F8A4E4268CA74DDB6927EFF4 /* CashAndShiftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 169E08DA5AF85857B87F99A4 /* CashAndShiftsView.swift */; };
+		F95F426C35D98EE5B5E85F0F /* SettleTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */; };
+		FC81430789B3B9F96498CF5B /* OrderHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53FD40A576C447C717FCE473 /* OrderHistoryView.swift */; };
+		FE386C5C6B094A3C20FB408C /* OrderHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53FD40A576C447C717FCE473 /* OrderHistoryView.swift */; };
+		FFB37E0C55832E1F0D696D16 /* OpenShiftView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFEF7EC990C77923E9CC282B /* OpenShiftView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		067006020CB739A6553EECD9 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		0B8D71C4ABB9C77FEB5D791D /* IconCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconCatalog.swift; sourceTree = "<group>"; };
+		0DD82B289DA69BD5025D17B4 /* SyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncView.swift; sourceTree = "<group>"; };
+		1112C4D55E34623013A136B5 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		1581A20D3AE0F7B94D0257A6 /* WaiterTicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiterTicketsView.swift; sourceTree = "<group>"; };
+		169E08DA5AF85857B87F99A4 /* CashAndShiftsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashAndShiftsView.swift; sourceTree = "<group>"; };
+		1D3E9FD2997E5756AC262D6D /* CloseShiftView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloseShiftView.swift; sourceTree = "<group>"; };
+		25DCDFF66B54CC6604AE1850 /* MadarPOS-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "MadarPOS-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		35FDEE697B035556197EC4B4 /* OrderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderView.swift; sourceTree = "<group>"; };
+		3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Skeleton.swift; sourceTree = "<group>"; };
+		4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettleTicketsView.swift; sourceTree = "<group>"; };
+		4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenDisplayView.swift; sourceTree = "<group>"; };
+		4EE62D3E6261191D17405952 /* VoidSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoidSheet.swift; sourceTree = "<group>"; };
+		53FD40A576C447C717FCE473 /* OrderHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderHistoryView.swift; sourceTree = "<group>"; };
+		54FF0E6F55971DD7E3028220 /* IncomingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingView.swift; sourceTree = "<group>"; };
+		5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
+		609F2450EB5901840D044B10 /* SufrixButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SufrixButton.swift; sourceTree = "<group>"; };
+		686C827C426C041E668CA778 /* PinPad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinPad.swift; sourceTree = "<group>"; };
+		69673262F97BDC545F95A72C /* Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Layout.swift; sourceTree = "<group>"; };
+		6C6E66BFD4496F8B04F180AC /* Money.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Money.swift; sourceTree = "<group>"; };
+		72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SufrixTextField.swift; sourceTree = "<group>"; };
+		75AC8420D25337AFADB833C3 /* SufrixApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SufrixApp.swift; sourceTree = "<group>"; };
+		792643251885F57217F40A9B /* Chips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chips.swift; sourceTree = "<group>"; };
+		82FE46CC8890F953EC459FF3 /* TenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TenderView.swift; sourceTree = "<group>"; };
+		83A6454292C0709AACE8B45A /* BundleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleDetailView.swift; sourceTree = "<group>"; };
+		86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAlerts.swift; sourceTree = "<group>"; };
+		8795563D490E093CEE91C055 /* MadarMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarMark.swift; sourceTree = "<group>"; };
+		8A7BF24EAFACE649636D4B69 /* Toast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Toast.swift; sourceTree = "<group>"; };
+		8A961800CB4E1087339EE466 /* MadarSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarSheet.swift; sourceTree = "<group>"; };
+		8C58D216E7C2B0D37BD01891 /* DraftsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftsView.swift; sourceTree = "<group>"; };
+		8C6605B4728E0ADB8518EBBD /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = Resources/Sounds; sourceTree = SOURCE_ROOT; };
+		918BAD32BEC17E13CAFE7D34 /* MadarPOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MadarPOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9558F18E801A8ABB88C139D0 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
+		99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedAsyncImage.swift; sourceTree = "<group>"; };
+		9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuItemCard.swift; sourceTree = "<group>"; };
+		9E562E93C40F1D2174325680 /* ReauthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReauthView.swift; sourceTree = "<group>"; };
+		ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AF309BBD8B8E2B65F262C4E7 /* MadarCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = MadarCore.xcframework; path = "../rust-core/target/MadarCore.xcframework"; sourceTree = "<group>"; };
+		AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
+		B1A934869271B71AB908A0D7 /* DeliveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryView.swift; sourceTree = "<group>"; };
+		B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MadarCoreFFI.swift; path = "../../rust-core/bindings/swift/MadarCoreFFI.swift"; sourceTree = "<group>"; };
+		B8575D6F7B26B1A8B923D513 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressableScale.swift; sourceTree = "<group>"; };
+		C69DBAA7B29A7FDF8241A0D6 /* Tokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tokens.swift; sourceTree = "<group>"; };
+		CEF6074347CE26F389673AF9 /* MadarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarIcon.swift; sourceTree = "<group>"; };
+		D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmountField.swift; sourceTree = "<group>"; };
+		DC44A1146E760945E5C0544A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E1DBA34D4FA0D50D4C76A885 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Resources/Fonts; sourceTree = SOURCE_ROOT; };
+		E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPanel.swift; sourceTree = "<group>"; };
+		E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptPaper.swift; sourceTree = "<group>"; };
+		EFEF7EC990C77923E9CC282B /* OpenShiftView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenShiftView.swift; sourceTree = "<group>"; };
+		F5267241C1AC9273C755769A /* ShiftReportPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftReportPreview.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		460062865FBD6E58CBCBE74E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CF209FD9BBDC247E00FD5F88 /* MadarCore.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		093F331BFEF363279A80D796 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				0B8D71C4ABB9C77FEB5D791D /* IconCatalog.swift */,
+				69673262F97BDC545F95A72C /* Layout.swift */,
+				C69DBAA7B29A7FDF8241A0D6 /* Tokens.swift */,
+				9558F18E801A8ABB88C139D0 /* Typography.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		1FA999037FBA1098C27E16C0 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */,
+			);
+			path = Generated;
+			sourceTree = "<group>";
+		};
+		2BF266C272038F4BE969F36E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				25DCDFF66B54CC6604AE1850 /* MadarPOS-iOS.app */,
+				918BAD32BEC17E13CAFE7D34 /* MadarPOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		36EDFD67B98AD48A799A8F5E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AF309BBD8B8E2B65F262C4E7 /* MadarCore.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		3AB5FBCD85D807287EA1D5CB /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */,
+				E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */,
+				99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */,
+				792643251885F57217F40A9B /* Chips.swift */,
+				CEF6074347CE26F389673AF9 /* MadarIcon.swift */,
+				8795563D490E093CEE91C055 /* MadarMark.swift */,
+				8A961800CB4E1087339EE466 /* MadarSheet.swift */,
+				9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */,
+				6C6E66BFD4496F8B04F180AC /* Money.swift */,
+				686C827C426C041E668CA778 /* PinPad.swift */,
+				B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */,
+				E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */,
+				AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */,
+				3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */,
+				609F2450EB5901840D044B10 /* SufrixButton.swift */,
+				72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */,
+				8A7BF24EAFACE649636D4B69 /* Toast.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		47DAA01A1DF705A053B0A21C /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				B569A81E5E20E4C0256C01DB /* MadarUI */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		A0B85A9AE94A48C570D1958E = {
+			isa = PBXGroup;
+			children = (
+				1FA999037FBA1098C27E16C0 /* Generated */,
+				D725163027326D79504F5CA3 /* Resources */,
+				47DAA01A1DF705A053B0A21C /* Sources */,
+				36EDFD67B98AD48A799A8F5E /* Frameworks */,
+				2BF266C272038F4BE969F36E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B569A81E5E20E4C0256C01DB /* MadarUI */ = {
+			isa = PBXGroup;
+			children = (
+				067006020CB739A6553EECD9 /* AppModel.swift */,
+				83A6454292C0709AACE8B45A /* BundleDetailView.swift */,
+				169E08DA5AF85857B87F99A4 /* CashAndShiftsView.swift */,
+				1D3E9FD2997E5756AC262D6D /* CloseShiftView.swift */,
+				B8575D6F7B26B1A8B923D513 /* ContentView.swift */,
+				B1A934869271B71AB908A0D7 /* DeliveryView.swift */,
+				8C58D216E7C2B0D37BD01891 /* DraftsView.swift */,
+				54FF0E6F55971DD7E3028220 /* IncomingView.swift */,
+				5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */,
+				4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */,
+				4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */,
+				1112C4D55E34623013A136B5 /* LoginView.swift */,
+				EFEF7EC990C77923E9CC282B /* OpenShiftView.swift */,
+				53FD40A576C447C717FCE473 /* OrderHistoryView.swift */,
+				35FDEE697B035556197EC4B4 /* OrderView.swift */,
+				86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */,
+				9E562E93C40F1D2174325680 /* ReauthView.swift */,
+				ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */,
+				4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */,
+				F5267241C1AC9273C755769A /* ShiftReportPreview.swift */,
+				75AC8420D25337AFADB833C3 /* SufrixApp.swift */,
+				0DD82B289DA69BD5025D17B4 /* SyncView.swift */,
+				82FE46CC8890F953EC459FF3 /* TenderView.swift */,
+				4EE62D3E6261191D17405952 /* VoidSheet.swift */,
+				1581A20D3AE0F7B94D0257A6 /* WaiterTicketsView.swift */,
+				3AB5FBCD85D807287EA1D5CB /* Components */,
+				093F331BFEF363279A80D796 /* Theme */,
+			);
+			path = MadarUI;
+			sourceTree = "<group>";
+		};
+		D725163027326D79504F5CA3 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				DC44A1146E760945E5C0544A /* Assets.xcassets */,
+				E1DBA34D4FA0D50D4C76A885 /* Fonts */,
+				8C6605B4728E0ADB8518EBBD /* Sounds */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		01E65CE60D7B9907D4F5660C /* MadarPOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 469D0D4E6B80D6552E05AF95 /* Build configuration list for PBXNativeTarget "MadarPOS" */;
+			buildPhases = (
+				FDC3EA7FCDAD1FD05A8F7497 /* Generate Rust bindings + core */,
+				CADA81AC011F0FA48DEDD79A /* Sources */,
+				709FEC5C8134B2E8DA1DB7A3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MadarPOS;
+			packageProductDependencies = (
+			);
+			productName = MadarPOS;
+			productReference = 918BAD32BEC17E13CAFE7D34 /* MadarPOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		79B1F2328F47E52A67889460 /* MadarPOS-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3CB4B5139C03B6B95C82598C /* Build configuration list for PBXNativeTarget "MadarPOS-iOS" */;
+			buildPhases = (
+				5E5530C1280925F18F6D90C3 /* Build iOS core (xcframework) + bindings */,
+				6DF6308787A9486ABAD9A2DE /* Sources */,
+				C5947BB5736A915A23478E72 /* Resources */,
+				460062865FBD6E58CBCBE74E /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "MadarPOS-iOS";
+			packageProductDependencies = (
+			);
+			productName = "MadarPOS-iOS";
+			productReference = 25DCDFF66B54CC6604AE1850 /* MadarPOS-iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DB4D149CB5EDBD63CBF3F3D1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 515D532B97B9F3C425F25A99 /* Build configuration list for PBXProject "MadarPOS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = A0B85A9AE94A48C570D1958E;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2BF266C272038F4BE969F36E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				01E65CE60D7B9907D4F5660C /* MadarPOS */,
+				79B1F2328F47E52A67889460 /* MadarPOS-iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		709FEC5C8134B2E8DA1DB7A3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				106B95670F968FF0DDE7E32C /* Assets.xcassets in Resources */,
+				2DBC5CA87ADB1AC071A22C23 /* Fonts in Resources */,
+				19893C16878B7DD0DE521664 /* Sounds in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C5947BB5736A915A23478E72 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D8885BEA2CCA0D67B583E1B /* Assets.xcassets in Resources */,
+				17523B0F7711948AE39DAEFF /* Fonts in Resources */,
+				94CD9E84942A2F2F8264FBE2 /* Sounds in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		5E5530C1280925F18F6D90C3 /* Build iOS core (xcframework) + bindings */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build iOS core (xcframework) + bindings";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nRUST=\"$SRCROOT/../rust-core\"\n# Run cargo in a CLEAN env — Xcode injects SDKROOT/ICONV/etc. that break\n# the HOST cargo build (links against the app SDK → \"iconv not found\").\n# A clean env lets cargo resolve the right SDK per-target via xcrun.\nP=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin\"\nenv -i HOME=\"$HOME\" PATH=\"$P\" bash \"$RUST/tool/build-bindings.sh\" >/dev/null\n# Rebuild the xcframework whenever the core actually changed: build-bindings\n# rebuilds the debug dylib if ANY input changed (incl. .env → baked URL),\n# so a dylib newer than the xcframework means the static lib is stale.\nXCF=\"$RUST/target/MadarCore.xcframework\"\nDYLIB=\"$RUST/target/debug/libmadar_core.dylib\"\nif [[ ! -d \"$XCF\" ]] || [[ \"$DYLIB\" -nt \"$XCF\" ]]; then\n  env -i HOME=\"$HOME\" PATH=\"$P\" bash \"$RUST/tool/build-ios.sh\"\nfi\n";
+		};
+		FDC3EA7FCDAD1FD05A8F7497 /* Generate Rust bindings + core */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Generate Rust bindings + core";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nRUST=\"$SRCROOT/../rust-core\"\n# Run cargo in a CLEAN env — Xcode injects SDKROOT/ICONV/etc. that break\n# the HOST cargo build (links against the app SDK → \"iconv not found\").\n# A clean env lets cargo resolve the right SDK per-target via xcrun.\nP=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin\"\nenv -i HOME=\"$HOME\" PATH=\"$P\" bash \"$RUST/tool/build-bindings.sh\" >/dev/null\nmkdir -p \"$SRCROOT/Generated\"\ncp \"$RUST/bindings/swift/MadarCoreFFIFFI.h\" \"$SRCROOT/Generated/\"\ncp \"$RUST/bindings/swift/MadarCoreFFIFFI.modulemap\" \"$SRCROOT/Generated/module.modulemap\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6DF6308787A9486ABAD9A2DE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C8FF91E53F40CFF2B86C418F /* AmountField.swift in Sources */,
+				BC485D607C31E46BC95A52E0 /* AppModel.swift in Sources */,
+				BA6CC4DCA324A7FE75E70E31 /* BrandPanel.swift in Sources */,
+				470F41ED0522355D6B3A3AB6 /* BundleDetailView.swift in Sources */,
+				2A887437B40C0FA04E59DB3C /* CachedAsyncImage.swift in Sources */,
+				F8A4E4268CA74DDB6927EFF4 /* CashAndShiftsView.swift in Sources */,
+				433926E6FB2BD54BA621BC54 /* Chips.swift in Sources */,
+				9D8D31FC6F1195ACC8611E79 /* CloseShiftView.swift in Sources */,
+				47F35994C30761504684CAC5 /* ContentView.swift in Sources */,
+				315886ADC18887E2F6C400F8 /* DeliveryView.swift in Sources */,
+				E9F703AB1073B9BB91F2358E /* DraftsView.swift in Sources */,
+				E6AC4470E10FC6F2F4E40108 /* IconCatalog.swift in Sources */,
+				239E908C3ECC66D03A3F7B24 /* IncomingView.swift in Sources */,
+				C340E0E525DAC4B389DD5ACC /* ItemDetailView.swift in Sources */,
+				9CA2F9E6F8CA21F6A74E230A /* KeychainTokenStore.swift in Sources */,
+				09873816146F1EF42544076B /* KitchenDisplayView.swift in Sources */,
+				AD5F76A4B1C39FB3813211EB /* Layout.swift in Sources */,
+				F8546F39A54821E58055A5B4 /* LoginView.swift in Sources */,
+				59DB993E64C20A1AAF1D2426 /* MadarCoreFFI.swift in Sources */,
+				802229CC624A23ABDC17D71E /* MadarIcon.swift in Sources */,
+				A91663ED44D70484BCF0E3D9 /* MadarMark.swift in Sources */,
+				4B9E14EC8E1C710D6CFE4883 /* MadarSheet.swift in Sources */,
+				F7BD30750401DEE0F016DEDB /* MenuItemCard.swift in Sources */,
+				B2D859ED67BFCBA58564908F /* Money.swift in Sources */,
+				5B9E72C3B5C44F3A5A167B47 /* OpenShiftView.swift in Sources */,
+				FC81430789B3B9F96498CF5B /* OrderHistoryView.swift in Sources */,
+				41A7616FECBA6A13A5D67BB7 /* OrderView.swift in Sources */,
+				AAEDEEB7E37A80AD19FB527A /* PinPad.swift in Sources */,
+				21EB774F46284F8D02C7B53C /* PressableScale.swift in Sources */,
+				AC1B9778E5DA441A90CD1283 /* RealtimeAlerts.swift in Sources */,
+				D44AE419F0200F3DAEB678AF /* ReauthView.swift in Sources */,
+				26727D4F1A77B19A5ECC8900 /* ReceiptPaper.swift in Sources */,
+				77E9823DD682EFB7A76DCF91 /* SettingsView.swift in Sources */,
+				52B6DF3DF0AB091938D3343B /* SettleTicketsView.swift in Sources */,
+				C2FF9B24DC12758D87A5B478 /* SharedComponents.swift in Sources */,
+				F30526588BFBD22695BF37DF /* ShiftReportPreview.swift in Sources */,
+				5DCF9304631011EC7CA35F92 /* Skeleton.swift in Sources */,
+				2A0CAE7F0DCBC5A79133310D /* SufrixApp.swift in Sources */,
+				90056101E664424A53B432D4 /* SufrixButton.swift in Sources */,
+				6553D25445EE87CB459C4652 /* SufrixTextField.swift in Sources */,
+				6494EE6529F2C0AAB60CBC42 /* SyncView.swift in Sources */,
+				A5DDD9E9B9A1CA2E27B0BBA6 /* TenderView.swift in Sources */,
+				6915093EC1BC9A75A3F70343 /* Toast.swift in Sources */,
+				7924261AAFD365A645259200 /* Tokens.swift in Sources */,
+				E4469CA1D1DDB4714A6958DD /* Typography.swift in Sources */,
+				F31CF888870D24B825422276 /* VoidSheet.swift in Sources */,
+				406ACEF15D8B58429962ECF2 /* WaiterTicketsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CADA81AC011F0FA48DEDD79A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				863353F1C0538F15DE5D76DF /* AmountField.swift in Sources */,
+				A652E413D4124C8FEF623559 /* AppModel.swift in Sources */,
+				E627A48878BE7A9471EBB228 /* BrandPanel.swift in Sources */,
+				05F9EB4973CAABC247B17E32 /* BundleDetailView.swift in Sources */,
+				3DEF027201C82DF692464AEE /* CachedAsyncImage.swift in Sources */,
+				6AA0762EDC259BA844B87E11 /* CashAndShiftsView.swift in Sources */,
+				E28A3CDC3EC971143788C523 /* Chips.swift in Sources */,
+				35F363E5612C959E7B6BF95E /* CloseShiftView.swift in Sources */,
+				4C5E66497AD87F22B99C0765 /* ContentView.swift in Sources */,
+				E580DD79C7FAE7E4698E9937 /* DeliveryView.swift in Sources */,
+				342DCEB44D6760BF6C6612BC /* DraftsView.swift in Sources */,
+				89FE8AB7518E42196F9E8AF6 /* IconCatalog.swift in Sources */,
+				D81F35500086B9EDB65CA212 /* IncomingView.swift in Sources */,
+				347B2D01475D02367F08884C /* ItemDetailView.swift in Sources */,
+				6305C4121F26EA0F35026990 /* KeychainTokenStore.swift in Sources */,
+				82903BFE2A159A50EAB06D16 /* KitchenDisplayView.swift in Sources */,
+				DD8ED53021FFA067725CA056 /* Layout.swift in Sources */,
+				7B0E14A6DEF5085C07BC731A /* LoginView.swift in Sources */,
+				CF11A2BF8BF4A716C367CD4C /* MadarCoreFFI.swift in Sources */,
+				4394F456530EDA726A724599 /* MadarIcon.swift in Sources */,
+				08F89ED6EB076D4896A826C5 /* MadarMark.swift in Sources */,
+				858852E6484187E9073DBBB0 /* MadarSheet.swift in Sources */,
+				5B3978C7E29D218874B903CC /* MenuItemCard.swift in Sources */,
+				6D1A6C0B6E0C72088C5F84A7 /* Money.swift in Sources */,
+				FFB37E0C55832E1F0D696D16 /* OpenShiftView.swift in Sources */,
+				FE386C5C6B094A3C20FB408C /* OrderHistoryView.swift in Sources */,
+				A09513491F3768F72F079FD0 /* OrderView.swift in Sources */,
+				3CEFD7590804DEEFF00BE17F /* PinPad.swift in Sources */,
+				F482408AFB4C2CC6CF1E716A /* PressableScale.swift in Sources */,
+				B99B1844FCA5D506F078E512 /* RealtimeAlerts.swift in Sources */,
+				9BED347D34E21BB606FDE7B7 /* ReauthView.swift in Sources */,
+				E3DCDC8190F4B45DEFFDE83B /* ReceiptPaper.swift in Sources */,
+				911BA6D1C522F65F45F05AB7 /* SettingsView.swift in Sources */,
+				F95F426C35D98EE5B5E85F0F /* SettleTicketsView.swift in Sources */,
+				DE656521EEE33521D3B1B351 /* SharedComponents.swift in Sources */,
+				2C95DFE71E228CB531FE596F /* ShiftReportPreview.swift in Sources */,
+				C05382CB0C3A98AC46AB4A97 /* Skeleton.swift in Sources */,
+				C709B7853F0C5FD2A2EBB106 /* SufrixApp.swift in Sources */,
+				8993040D17F0F30AB691B911 /* SufrixButton.swift in Sources */,
+				03683CB4AC48F7EA8408C994 /* SufrixTextField.swift in Sources */,
+				6B05893F1978CD59DCF06C7D /* SyncView.swift in Sources */,
+				A5E2BB0E5ACDA4433C82A667 /* TenderView.swift in Sources */,
+				42E8F665FB5A0EC487C1C8D7 /* Toast.swift in Sources */,
+				31C6F8926C1C375793B5F543 /* Tokens.swift in Sources */,
+				E7F698135860F0FE17D6207A /* Typography.swift in Sources */,
+				649B98786D9C7FB457C7FF19 /* VoidSheet.swift in Sources */,
+				2F6A2EC4A1F049378F7F738D /* WaiterTicketsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		2BE34423087D9B8EDC599908 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = "Generated/Info-macOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(SRCROOT)/../rust-core/target/debug";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../rust-core/target/debug";
+				OTHER_LDFLAGS = "-lmadar_core";
+				PRODUCT_BUNDLE_IDENTIFIER = com.madar.pos;
+				PRODUCT_NAME = Madar;
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Generated";
+			};
+			name = Debug;
+		};
+		35555EA553361D4345C35E76 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		7839F5A89F88C83726443112 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"../rust-core/target\"",
+				);
+				INFOPLIST_FILE = "Generated/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.madar.pos;
+				PRODUCT_NAME = Madar;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C8F0CBB4BB0C9278EC6AAE6F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"../rust-core/target\"",
+				);
+				INFOPLIST_FILE = "Generated/Info-iOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.madar.pos;
+				PRODUCT_NAME = Madar;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		EA595E9C3D56EFDDC516DE76 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		F4DD19919A5280218D41661F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = "Generated/Info-macOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(SRCROOT)/../rust-core/target/debug";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../rust-core/target/debug";
+				OTHER_LDFLAGS = "-lmadar_core";
+				PRODUCT_BUNDLE_IDENTIFIER = com.madar.pos;
+				PRODUCT_NAME = Madar;
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Generated";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3CB4B5139C03B6B95C82598C /* Build configuration list for PBXNativeTarget "MadarPOS-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7839F5A89F88C83726443112 /* Debug */,
+				C8F0CBB4BB0C9278EC6AAE6F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		469D0D4E6B80D6552E05AF95 /* Build configuration list for PBXNativeTarget "MadarPOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2BE34423087D9B8EDC599908 /* Debug */,
+				F4DD19919A5280218D41661F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		515D532B97B9F3C425F25A99 /* Build configuration list for PBXProject "MadarPOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				35555EA553361D4345C35E76 /* Debug */,
+				EA595E9C3D56EFDDC516DE76 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DB4D149CB5EDBD63CBF3F3D1 /* Project object */;
+}

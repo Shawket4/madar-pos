@@ -1,0 +1,215 @@
+package app.madar
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.madar.ui.AmountField
+import app.madar.ui.BtnVariant
+import app.madar.ui.ChipTone
+import app.madar.ui.Money
+import app.madar.ui.NoticeBanner
+import app.madar.ui.Radii
+import app.madar.ui.Space
+import app.madar.ui.Elevation
+import app.madar.ui.elevation
+import app.madar.ui.StatusChip
+import app.madar.ui.MadarButton
+import app.madar.ui.LocalMadarFont
+import app.madar.ui.MadarMark
+import app.madar.ui.MadarTextField
+import app.madar.ui.madarColors
+import app.madar.ui.t
+import app.madar.ui.Responsive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import app.madar.ui.MadarIcon
+import app.madar.ui.IconSize
+
+// Open-shift — the continuation of login: login confirms WHO you are, this
+// confirms WHAT'S in the drawer. A name-first greeting, one isolated hero count
+// field (auto-focused), one loud primary. Wide screens split into the same
+// BrandPanel as login; phones show one calm centered column. Mirror of the
+// SwiftUI OpenShiftView.
+@Composable
+fun OpenShiftScreen(model: AppModel) {
+    val c = madarColors()
+    BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
+        val wide = maxWidth >= Responsive.wide
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                BrandPanel(Modifier.weight(1f).fillMaxHeight())
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    FormColumn(model, showLogo = false)
+                }
+            }
+        } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                FormColumn(model, showLogo = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FormColumn(model: AppModel, showLogo: Boolean) {
+    val c = madarColors()
+    val scope = rememberCoroutineScope()
+    var openingMinor by remember { mutableStateOf(0L) }
+    var reason by remember { mutableStateOf("") }
+    val currency = model.session?.currencyCode ?: ""
+    val suggested = model.suggestedOpeningCashMinor
+    // The count deviates from the carried-over closing → a reason is required.
+    val needsReason = suggested > 0L && openingMinor != suggested
+
+    // Prime the prefill on entry; seed the count once while still untouched.
+    // reconcileShift() FIRST — it adopts an already-open shift (opened earlier or
+    // on another device) so a teller who lands here never opens a SECOND shift on
+    // top of a live one. This matched the Swift OpenShiftView .task ordering but
+    // was missing on Kotlin (the duplicate-shift bug). Both calls are suspend.
+    LaunchedEffect(Unit) {
+        model.clearError()
+        model.reconcileShift()
+        model.loadOpenShiftPrefill()
+    }
+    LaunchedEffect(suggested) {
+        if (openingMinor == 0L && suggested > 0L) openingMinor = suggested
+    }
+
+    // Connectivity heartbeat: a teller who landed on open-shift while offline
+    // re-adopts their active shift the moment the network returns (the
+    // reconcile-on-reconnect lives inside refreshConnectivity). The loop is tied
+    // to composition and cancels naturally when the screen leaves. Mirror of the
+    // SwiftUI OpenShiftView's second .task.
+    LaunchedEffect(Unit) {
+        while (true) {
+            model.refreshConnectivity()
+            delay(15_000)
+        }
+    }
+
+    fun submit() {
+        if (needsReason && reason.isBlank()) {
+            // Non-composable `model.t` (not the @Composable top-level `t`) — submit()
+            // runs from an event handler, outside composition.
+            model.flagError(model.t("shift.opening_reason_required"))
+        } else {
+            scope.launch { model.openShift(openingMinor, if (needsReason) reason else null) }
+        }
+    }
+
+    Column(
+        Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+            .padding(horizontal = Space.xxl, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (showLogo) MadarMark(size = 56.dp)
+
+        // ── Greeting (the teller's name IS the hero) ──────────────────────────
+        Column(
+            Modifier.padding(top = if (showLogo) Space.xl else 0.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
+            Text(t("shift.welcome"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+            Text(
+                model.session?.displayName ?: t("shift.open_title"),
+                color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 28.sp, textAlign = TextAlign.Center,
+            )
+            if (model.branchName.isNotBlank()) {
+                Box(Modifier.padding(top = Space.xs)) { StatusChip(model.branchName, ChipTone.INFO, icon = "building.2") }
+            }
+        }
+
+        // ── Hero count field ─────────────────────────────────────────────────
+        Column(
+            Modifier.fillMaxWidth().padding(top = Space.xxl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+        ) {
+            Text(t("shift.opening_cash"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            AmountField(
+                amountMinor = openingMinor,
+                onAmountMinor = { openingMinor = it },
+                currencyCode = currency,
+                autofocus = true,
+            )
+
+            // Carried-over suggestion (previous declared closing).
+            if (suggested > 0L) {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .elevation(Elevation.CARD, RoundedCornerShape(Radii.sm))
+                        .clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
+                        .border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm))
+                        .padding(horizontal = Space.md, vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    MadarIcon("clock.arrow.circlepath", tint = c.textMuted, size = IconSize.sm)
+                    Text(t("shift.suggested_from_close"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
+                    Box(Modifier.weight(1f))
+                    Text(Money.format(suggested, currency), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                }
+            }
+
+            // Discrepancy reason — only when the count deviates from carryover.
+            if (needsReason) {
+                MadarTextField(reason, { reason = it }, t("shift.opening_reason_label"), icon = "exclamationmark.bubble")
+            }
+
+            Text(
+                if (needsReason) t("shift.opening_reason_hint") else t("shift.opening_hint"),
+                color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 12.sp, textAlign = TextAlign.Center,
+            )
+        }
+
+        // ── Error (next to the action that triggers it) ───────────────────────
+        model.error?.let {
+            Box(Modifier.fillMaxWidth().padding(top = Space.xl)) { NoticeBanner(it, ChipTone.DANGER, icon = "exclamationmark.circle") }
+        }
+
+        // ── Primary action ────────────────────────────────────────────────────
+        MadarButton(
+            t("shift.open_button"),
+            { submit() },
+            modifier = Modifier.padding(top = if (model.error == null) Space.xl else Space.md),
+            loading = model.isBusy,
+            icon = "lock.open",
+        )
+
+        // ── Recessive exit ─────────────────────────────────────────────────────
+        MadarButton(
+            t("shift.switch_teller"),
+            { model.signOut() },
+            modifier = Modifier.padding(top = Space.sm),
+            variant = BtnVariant.GHOST,
+        )
+    }
+}

@@ -1,0 +1,103 @@
+[package]
+name = "madar-core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Three crate types from one build:
+#   lib       — for Rust consumers (tests, the uniffi-bindgen bin).
+#   staticlib — for the iOS .xcframework.
+#   cdylib    — for the Android/desktop JNA-loaded native lib (.so/.dylib/.dll).
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "madar_core"
+
+[dependencies]
+# Proc-macro UniFFI (no .udl). "cli" gates uniffi_bindgen_main for the bin below;
+# "tokio" lets us export `async fn`s with `async_runtime = "tokio"`.
+uniffi = { version = "0.28", features = ["cli", "tokio"] }
+
+# The typed reqwest API client generated from the backend OpenAPI spec
+# (tool/generate_api.sh). The `net/` layer drives it; nothing here hand-rolls wire.
+# `default-features = false` drops its `default = ["native-tls"]` (→ openssl-sys,
+# which won't cross-compile to Android); TLS is supplied by our `rustls-no-provider`
+# reqwest below, unified into the one reqwest build. Survives client regeneration.
+madar-api = { path = "../madar-api", default-features = false }
+# Async runtime backing the exported `async fn`s (and reqwest's executor).
+# `macros` powers `#[tokio::test]`; `net`/`io-util` back the printer TCP send.
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util"] }
+# HTTP plumbing we touch directly in `net/` (client builder, status codes, errors).
+# Features union with madar-api's, resolving to one reqwest build. `rustls-no-provider`
+# turns on reqwest's rustls connector WITHOUT aws-lc-rs (needs cmake) — we hand it a
+# ring-backed config in net.rs via `use_preconfigured_tls`. No native-tls → no OpenSSL.
+# `stream` enables `Response::bytes_stream()` — the basis of the hand-rolled SSE
+# reader in realtime.rs (the unified per-branch event bus). openapi-generator emits
+# no usable text/event-stream method, so the streaming consumer is hand-written.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "stream"] }
+# Stream combinators (`StreamExt::next`) for draining `bytes_stream()` in the SSE
+# supervisor. Pure-Rust, cross-compiles clean; `alloc`/`std` only, no executor.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# rustls stack for that preconfigured client: ring crypto (cross-compiles to
+# Android/iOS with no cmake or OpenSSL) + bundled Mozilla CA roots (webpki-roots),
+# so the backend's Let's Encrypt cert verifies identically on every platform with
+# zero platform cert-store wiring. See net.rs::default_tls_config.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+# Offline-PIN verifier — argon2id, byte-compatible with the backend's
+# `auth::offline::hash_offline_pin` (verifies any PHC string it ships in the bundle).
+argon2 = "0.5"
+
+# ── LAN offline relay (lan.rs, Phase E) ───────────────────────────────────────
+# mDNS / DNS-SD service discovery — pure Rust (no Bonjour/avahi system dep), so it
+# cross-compiles to Android/desktop/macOS clean. Service `_sufrix._tcp.local`. (iOS
+# uses platform Bonjour via host glue → injected through `lan_add_peer`; the crate
+# still compiles on iOS, it's just not the iOS discovery path.) The embedded relay
+# SERVER + UDP beacon ride the tokio `net` feature already enabled above — no
+# blocking-thread HTTP dep; SSE is hand-rolled like the cloud bus (realtime.rs).
+mdns-sd = "0.11"
+# Per-branch HMAC-SHA256 signing of every LAN message (RustCrypto, same family as
+# argon2 above; pure Rust, cross-compiles clean). The key is derived from the
+# offline-auth bundle the device already holds — only branch-provisioned devices
+# are trusted, so the relay can't be an injection vector.
+hmac = "0.12"
+sha2 = "0.10"
+
+# Local store — embedded SQLite, the source of truth the UI reads from, online
+# or offline. `bundled` vendors SQLite so there's no system dependency.
+rusqlite = { version = "0.31", features = ["bundled"] }
+# DTO/payload (de)serialization + ids + timestamps + the FFI error model.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v4", "v5"] }
+chrono = { version = "0.4", features = ["serde"] }
+# IANA timezone math so the client derives an order's BUSINESS DATE in the branch
+# zone exactly as Postgres `AT TIME ZONE` does — the order_ref must be byte-identical
+# whether minted on the server or predicted offline on the device.
+chrono-tz = "0.9"
+thiserror = "1"
+
+# Receipt rasterizer. The TSP143III is raster-only and receipts carry a logo +
+# Arabic, so the core renders the whole receipt to a 1-bit bitmap (see render.rs)
+# and ships it via the raster wrappers in receipt.rs. Both deps are pure Rust and
+# cross-compile to Android/iOS. `cosmic-text` default-features OFF drops its
+# `fontconfig` feature (a system lib that won't cross-compile); we ship our own
+# embedded Cairo fonts, so `std` + `swash` (rasterizer) is all we need. `image`
+# is trimmed to png/jpeg (the org-logo formats) to avoid pulling every codec.
+cosmic-text = { version = "0.12", default-features = false, features = ["std", "swash"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+
+# The standalone uniffi-bindgen used to emit Swift/Kotlin bindings in library
+# mode (`uniffi-bindgen generate --library <dylib> --language swift`).
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+# Integration tests (tests/) drive the async FFI surface against a live dev
+# backend; they need their own tokio runtime + the macro for `#[tokio::test]`.
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+# Each integration test provisions its OWN throwaway branch + tellers by inserting
+# into the dev Postgres (true isolation — no shared fixture state, no cross-test
+# contamination from the global "one open shift per teller" constraint).
+tokio-postgres = { version = "0.7", features = ["with-uuid-1"] }

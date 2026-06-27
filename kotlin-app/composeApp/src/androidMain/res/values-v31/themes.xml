@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ launch splash: orbit on a paper ground (the orbit drawable is
+         transparent; the system tints the window with the splash background). -->
+    <style name="Theme.Madar" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowSplashScreenBackground">#EFF3F4</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_orbit</item>
+    </style>
+</resources>

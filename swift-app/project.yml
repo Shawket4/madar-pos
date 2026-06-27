@@ -1,11 +1,11 @@
-# xcodegen spec for the Sufrix POS apps (macOS + iOS). Regenerate with:
+# xcodegen spec for the Madar apps (macOS + iOS). Regenerate with:
 #   cd swift-app && xcodegen generate
-# then open SufrixPOS.xcworkspace and pick a scheme (SufrixPOS = macOS,
-# SufrixPOS-iOS = iPhone/iPad). Pre-build phases regenerate the Rust bindings
+# then open MadarPOS.xcworkspace and pick a scheme (MadarPOS = macOS,
+# MadarPOS-iOS = iPhone/iPad). Pre-build phases regenerate the Rust bindings
 # and build the core (dylib for macOS, xcframework for iOS), so ⌘R just works.
-name: SufrixPOS
+name: MadarPOS
 options:
-  bundleIdPrefix: app.sufrix
+  bundleIdPrefix: com.madar
   deploymentTarget:
     macOS: "13.0"
     iOS: "16.0"
@@ -20,15 +20,17 @@ settings:
 
 targets:
   # ── macOS app (links the cargo dylib; FFI module map via SWIFT_INCLUDE_PATHS) ──
-  SufrixPOS:
+  MadarPOS:
     type: application
     platform: macOS
     sources:
-      - path: Sources/SufrixUI
-      - path: ../rust-core/bindings/swift/SufrixCoreFFI.swift
+      - path: Sources/MadarUI
+      - path: ../rust-core/bindings/swift/MadarCoreFFI.swift
         group: Generated
       - path: Resources/Assets.xcassets
       - path: Resources/Fonts
+        type: folder
+      - path: Resources/Sounds
         type: folder
     info:
       path: Generated/Info-macOS.plist
@@ -39,13 +41,18 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+        # LAN offline relay (Phase E): standard Bonjour over the local network — only
+        # the one-time Local Network permission, NOT the multicast entitlement.
+        NSLocalNetworkUsageDescription: Madar connects to nearby kitchen displays and tills over the local network so orders keep flowing even without internet.
+        NSBonjourServices:
+          - _madar._tcp
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.sufrix.pos
-        PRODUCT_NAME: Sufrix POS
+        PRODUCT_BUNDLE_IDENTIFIER: com.madar.pos
+        PRODUCT_NAME: Madar
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../rust-core/target/debug
-        OTHER_LDFLAGS: -lsufrix_core
+        OTHER_LDFLAGS: -lmadar_core
         LD_RUNPATH_SEARCH_PATHS: $(SRCROOT)/../rust-core/target/debug
     preBuildScripts:
       - name: Generate Rust bindings + core
@@ -59,27 +66,34 @@ targets:
           P="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
           env -i HOME="$HOME" PATH="$P" bash "$RUST/tool/build-bindings.sh" >/dev/null
           mkdir -p "$SRCROOT/Generated"
-          cp "$RUST/bindings/swift/SufrixCoreFFIFFI.h" "$SRCROOT/Generated/"
-          cp "$RUST/bindings/swift/SufrixCoreFFIFFI.modulemap" "$SRCROOT/Generated/module.modulemap"
+          cp "$RUST/bindings/swift/MadarCoreFFIFFI.h" "$SRCROOT/Generated/"
+          cp "$RUST/bindings/swift/MadarCoreFFIFFI.modulemap" "$SRCROOT/Generated/module.modulemap"
 
-  # ── iOS app (iPhone + iPad; links SufrixCore.xcframework from build-ios.sh) ──
-  SufrixPOS-iOS:
+  # ── iOS app (iPhone + iPad; links MadarCore.xcframework from build-ios.sh) ──
+  MadarPOS-iOS:
     type: application
     platform: iOS
     sources:
-      - path: Sources/SufrixUI
-      - path: ../rust-core/bindings/swift/SufrixCoreFFI.swift
+      - path: Sources/MadarUI
+      - path: ../rust-core/bindings/swift/MadarCoreFFI.swift
         group: Generated
       - path: Resources/Assets.xcassets
       - path: Resources/Fonts
         type: folder
+      - path: Resources/Sounds
+        type: folder
     dependencies:
-      - framework: ../rust-core/target/SufrixCore.xcframework
+      - framework: ../rust-core/target/MadarCore.xcframework
         embed: false
     info:
       path: Generated/Info-iOS.plist
       properties:
-        UILaunchScreen: {}
+        # Launch screen: the typed "madar" wordmark logo centered on a paper (light)
+        # / ink (dark) ground — aspect-fit from a square transparent image.
+        UILaunchScreen:
+          UIImageName: MadarLaunchLogo
+          UIColorName: LaunchBg
+          UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -88,10 +102,15 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+        # LAN offline relay (Phase E): standard Bonjour over the local network — only
+        # the one-time Local Network permission, NOT the multicast entitlement.
+        NSLocalNetworkUsageDescription: Madar connects to nearby kitchen displays and tills over the local network so orders keep flowing even without internet.
+        NSBonjourServices:
+          - _madar._tcp
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.sufrix.pos
-        PRODUCT_NAME: Sufrix POS
+        PRODUCT_BUNDLE_IDENTIFIER: com.madar.pos
+        PRODUCT_NAME: Madar
         TARGETED_DEVICE_FAMILY: "1,2"
     preBuildScripts:
       - name: Build iOS core (xcframework) + bindings
@@ -107,8 +126,8 @@ targets:
           # Rebuild the xcframework whenever the core actually changed: build-bindings
           # rebuilds the debug dylib if ANY input changed (incl. .env → baked URL),
           # so a dylib newer than the xcframework means the static lib is stale.
-          XCF="$RUST/target/SufrixCore.xcframework"
-          DYLIB="$RUST/target/debug/libsufrix_core.dylib"
+          XCF="$RUST/target/MadarCore.xcframework"
+          DYLIB="$RUST/target/debug/libmadar_core.dylib"
           if [[ ! -d "$XCF" ]] || [[ "$DYLIB" -nt "$XCF" ]]; then
             env -i HOME="$HOME" PATH="$P" bash "$RUST/tool/build-ios.sh"
           fi

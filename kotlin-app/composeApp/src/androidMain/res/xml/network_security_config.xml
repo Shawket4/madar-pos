@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cleartext (http) is permitted ONLY for the dev LAN backend; everything else
+     (including prod https://sufrix.duckdns.org) keeps Android's secure HTTPS-only
+     defaults. The <domain> MUST match the host in MADAR_BASE_URL (rust-core/.env)
+     — when the dev machine's LAN IP changes, update BOTH (and rebuild the native
+     lib, since MADAR_BASE_URL is baked in at build time). Also listed: the Android
+     emulator's host-loopback alias (10.0.2.2) and localhost, for emulator runs. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.255.98.129</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+       	<domain includeSubdomains="false">192.168.1.113</domain>
+	<domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds + launches the SwiftUI host as a native macOS .app — no Xcode, no
-# simulator. Compiles SufrixUI against the generated binding + libsufrix_core,
+# simulator. Compiles SufrixUI against the generated binding + libmadar_core,
 # bundles the Cairo fonts and brand assets, and `open`s the app so you can click
 # through the real login on your Mac.
 #
@@ -12,8 +12,8 @@ cd "$CORE_DIR"
 
 # 1/4 — cdylib + bindings.
 echo "── Building core + bindings…"
-[[ -f bindings/swift/SufrixCoreFFI.swift ]] || ./tool/build-bindings.sh >/dev/null
-cargo build -q -p sufrix-core
+[[ -f bindings/swift/MadarCoreFFI.swift ]] || ./tool/build-bindings.sh >/dev/null
+cargo build -q -p madar-core
 
 SW="$CORE_DIR/bindings/swift"
 DEBUG="$CORE_DIR/target/debug"
@@ -50,7 +50,7 @@ PLIST
 
 # Bundled Cairo faces (the app registers the fonts at launch).
 cp "$RES_SRC"/Fonts/Cairo-*.ttf "$APP/Contents/Resources/" 2>/dev/null || true
-cp "$DEBUG/libsufrix_core.dylib" "$APP/Contents/Frameworks/"
+cp "$DEBUG/libmadar_core.dylib" "$APP/Contents/Frameworks/"
 
 # Compile the real-logo asset catalog into the bundle (Assets.car).
 if [[ -d "$RES_SRC/Assets.xcassets" ]]; then
@@ -63,16 +63,16 @@ fi
 
 # 3/4 — compile the SwiftUI app (the @main lives in SufrixApp.swift).
 INC="$(mktemp -d)"
-cp "$SW/SufrixCoreFFIFFI.h" "$INC/"
-cp "$SW/SufrixCoreFFIFFI.modulemap" "$INC/module.modulemap"
+cp "$SW/MadarCoreFFIFFI.h" "$INC/"
+cp "$SW/MadarCoreFFIFFI.modulemap" "$INC/module.modulemap"
 UI_SOURCES=$(find "$CORE_DIR/../swift-app/Sources/SufrixUI" -name '*.swift')
 
 echo "── Compiling SwiftUI app…"
 swiftc -O \
   -I "$INC" \
-  -L "$DEBUG" -lsufrix_core \
+  -L "$DEBUG" -lmadar_core \
   -Xlinker -rpath -Xlinker "@executable_path/../Frameworks" \
-  "$SW/SufrixCoreFFI.swift" \
+  "$SW/MadarCoreFFI.swift" \
   $UI_SOURCES \
   -o "$APP/Contents/MacOS/SufrixPOS"
 

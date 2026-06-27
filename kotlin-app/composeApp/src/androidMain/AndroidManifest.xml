@@ -1,8 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The Rust core (reqwest/rustls) reaches the backend over HTTPS; Android
+         gates all sockets on this permission, native code included. The backend is
+         HTTPS, so no cleartext config is needed — to point at a plain-http LAN
+         backend instead, add android:usesCleartextTraffic="true" to <application>. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- LAN offline relay (Phase E): the embedded relay + UDP beacon + mDNS run over
+         raw sockets (INTERNET covers them; raw TCP is NOT subject to the cleartext-HTTP
+         policy). Android filters multicast/broadcast RECEIVE unless a MulticastLock is
+         held, which needs these — MainActivity acquires the lock at startup. Network
+         state is read to react to Wi-Fi changes. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- For keeping the relay alive when a kitchen/till device is backgrounded (a
+         foreground service); harmless on always-foreground kiosk devices. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
-        android:label="Sufrix POS"
-        android:supportsRtl="true">
+        android:label="Madar"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Madar">
         <activity
             android:name=".MainActivity"
             android:exported="true">

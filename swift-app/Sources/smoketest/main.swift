@@ -1,11 +1,12 @@
 // Phase-1 smoke test: proves the rust-core FFI works from Swift.
 //
-// The generated `sufrix_core.swift` (from ../rust-core/tool/build-bindings.sh)
-// must be on this target's source path, and `libsufrix_core` on the link path.
+// The generated `madar_core.swift` (from ../rust-core/tool/build-bindings.sh)
+// must be on this target's source path, and `libmadar_core` on the link path.
 // See ../README.md for the one-liner that compiles + runs this.
 import Foundation
+import
 
-let core = try! SufrixCore.fromEnv()   // opens + migrates the local SQLite store
+let core = try! MadarCore.fromEnv()   // opens + migrates the local SQLite store
 print("✓ core version :", core.version())
 print("✓ ffi surface  :", ffiSurfaceVersion())
 print("✓ base url     :", core.baseUrl())
