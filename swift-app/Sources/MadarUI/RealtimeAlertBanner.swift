@@ -69,7 +69,8 @@ private struct RealtimeAlertHostModifier: ViewModifier {
                     alert: alert,
                     animated: depth == 0,
                     showClose: depth == 0,
-                    onTap: app.realtimeAlerts.count > 1 ? { expanded = true } : nil,
+                    onTap: depth == 0 ? { app.openOrdersFromAlert(alert) } : nil,
+                    onExpand: (depth == 0 && app.realtimeAlerts.count > 1) ? { expanded = true } : nil,
                     onDismiss: { app.dismissRealtimeAlert(alert.id) }
                 )
                 .scaleEffect(1 - 0.05 * CGFloat(depth), anchor: .top)
@@ -87,7 +88,8 @@ private struct RealtimeAlertHostModifier: ViewModifier {
             VStack(spacing: Space.sm) {
                 ForEach(app.realtimeAlerts) { alert in
                     RealtimeAlertCard(
-                        alert: alert, animated: true, showClose: true, onTap: nil,
+                        alert: alert, animated: true, showClose: true,
+                        onTap: { app.openOrdersFromAlert(alert) },
                         onDismiss: { app.dismissRealtimeAlert(alert.id) }
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -112,6 +114,7 @@ struct RealtimeAlertCard: View {
     var animated: Bool = true
     var showClose: Bool = true
     var onTap: (() -> Void)? = nil
+    var onExpand: (() -> Void)? = nil
     let onDismiss: () -> Void
     @Environment(\.theme) private var theme
 
@@ -125,6 +128,12 @@ struct RealtimeAlertCard: View {
                 }
             }
             Spacer(minLength: Space.sm)
+            if let onExpand {
+                Button(action: onExpand) {
+                    MadarIcon("chevron.down", size: 16).foregroundStyle(theme.colors.accent)
+                        .frame(width: 28, height: 28)
+                }.buttonStyle(.plain)
+            }
             if showClose {
                 Button(action: onDismiss) {
                     MadarIcon("xmark", size: 16).foregroundStyle(theme.colors.textMuted)

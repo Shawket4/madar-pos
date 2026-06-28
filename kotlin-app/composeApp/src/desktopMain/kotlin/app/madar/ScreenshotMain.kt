@@ -125,6 +125,7 @@ private fun Screens() {
                 RealtimeAlertData(1, "New delivery order · D-204", "Sara A. · EGP 132.00", "delivery.created:o1"),
             ),
             onDismiss = {},
+            onOpen = {},
         )
 
         // ── Settle ticket sheet ──────────────────────────────────────────────

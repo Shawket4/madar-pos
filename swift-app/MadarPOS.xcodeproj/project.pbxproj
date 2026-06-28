@@ -15,6 +15,7 @@
 		17523B0F7711948AE39DAEFF /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = E1DBA34D4FA0D50D4C76A885 /* Fonts */; };
 		19893C16878B7DD0DE521664 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = 8C6605B4728E0ADB8518EBBD /* Sounds */; };
 		1D8885BEA2CCA0D67B583E1B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DC44A1146E760945E5C0544A /* Assets.xcassets */; };
+		1F6523FE9DD6354BE9588AAF /* RealtimeAlertBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */; };
 		21EB774F46284F8D02C7B53C /* PressableScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */; };
 		239E908C3ECC66D03A3F7B24 /* IncomingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FF0E6F55971DD7E3028220 /* IncomingView.swift */; };
 		26727D4F1A77B19A5ECC8900 /* ReceiptPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */; };
@@ -96,6 +97,7 @@
 		E580DD79C7FAE7E4698E9937 /* DeliveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A934869271B71AB908A0D7 /* DeliveryView.swift */; };
 		E627A48878BE7A9471EBB228 /* BrandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */; };
 		E6AC4470E10FC6F2F4E40108 /* IconCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B8D71C4ABB9C77FEB5D791D /* IconCatalog.swift */; };
+		E795877884D40A228B2A57FB /* RealtimeAlertBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */; };
 		E7F698135860F0FE17D6207A /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9558F18E801A8ABB88C139D0 /* Typography.swift */; };
 		E9F703AB1073B9BB91F2358E /* DraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C58D216E7C2B0D37BD01891 /* DraftsView.swift */; };
 		F30526588BFBD22695BF37DF /* ShiftReportPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5267241C1AC9273C755769A /* ShiftReportPreview.swift */; };
@@ -118,7 +120,7 @@
 		1581A20D3AE0F7B94D0257A6 /* WaiterTicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiterTicketsView.swift; sourceTree = "<group>"; };
 		169E08DA5AF85857B87F99A4 /* CashAndShiftsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashAndShiftsView.swift; sourceTree = "<group>"; };
 		1D3E9FD2997E5756AC262D6D /* CloseShiftView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloseShiftView.swift; sourceTree = "<group>"; };
-		25DCDFF66B54CC6604AE1850 /* MadarPOS-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "MadarPOS-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		25DCDFF66B54CC6604AE1850 /* Madar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Madar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		35FDEE697B035556197EC4B4 /* OrderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderView.swift; sourceTree = "<group>"; };
 		3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Skeleton.swift; sourceTree = "<group>"; };
 		4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettleTicketsView.swift; sourceTree = "<group>"; };
@@ -143,7 +145,7 @@
 		8A961800CB4E1087339EE466 /* MadarSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarSheet.swift; sourceTree = "<group>"; };
 		8C58D216E7C2B0D37BD01891 /* DraftsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftsView.swift; sourceTree = "<group>"; };
 		8C6605B4728E0ADB8518EBBD /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = Resources/Sounds; sourceTree = SOURCE_ROOT; };
-		918BAD32BEC17E13CAFE7D34 /* MadarPOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MadarPOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		918BAD32BEC17E13CAFE7D34 /* MadarPOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = MadarPOS.app; path = Madar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9558F18E801A8ABB88C139D0 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedAsyncImage.swift; sourceTree = "<group>"; };
 		9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuItemCard.swift; sourceTree = "<group>"; };
@@ -155,6 +157,7 @@
 		B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MadarCoreFFI.swift; path = "../../rust-core/bindings/swift/MadarCoreFFI.swift"; sourceTree = "<group>"; };
 		B8575D6F7B26B1A8B923D513 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressableScale.swift; sourceTree = "<group>"; };
+		BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAlertBanner.swift; sourceTree = "<group>"; };
 		C69DBAA7B29A7FDF8241A0D6 /* Tokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tokens.swift; sourceTree = "<group>"; };
 		CEF6074347CE26F389673AF9 /* MadarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarIcon.swift; sourceTree = "<group>"; };
 		D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmountField.swift; sourceTree = "<group>"; };
@@ -200,7 +203,7 @@
 		2BF266C272038F4BE969F36E /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				25DCDFF66B54CC6604AE1850 /* MadarPOS-iOS.app */,
+				25DCDFF66B54CC6604AE1850 /* Madar.app */,
 				918BAD32BEC17E13CAFE7D34 /* MadarPOS.app */,
 			);
 			name = Products;
@@ -275,6 +278,7 @@
 				EFEF7EC990C77923E9CC282B /* OpenShiftView.swift */,
 				53FD40A576C447C717FCE473 /* OrderHistoryView.swift */,
 				35FDEE697B035556197EC4B4 /* OrderView.swift */,
+				BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */,
 				86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */,
 				9E562E93C40F1D2174325680 /* ReauthView.swift */,
 				ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */,
@@ -340,7 +344,7 @@
 			packageProductDependencies = (
 			);
 			productName = "MadarPOS-iOS";
-			productReference = 25DCDFF66B54CC6604AE1850 /* MadarPOS-iOS.app */;
+			productReference = 25DCDFF66B54CC6604AE1850 /* Madar.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -351,8 +355,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 515D532B97B9F3C425F25A99 /* Build configuration list for PBXProject "MadarPOS" */;
 			developmentRegion = en;
@@ -472,6 +474,7 @@
 				41A7616FECBA6A13A5D67BB7 /* OrderView.swift in Sources */,
 				AAEDEEB7E37A80AD19FB527A /* PinPad.swift in Sources */,
 				21EB774F46284F8D02C7B53C /* PressableScale.swift in Sources */,
+				1F6523FE9DD6354BE9588AAF /* RealtimeAlertBanner.swift in Sources */,
 				AC1B9778E5DA441A90CD1283 /* RealtimeAlerts.swift in Sources */,
 				D44AE419F0200F3DAEB678AF /* ReauthView.swift in Sources */,
 				26727D4F1A77B19A5ECC8900 /* ReceiptPaper.swift in Sources */,
@@ -526,6 +529,7 @@
 				A09513491F3768F72F079FD0 /* OrderView.swift in Sources */,
 				3CEFD7590804DEEFF00BE17F /* PinPad.swift in Sources */,
 				F482408AFB4C2CC6CF1E716A /* PressableScale.swift in Sources */,
+				E795877884D40A228B2A57FB /* RealtimeAlertBanner.swift in Sources */,
 				B99B1844FCA5D506F078E512 /* RealtimeAlerts.swift in Sources */,
 				9BED347D34E21BB606FDE7B7 /* ReauthView.swift in Sources */,
 				E3DCDC8190F4B45DEFFDE83B /* ReceiptPaper.swift in Sources */,
@@ -637,6 +641,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 6HNBMW6X75;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"../rust-core/target\"",
@@ -658,6 +663,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 6HNBMW6X75;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"../rust-core/target\"",

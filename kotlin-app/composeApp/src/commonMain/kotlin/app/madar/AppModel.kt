@@ -1128,6 +1128,13 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
         realtimeAlerts = listOf(RealtimeAlertData(alertSeq, title, body, tag)) + realtimeAlerts
     }
     fun dismissRealtimeAlert(id: Int) { realtimeAlerts = realtimeAlerts.filterNot { it.id == id } }
+    /** Tapping an alert opens the Orders surface on the relevant tab (delivery vs
+     *  open-tickets) and clears that alert. */
+    fun openOrdersFromAlert(alert: RealtimeAlertData) {
+        incomingTab = if (alert.tag.startsWith("delivery")) 0 else 1
+        showIncoming = true
+        dismissRealtimeAlert(alert.id)
+    }
     /** Wraps the injected platform [player] so an alert ALSO raises the in-app
      *  banner — fired at the SAME deduped point the core posts the OS notification,
      *  so the banner, chime, haptic and notification stay in lockstep. */

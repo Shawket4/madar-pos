@@ -1037,6 +1037,13 @@ final class AppModel: ObservableObject {
     func dismissRealtimeAlert(_ id: Int) {
         realtimeAlerts.removeAll { $0.id == id }
     }
+    /// Tapping an alert opens the Orders surface on the relevant tab (delivery vs
+    /// open-tickets) and clears that alert.
+    func openOrdersFromAlert(_ alert: RealtimeAlert) {
+        incomingTab = alert.tag.hasPrefix("delivery") ? 0 : 1
+        showIncoming = true
+        dismissRealtimeAlert(alert.id)
+    }
 
     /// Open the device's ONE session-level realtime subscription. The CORE owns all
     /// the policy — it derives the topics from the signed-in role, refreshes the right

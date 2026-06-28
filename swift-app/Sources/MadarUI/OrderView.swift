@@ -269,7 +269,9 @@ private struct OrderTopBar: View {
             Spacer(minLength: 0)
             SyncChip(app: app)
             if app.isWaiterDevice {
-                // Waiter's nav: the open-tickets list + settings; the rest is in More.
+                // Waiter's nav: catalog sync (the SAME button as the teller), the
+                // open-tickets list, and settings; the rest is in More.
+                syncDataButton
                 barButton(icon: "fork.knife") { Task { await app.loadOpenTickets() }; app.showTickets = true }
                 if wide { barButton(icon: "gearshape") { app.refreshPending(); app.showSettings = true } }
             } else if wide {

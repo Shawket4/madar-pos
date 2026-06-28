@@ -524,7 +524,9 @@ private fun OrderTopBar(model: AppModel, wide: Boolean) {
             Box(Modifier.weight(1f))
             SyncChip(model)
             if (isWaiter) {
-                // Waiter's nav: the open-tickets list + settings; the rest is in More.
+                // Waiter's nav: catalog sync (the SAME button as the teller), the
+                // open-tickets list, and settings; the rest is in More.
+                SyncDataButton(model)
                 BarButton("fork.knife") { scope.launch { model.loadOpenTickets() }; model.showTickets = true }
                 if (wide) BarButton("gearshape") { model.refreshPending(); model.showSettings = true }
             } else if (wide) {

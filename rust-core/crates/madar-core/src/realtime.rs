@@ -118,7 +118,12 @@ fn role_wants_alert(event_type: &str, role: &str) -> bool {
     match role {
         "waiter" => matches!(event_type, "ticket.ready" | "kitchen.ticket_ready"),
         "kitchen" => event_type == "kitchen.fired",
-        _ => true,
+        // Teller / cashier / manager: incoming work to settle / handle — but NOT
+        // `kitchen.fired`. That's the kitchen device's new-work signal; one waiter
+        // fire emits BOTH `ticket.fired` (the open ticket) and `kitchen.fired` (the
+        // kitchen copy), so alerting on both double-pinged the till for one order.
+        // The till already gets `ticket.fired`; the kitchen copy is not its concern.
+        _ => event_type != "kitchen.fired",
     }
 }
 
@@ -569,10 +574,13 @@ mod tests {
 
     #[test]
     fn role_gates_alerts_to_incoming_work() {
-        // Teller / till receives everything → all alert-worthy events ping.
+        // Teller / till receives incoming work → those alert-worthy events ping…
         assert!(role_wants_alert("ticket.fired", "teller"));
         assert!(role_wants_alert("delivery.created", "teller"));
         assert!(role_wants_alert("ticket.ready", "teller"));
+        // …but NOT the kitchen copy of a fire — one waiter fire emits both
+        // ticket.fired AND kitchen.fired, and the till must ping only once.
+        assert!(!role_wants_alert("kitchen.fired", "teller"));
         // A waiter FIRES tickets → no self-ping on fire/round; only "ready" (serve).
         assert!(!role_wants_alert("ticket.fired", "waiter"));
         assert!(!role_wants_alert("ticket.round_added", "waiter"));

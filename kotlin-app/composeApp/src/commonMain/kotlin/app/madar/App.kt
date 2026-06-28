@@ -70,6 +70,7 @@ fun App(model: AppModel) {
                         RealtimeAlertStack(
                             model.realtimeAlerts,
                             onDismiss = { model.dismissRealtimeAlert(it) },
+                            onOpen = { model.openOrdersFromAlert(it) },
                             modifier = Modifier.align(Alignment.TopCenter),
                         )
                     }

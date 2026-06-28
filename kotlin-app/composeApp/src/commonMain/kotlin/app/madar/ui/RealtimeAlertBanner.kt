@@ -67,7 +67,12 @@ data class RealtimeAlertData(val id: Int, val title: String, val body: String, v
 }
 
 @Composable
-fun RealtimeAlertStack(alerts: List<RealtimeAlertData>, onDismiss: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun RealtimeAlertStack(
+    alerts: List<RealtimeAlertData>,
+    onDismiss: (Int) -> Unit,
+    onOpen: (RealtimeAlertData) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     if (alerts.isEmpty()) return
     var expanded by remember { mutableStateOf(false) }
     // Nothing left to fan out → fall back to the deck.
@@ -75,9 +80,9 @@ fun RealtimeAlertStack(alerts: List<RealtimeAlertData>, onDismiss: (Int) -> Unit
 
     Box(modifier.widthIn(max = 480.dp).fillMaxWidth().padding(Space.md)) {
         if (expanded) {
-            ExpandedAlertList(alerts, onDismiss, onCollapse = { expanded = false })
+            ExpandedAlertList(alerts, onDismiss, onOpen, onCollapse = { expanded = false })
         } else {
-            CollapsedAlertDeck(alerts, onDismiss, onExpand = { if (alerts.size > 1) expanded = true })
+            CollapsedAlertDeck(alerts, onDismiss, onOpen, onExpand = { if (alerts.size > 1) expanded = true })
         }
     }
 }
@@ -86,7 +91,12 @@ fun RealtimeAlertStack(alerts: List<RealtimeAlertData>, onDismiss: (Int) -> Unit
  *  behind it peek out — scaled down, nudged down, and dimmed — exactly like a
  *  stacked notification group. Tap to fan the stack out. */
 @Composable
-private fun CollapsedAlertDeck(alerts: List<RealtimeAlertData>, onDismiss: (Int) -> Unit, onExpand: () -> Unit) {
+private fun CollapsedAlertDeck(
+    alerts: List<RealtimeAlertData>,
+    onDismiss: (Int) -> Unit,
+    onOpen: (RealtimeAlertData) -> Unit,
+    onExpand: () -> Unit,
+) {
     val deck = alerts.take(3)
     val multi = alerts.size > 1
     Box(Modifier.fillMaxWidth()) {
@@ -103,10 +113,12 @@ private fun CollapsedAlertDeck(alerts: List<RealtimeAlertData>, onDismiss: (Int)
                     transformOrigin = TransformOrigin(0.5f, 0f) // shrink from the top edge → peeks below
                 },
             ) {
+                // Body tap routes to Orders; the ▼ chevron fans the stack out.
                 RealtimeAlertCard(
                     a, onDismiss,
                     animated = front, showClose = front,
-                    onTap = if (front && multi) onExpand else null,
+                    onTap = if (front) ({ onOpen(a) }) else null,
+                    onExpand = if (front && multi) onExpand else null,
                 )
             }
         }
@@ -116,7 +128,12 @@ private fun CollapsedAlertDeck(alerts: List<RealtimeAlertData>, onDismiss: (Int)
 /** Fanned-out, scrollable list (newest on top) + a chevron-up to re-collapse.
  *  Capped generously and scrolls — it never pushes the app down (it's an overlay). */
 @Composable
-private fun ExpandedAlertList(alerts: List<RealtimeAlertData>, onDismiss: (Int) -> Unit, onCollapse: () -> Unit) {
+private fun ExpandedAlertList(
+    alerts: List<RealtimeAlertData>,
+    onDismiss: (Int) -> Unit,
+    onOpen: (RealtimeAlertData) -> Unit,
+    onCollapse: () -> Unit,
+) {
     val c = madarColors()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val maxH = maxHeight * 0.8f
@@ -125,7 +142,7 @@ private fun ExpandedAlertList(alerts: List<RealtimeAlertData>, onDismiss: (Int) 
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             items(alerts, key = { it.id }) { a ->
-                RealtimeAlertCard(a, onDismiss, modifier = Modifier.animateItem())
+                RealtimeAlertCard(a, onDismiss, modifier = Modifier.animateItem(), onTap = { onOpen(a) })
             }
             item("collapse") {
                 Row(Modifier.fillMaxWidth().padding(top = Space.xs), horizontalArrangement = Arrangement.Center) {
@@ -153,6 +170,7 @@ fun RealtimeAlertCard(
     animated: Boolean = true,
     showClose: Boolean = true,
     onTap: (() -> Unit)? = null,
+    onExpand: (() -> Unit)? = null,
 ) {
     val c = madarColors()
     val haptics = rememberHaptics()
@@ -204,6 +222,13 @@ fun RealtimeAlertCard(
                     fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (onExpand != null) {
+            Box(
+                Modifier.size(28.dp).clip(CircleShape)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onExpand() },
+                contentAlignment = Alignment.Center,
+            ) { MadarIcon("chevron.down", tint = c.accent, size = 16.dp) }
         }
         if (showClose) {
             Box(

@@ -65,7 +65,7 @@ fi
 INC="$(mktemp -d)"
 cp "$SW/MadarCoreFFIFFI.h" "$INC/"
 cp "$SW/MadarCoreFFIFFI.modulemap" "$INC/module.modulemap"
-UI_SOURCES=$(find "$CORE_DIR/../swift-app/Sources/SufrixUI" -name '*.swift')
+UI_SOURCES=$(find "$CORE_DIR/../swift-app/Sources/MadarUI" -name '*.swift')
 
 echo "── Compiling SwiftUI app…"
 swiftc -O \
