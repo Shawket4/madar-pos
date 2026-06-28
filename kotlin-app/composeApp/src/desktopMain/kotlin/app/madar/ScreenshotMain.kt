@@ -44,8 +44,8 @@ import app.madar.ui.MadarTextField
 import app.madar.ui.MetricRow
 import app.madar.ui.NoticeBanner
 import app.madar.ui.PinPad
-import app.madar.ui.RealtimeAlertCard
 import app.madar.ui.RealtimeAlertData
+import app.madar.ui.RealtimeAlertStack
 import app.madar.ui.SectionHeader
 import app.madar.ui.SelectableChip
 import app.madar.ui.Space
@@ -116,10 +116,14 @@ private fun Screens() {
     ) {
         Text("Madar — Refreshed Screens", style = Type.h1(), color = c.textPrimary)
 
-        // ── In-app realtime alert banner (companion to the OS notification) ──
-        SectionHeader("Live alert")
-        RealtimeAlertCard(
-            RealtimeAlertData(1, "New delivery order · D-204", "Sara A. · EGP 132.00", "delivery.created:o1"),
+        // ── In-app realtime alert stack (iOS-style deck, companion to the OS notif) ──
+        SectionHeader("Live alerts")
+        RealtimeAlertStack(
+            listOf(
+                RealtimeAlertData(3, "New ticket fired · T-12", "Table 4 · 3 items", "ticket.fired:t12"),
+                RealtimeAlertData(2, "Order ready · K-88", "Margherita Pizza", "kitchen.ticket_ready:k88"),
+                RealtimeAlertData(1, "New delivery order · D-204", "Sara A. · EGP 132.00", "delivery.created:o1"),
+            ),
             onDismiss = {},
         )
 

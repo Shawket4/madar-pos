@@ -1113,19 +1113,21 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     private var realtimeBridge: RealtimeBridge? = null
 
     // ── in-app realtime alert banner (the visual companion to the OS notification) ──
-    /** The active in-app alert (null = none). Rendered at the app root, alongside
-     *  the OS notification + ping + haptic. Mirrors the Flutter NewOrderBanner,
-     *  generalized to every alerting event. */
-    var realtimeAlert by mutableStateOf<RealtimeAlertData?>(null)
+    /** The active in-app alerts (empty = none), newest first. Rendered at the app
+     *  root as a persistent iOS-style stack, alongside the OS notification + ping +
+     *  haptic. They stay until the teller dismisses each one. */
+    var realtimeAlerts by mutableStateOf<List<RealtimeAlertData>>(emptyList())
         private set
     private var alertSeq = 0
-    /** Raise the in-app banner. Called from [bannerPlayer] on the core's thread;
-     *  snapshot state is thread-safe so this is safe off the main thread. */
+    /** Raise an in-app alert (newest on top). Called from [bannerPlayer] on the
+     *  core's thread; snapshot state is thread-safe so this is safe off the main
+     *  thread. Dedups by tag (the core already dedups, but guard LAN+cloud re-delivery). */
     fun showRealtimeAlert(title: String, body: String, tag: String) {
+        if (realtimeAlerts.any { it.tag == tag }) return
         alertSeq += 1
-        realtimeAlert = RealtimeAlertData(alertSeq, title, body, tag)
+        realtimeAlerts = listOf(RealtimeAlertData(alertSeq, title, body, tag)) + realtimeAlerts
     }
-    fun dismissRealtimeAlert(id: Int) { if (realtimeAlert?.id == id) realtimeAlert = null }
+    fun dismissRealtimeAlert(id: Int) { realtimeAlerts = realtimeAlerts.filterNot { it.id == id } }
     /** Wraps the injected platform [player] so an alert ALSO raises the in-app
      *  banner — fired at the SAME deduped point the core posts the OS notification,
      *  so the banner, chime, haptic and notification stay in lockstep. */

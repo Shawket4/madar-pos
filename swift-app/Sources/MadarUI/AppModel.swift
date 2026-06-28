@@ -1021,23 +1021,21 @@ final class AppModel: ObservableObject {
     private let alertPlayer = RealtimeAlertPlayer()
 
     // ── in-app realtime alert banner (the visual companion to the OS notification) ──
-    /// The active in-app alert (nil = none). Rendered at the app root, alongside
-    /// the OS notification + ping + haptic. Mirrors the Flutter NewOrderBanner,
-    /// generalized to every alerting event.
-    @Published var realtimeAlert: RealtimeAlert?
+    /// The active in-app alerts (empty = none), newest first. Rendered at the app
+    /// root as a persistent iOS-style stack, alongside the OS notification + ping +
+    /// haptic. They stay until the teller dismisses each one.
+    @Published var realtimeAlerts: [RealtimeAlert] = []
     private var alertSeq = 0
-    /// Raise the in-app banner (+ auto-dismiss). Called from `alertPlayer` on the
-    /// main actor at the same deduped point the core posts the OS notification.
+    /// Raise an in-app alert (newest on top). Called from `alertPlayer` on the main
+    /// actor at the same deduped point the core posts the OS notification. Dedups by
+    /// tag (the core already dedups, but guard LAN+cloud re-delivery).
     func showRealtimeBanner(_ title: String, _ body: String, _ tag: String) {
+        guard !realtimeAlerts.contains(where: { $0.tag == tag }) else { return }
         alertSeq += 1
-        let id = alertSeq
-        realtimeAlert = RealtimeAlert(id: id, title: title, body: body, tag: tag)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-            self?.dismissRealtimeAlert(id)
-        }
+        realtimeAlerts.insert(RealtimeAlert(id: alertSeq, title: title, body: body, tag: tag), at: 0)
     }
     func dismissRealtimeAlert(_ id: Int) {
-        if realtimeAlert?.id == id { realtimeAlert = nil }
+        realtimeAlerts.removeAll { $0.id == id }
     }
 
     /// Open the device's ONE session-level realtime subscription. The CORE owns all
