@@ -10,7 +10,7 @@ The POS sends the priced breakdown and the backend **records it verbatim**. The 
 
 ## (1) Field-by-field: client SENDS vs server DERIVES
 
-Create path: `create_order` in `/Users/shawket/Desktop/SufrixRust/src/orders/handlers.rs` (struct ~L270–315, logic ~L611–1058, INSERT ~L1180–1230).
+Create path: `create_order` in `/Users/shawket/Desktop/MadarRust/src/orders/handlers.rs` (struct ~L270–315, logic ~L611–1058, INSERT ~L1180–1230).
 
 | Monetary field | Client may send? | What the server does with it | Recorded value |
 |---|---|---|---|
@@ -35,7 +35,7 @@ Create path: `create_order` in `/Users/shawket/Desktop/SufrixRust/src/orders/han
 
 ## (3) The server's formula (what Rust must match)
 
-All piastres (integer). `calc_discount` is the single source of truth in `/Users/shawket/Desktop/SufrixRust/src/discounts/handlers.rs` L270–277:
+All piastres (integer). `calc_discount` is the single source of truth in `/Users/shawket/Desktop/MadarRust/src/discounts/handlers.rs` L270–277:
 
 ```
 discount = match dtype {
@@ -54,7 +54,7 @@ total   = taxable + tax
 
 ## (4) Where the deviation is recorded / consumed
 
-- Written to `orders.price_flagged`, `orders.price_expected_total`, and `order_items.price_flagged` (migration `/Users/shawket/Desktop/SufrixRust/migrations/20260614120000_branch_menu_overrides.sql` L31–36).
+- Written to `orders.price_flagged`, `orders.price_expected_total`, and `order_items.price_flagged` (migration `/Users/shawket/Desktop/MadarRust/migrations/20260614120000_branch_menu_overrides.sql` L31–36).
 - **Nothing consumes them in production.** Grep across all non-test `.rs`: the only reads of `price_flagged`/`price_expected_total` are in `orders/tests.rs`. No report, no list filter, no aggregate (the `OrderSummary` revenue/discount sums use `total_amount`/`discount_amount`, not the flag), and the `Order` response struct (L62+) and the INSERT `RETURNING` clause (L1193–1204) **do not even expose these columns** to the API. They are write-only audit residue.
 
 ## (5) Bundle pricing on the server
@@ -69,4 +69,4 @@ total   = taxable + tax
 - **Bundle base price** must come from the synced `bundles.price`; the engine adds only the per-component addon/optional surcharge, and must enforce exact catalog component quantities (server rejects mismatches).
 - **Send the full breakdown** (`unit_price` per line + `subtotal`/`discount_amount`/`tax_amount`/`total_amount`) so the DB equals the printed receipt; omitting them silently hands authority back to the server's catalog computation, which may differ from a stale/offline POS.
 
-Key files: `/Users/shawket/Desktop/SufrixRust/src/orders/handlers.rs` (create path L470–1335), `/Users/shawket/Desktop/SufrixRust/src/discounts/handlers.rs` (`calc_discount` L270), `/Users/shawket/Desktop/SufrixRust/src/bundles/handlers.rs` (bundle price validation L355–387), `/Users/shawket/Desktop/SufrixRust/migrations/20260614120000_branch_menu_overrides.sql` (deviation columns).
+Key files: `/Users/shawket/Desktop/MadarRust/src/orders/handlers.rs` (create path L470–1335), `/Users/shawket/Desktop/MadarRust/src/discounts/handlers.rs` (`calc_discount` L270), `/Users/shawket/Desktop/MadarRust/src/bundles/handlers.rs` (bundle price validation L355–387), `/Users/shawket/Desktop/MadarRust/migrations/20260614120000_branch_menu_overrides.sql` (deviation columns).

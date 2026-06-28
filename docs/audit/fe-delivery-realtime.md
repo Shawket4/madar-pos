@@ -106,15 +106,15 @@ received ──(POST /status: confirmed)──▶ confirmed ──▶ preparing 
 ---
 
 ### Key file paths
-- Engine: `/Users/shawket/Desktop/sufrix_pos/lib/core/services/delivery_realtime_service.dart`
-- Detector: `/Users/shawket/Desktop/sufrix_pos/lib/core/services/new_order_detector.dart`
-- Notifications: `/Users/shawket/Desktop/sufrix_pos/lib/core/services/notification_service.dart`
-- Queue state: `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/delivery_orders_notifier.dart`
-- Settings: `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/delivery_settings_notifier.dart` + `/Users/shawket/Desktop/sufrix_pos/lib/core/models/delivery_settings.dart`
-- Wire model / state machine: `/Users/shawket/Desktop/sufrix_pos/lib/core/models/delivery_order.dart`
-- API / SSE open: `/Users/shawket/Desktop/sufrix_pos/lib/core/api/delivery_api.dart`
-- Repository: `/Users/shawket/Desktop/sufrix_pos/lib/core/repositories/delivery_order_repository.dart`
-- Gate host: `/Users/shawket/Desktop/sufrix_pos/lib/features/delivery/widgets/delivery_realtime_host.dart`
-- Lifecycle wiring: `/Users/shawket/Desktop/sufrix_pos/lib/main.dart` (lines 57, 129-138)
-- Actions UI: `/Users/shawket/Desktop/sufrix_pos/lib/features/delivery/delivery_orders_screen.dart` (lines 466-574)
-- In-app banner: `/Users/shawket/Desktop/sufrix_pos/lib/shared/widgets/new_order_banner.dart`
+- Engine: `/Users/shawket/Desktop/madar-pos/lib/core/services/delivery_realtime_service.dart`
+- Detector: `/Users/shawket/Desktop/madar-pos/lib/core/services/new_order_detector.dart`
+- Notifications: `/Users/shawket/Desktop/madar-pos/lib/core/services/notification_service.dart`
+- Queue state: `/Users/shawket/Desktop/madar-pos/lib/core/providers/delivery_orders_notifier.dart`
+- Settings: `/Users/shawket/Desktop/madar-pos/lib/core/providers/delivery_settings_notifier.dart` + `/Users/shawket/Desktop/madar-pos/lib/core/models/delivery_settings.dart`
+- Wire model / state machine: `/Users/shawket/Desktop/madar-pos/lib/core/models/delivery_order.dart`
+- API / SSE open: `/Users/shawket/Desktop/madar-pos/lib/core/api/delivery_api.dart`
+- Repository: `/Users/shawket/Desktop/madar-pos/lib/core/repositories/delivery_order_repository.dart`
+- Gate host: `/Users/shawket/Desktop/madar-pos/lib/features/delivery/widgets/delivery_realtime_host.dart`
+- Lifecycle wiring: `/Users/shawket/Desktop/madar-pos/lib/main.dart` (lines 57, 129-138)
+- Actions UI: `/Users/shawket/Desktop/madar-pos/lib/features/delivery/delivery_orders_screen.dart` (lines 466-574)
+- In-app banner: `/Users/shawket/Desktop/madar-pos/lib/shared/widgets/new_order_banner.dart`

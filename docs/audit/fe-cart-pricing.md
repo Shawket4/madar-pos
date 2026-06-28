@@ -142,12 +142,12 @@ Additional collision risk on the online side: `state.id` defaults to the literal
 9. Idempotency: online uses `state.id` (stable per tab, **defaults to non-unique `"order_1"`**); queued uses a fresh `Uuid().v4()`. **These two schemes do not match — a network-error fallback can double-charge.** This must be unified to one stable per-order key before the backend can rely on idempotency dedupe.
 
 ### Relevant file paths
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/cart.dart` — line-item, subtotal/discount/tax/total getters (the canonical money math)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/cart_notifier.dart` — `idempotencyKey()` (line 262), discount/tip/split setters
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/menu.dart` — `priceForSize` (lines 22-28), `isFree`
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/bundle.dart` — fixed `bundle.price`, display-only savings
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/order/widgets/item_detail_sheet.dart` — `_adjustedPrice` swap-clamp (394-401), addon/optional totals
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/order/widgets/bundle_detail_sheet.dart` — `_extrasTotal` (140-147), bundle line assembly
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/order/checkout/checkout_sheet.dart` — online idempotency mint (456), queued UUID mint (478-504)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/services/offline_queue.dart` — queued create uses `action.localId` (502); 409 dedupe gap (360-382)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/api/order_api.dart` — charged breakdown fields + `Idempotency-Key` header (52-60)
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/cart.dart` — line-item, subtotal/discount/tax/total getters (the canonical money math)
+- `/Users/shawket/Desktop/madar-pos/lib/core/providers/cart_notifier.dart` — `idempotencyKey()` (line 262), discount/tip/split setters
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/menu.dart` — `priceForSize` (lines 22-28), `isFree`
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/bundle.dart` — fixed `bundle.price`, display-only savings
+- `/Users/shawket/Desktop/madar-pos/lib/features/order/widgets/item_detail_sheet.dart` — `_adjustedPrice` swap-clamp (394-401), addon/optional totals
+- `/Users/shawket/Desktop/madar-pos/lib/features/order/widgets/bundle_detail_sheet.dart` — `_extrasTotal` (140-147), bundle line assembly
+- `/Users/shawket/Desktop/madar-pos/lib/features/order/checkout/checkout_sheet.dart` — online idempotency mint (456), queued UUID mint (478-504)
+- `/Users/shawket/Desktop/madar-pos/lib/core/services/offline_queue.dart` — queued create uses `action.localId` (502); 409 dedupe gap (360-382)
+- `/Users/shawket/Desktop/madar-pos/lib/core/api/order_api.dart` — charged breakdown fields + `Idempotency-Key` header (52-60)

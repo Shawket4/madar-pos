@@ -112,4 +112,4 @@ At first online login, POS generates a keypair; server registers the device (`de
 ---
 
 **Files audited (all absolute):**
-`/Users/shawket/Desktop/SufrixRust/src/auth/jwt.rs`, `/auth/handlers.rs`, `/auth/middleware.rs`, `/auth/guards.rs`, `/auth/routes.rs`, `/auth/mod.rs`; cross-checked `/src/models/mod.rs` (User / UserPublic, lines 23-79) and `/src/shifts/handlers.rs` (open_shift 303-, close_shift 835-930). No refresh-token or token-revocation code exists anywhere in `src/`.
+`/Users/shawket/Desktop/MadarRust/src/auth/jwt.rs`, `/auth/handlers.rs`, `/auth/middleware.rs`, `/auth/guards.rs`, `/auth/routes.rs`, `/auth/mod.rs`; cross-checked `/src/models/mod.rs` (User / UserPublic, lines 23-79) and `/src/shifts/handlers.rs` (open_shift 303-, close_shift 835-930). No refresh-token or token-revocation code exists anywhere in `src/`.

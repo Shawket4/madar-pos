@@ -4,7 +4,7 @@ I have everything needed. The audit is complete. Here is the full report.
 
 # Backend Shift + Cash-Movement Audit (Actix-Web / Rust)
 
-Source: `/Users/shawket/Desktop/SufrixRust/src/shifts/` (`handlers.rs`, `routes.rs`, `mod.rs`, `tests.rs`), schema in `/Users/shawket/Desktop/SufrixRust/migrations/20260531200000_full_schema.sql` and `…/20260613011000_one_open_shift_per_teller.sql`, clock guard in `src/clock.rs`.
+Source: `/Users/shawket/Desktop/MadarRust/src/shifts/` (`handlers.rs`, `routes.rs`, `mod.rs`, `tests.rs`), schema in `/Users/shawket/Desktop/MadarRust/migrations/20260531200000_full_schema.sql` and `…/20260613011000_one_open_shift_per_teller.sql`, clock guard in `src/clock.rs`.
 
 Bottom line up front: **the offline groundwork is already substantially done.** Cash movements exist as a first-class endpoint; client-supplied UUIDs + clock-tolerant timestamps already exist on open/cash-movement/close; and open/close are idempotent. The main remaining gaps are (1) cash movements have **no idempotency/dedup key**, (2) there is **no batch replay endpoint**, and (3) one online-coupling check (`reject_if_future`) uses *server* `now()`.
 

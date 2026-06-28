@@ -65,10 +65,10 @@ So: **recipe view = yes** (teller-facing), **deductions view = yes** (read-only)
 ---
 
 Key files (absolute paths):
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/api/recipe_api.dart` (the only client inventory logic: `computeRecipeLocally`)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/api/inventory_api.dart` (dead read-only fetch)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/order.dart` (`InventoryDeduction`, parses server `deductions_snapshot`)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/inventory.dart` (façade over generated `BranchInventoryItem`)
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/order/widgets/recipe_sheet.dart`, `order_ingredients_sheet.dart`, `item_detail_sheet.dart`
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/repositories/shift_repository.dart` (dead `loadInventoryLocal`/`fetchInventoryFresh`)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/api/order_api.dart`, `delivery_api.dart` (server-side deplete/void/restore relays)
+- `/Users/shawket/Desktop/madar-pos/lib/core/api/recipe_api.dart` (the only client inventory logic: `computeRecipeLocally`)
+- `/Users/shawket/Desktop/madar-pos/lib/core/api/inventory_api.dart` (dead read-only fetch)
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/order.dart` (`InventoryDeduction`, parses server `deductions_snapshot`)
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/inventory.dart` (façade over generated `BranchInventoryItem`)
+- `/Users/shawket/Desktop/madar-pos/lib/features/order/widgets/recipe_sheet.dart`, `order_ingredients_sheet.dart`, `item_detail_sheet.dart`
+- `/Users/shawket/Desktop/madar-pos/lib/core/repositories/shift_repository.dart` (dead `loadInventoryLocal`/`fetchInventoryFresh`)
+- `/Users/shawket/Desktop/madar-pos/lib/core/api/order_api.dart`, `delivery_api.dart` (server-side deplete/void/restore relays)

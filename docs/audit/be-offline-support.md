@@ -4,7 +4,7 @@ That confirms the final piece: `list_delivery_orders` does NOT support `updated_
 
 # Backend Offline-First Readiness Audit — Madar (Actix-Web Rust)
 
-Scope: `/Users/shawket/Desktop/SufrixRust/src` + `/migrations`. Target: a POS client that survives **days** offline and replays **in order**.
+Scope: `/Users/shawket/Desktop/MadarRust/src` + `/migrations`. Target: a POS client that survives **days** offline and replays **in order**.
 
 ## Executive verdict
 
@@ -55,10 +55,10 @@ The backend is **point-hardened for duplicate order submission, but has no gener
 **P5 — optimistic concurrency.** Add `version integer` (bump in `set_updated_at` trigger) to mutable synced entities; accept `If-Match`/expected-version on update endpoints and return `409/412` on mismatch so stale offline edits surface as conflicts instead of silent clobbers.
 
 ### Key file references
-- Idempotency pattern (template to replicate): `/Users/shawket/Desktop/SufrixRust/src/orders/handlers.rs:469-479`, `:1238-1248`, `:2181`
-- Delivery idempotency: `/Users/shawket/Desktop/SufrixRust/src/delivery/public.rs:929-939`, `/Users/shawket/Desktop/SufrixRust/src/delivery/staff.rs:97`
-- Orders unsafe "delta": `/Users/shawket/Desktop/SufrixRust/src/orders/handlers.rs:331`, `:1676-1705`
-- Delivery list (no since-cursor): `/Users/shawket/Desktop/SufrixRust/src/delivery/staff.rs:118-143`; SSE-only stream `:171-177`
-- `updated_at` trigger fn + coverage: `/Users/shawket/Desktop/SufrixRust/migrations/20260531200000_full_schema.sql:217`, triggers `:1847+`
+- Idempotency pattern (template to replicate): `/Users/shawket/Desktop/MadarRust/src/orders/handlers.rs:469-479`, `:1238-1248`, `:2181`
+- Delivery idempotency: `/Users/shawket/Desktop/MadarRust/src/delivery/public.rs:929-939`, `/Users/shawket/Desktop/MadarRust/src/delivery/staff.rs:97`
+- Orders unsafe "delta": `/Users/shawket/Desktop/MadarRust/src/orders/handlers.rs:331`, `:1676-1705`
+- Delivery list (no since-cursor): `/Users/shawket/Desktop/MadarRust/src/delivery/staff.rs:118-143`; SSE-only stream `:171-177`
+- `updated_at` trigger fn + coverage: `/Users/shawket/Desktop/MadarRust/migrations/20260531200000_full_schema.sql:217`, triggers `:1847+`
 - Idempotency columns/indexes: `full_schema.sql:852`/`:1843` (orders), `20260614150000_delivery_core.sql:131`/`:140` (delivery)
 - Hard-delete sites to convert: `discounts/handlers.rs:213`, `menu/handlers.rs:1189/1474/1660/1901/1950/2278/2470/2519/2631`, `inventory/handlers.rs:953/1719`, `users/handlers.rs:725`

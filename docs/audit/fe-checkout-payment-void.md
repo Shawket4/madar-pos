@@ -148,10 +148,10 @@ Secondary idempotency weaknesses:
 ---
 
 ### Key file references
-- Checkout flow + dual key: `/Users/shawket/Desktop/sufrix_pos/lib/features/order/checkout/checkout_sheet.dart` (`_place` 354–574, `placeQueued` 478–524, `_finalizeOrder` 693–724)
-- Online key: `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/cart_notifier.dart:262`
-- Offline key: `/Users/shawket/Desktop/sufrix_pos/lib/core/services/offline_queue.dart:502`
-- Sync confirm / replaceOrder: `/Users/shawket/Desktop/sufrix_pos/lib/main.dart:85`, `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/order_history_notifier.dart:126`
+- Checkout flow + dual key: `/Users/shawket/Desktop/madar-pos/lib/features/order/checkout/checkout_sheet.dart` (`_place` 354–574, `placeQueued` 478–524, `_finalizeOrder` 693–724)
+- Online key: `/Users/shawket/Desktop/madar-pos/lib/core/providers/cart_notifier.dart:262`
+- Offline key: `/Users/shawket/Desktop/madar-pos/lib/core/services/offline_queue.dart:502`
+- Sync confirm / replaceOrder: `/Users/shawket/Desktop/madar-pos/lib/main.dart:85`, `/Users/shawket/Desktop/madar-pos/lib/core/providers/order_history_notifier.dart:126`
 - Change formulas: `cart.dart:407`, `checkout_sheet.dart:722`, `cash_tendered_section.dart:87`
-- Void: `/Users/shawket/Desktop/sufrix_pos/lib/features/order/void_order_sheet.dart` (`_submit` 108–190), `order_api.dart:129`, `offline_queue.dart:199` & 343–390
+- Void: `/Users/shawket/Desktop/madar-pos/lib/features/order/void_order_sheet.dart` (`_submit` 108–190), `order_api.dart:129`, `offline_queue.dart:199` & 343–390
 - Queue/drain & error taxonomy: `offline_queue.dart:294–455`; DAO ordering `outbox_dao.dart:258`, `291`

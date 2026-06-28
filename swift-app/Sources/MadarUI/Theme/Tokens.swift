@@ -1,5 +1,5 @@
 // Madar design tokens — ported 1:1 from the Flutter `AppTokens` (the source of
-// truth: sufrix_pos/lib/core/theme/app_theme.dart). Screens read these via
+// truth: madar-pos/lib/core/theme/app_theme.dart). Screens read these via
 // `@Environment(\.theme)` and NEVER hardcode hex. Light = the original navy
 // palette (navy is the action color); dark = the new terracotta identity.
 import SwiftUI

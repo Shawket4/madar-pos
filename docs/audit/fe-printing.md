@@ -8,21 +8,21 @@ I now have a complete and verified picture of the printing subsystem. The audit 
 
 | File (absolute) | Role |
 |---|---|
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/services/printer_service.dart` | **The whole engine.** Static `PrinterService` class: builds 3 PDF receipts (order, delivery, shift report), rasterizes them, owns transport for both printer brands, the ESC/POS bit-image encoder, cash-drawer kick, and logo download/cache. 936 lines — the one file to port. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/models/branch.dart` | Façade re-exporting generated `Branch` + `PrinterBrand`; defines `branch.hasPrinter` getter that gates every print entry point (IP present AND brand recognized). |
-| `/Users/shawket/Desktop/sufrix_pos/packages/madar_api/lib/src/model/printer_brand.dart` | Generated enum: `star` / `epson` / `unknown_default_open_api`. Wire values come from backend. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/models/order.dart` | Façade: app `Order` = generated `OrderFull`; `OrderItem` = `OrderItemFull`. Adds `isBundleLine` (bundleId != null). Primary receipt data model. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/models/delivery_order.dart` | Client-side delivery order model (frozen cart snapshot) — feeds the delivery receipt PDF before finalize. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/models/shift_report.dart` | Façade: `ShiftReport` = `ShiftReportResponse`; `PaymentSummaryItem`, `CashMovementItem`. Feeds the Z-report ("Till Close Report") PDF. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/models/payment_method.dart` | Payment method list w/ `wireFormat` + `labelTranslations`; used to humanize payment labels on receipts. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/utils/formatting.dart` | `egp(piastres)` currency formatter (÷100, drop trailing `.00`) — money on every line. Must be replicated exactly. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/core/utils/app_tz.dart` | Branch-timezone clock (`AppTz.local`). Receipts/Z-reports print **branch** local time, not device time. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/features/order/widgets/receipt_sheet.dart` | **Trigger:** in-store order-complete sheet; auto-prints on open (`postFrameCallback`), kicks drawer when payment is cash, offers Reprint. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/features/order/widgets/receipt_preview_sheet.dart` | **Trigger (reprint):** order-history reprint; enriches delivery orders via detail fetch before reprinting. Renders an on-screen **widget** preview (not the PDF). |
-| `/Users/shawket/Desktop/sufrix_pos/lib/features/shift/close_shift_screen.dart` | **Trigger:** `_autoPrintReport` — best-effort auto-print of the Z-report right after an online shift close; re-fetches the report from backend first. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/features/shift/shift_report_preview_sheet.dart` | **Trigger (reprint):** manual Z-report print/reprint from shift history. Widget preview. |
-| `/Users/shawket/Desktop/sufrix_pos/lib/features/delivery/delivery_orders_screen.dart` | **Trigger:** `_maybePrintReceipt` — prints delivery receipt once at Confirm/accept (guards on `order.receiptPrinted`). |
-| `/Users/shawket/Desktop/sufrix_pos/lib/shared/widgets/animated_icons.dart` | UI only: `PrinterPainter` printing spinner. Not logic. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/services/printer_service.dart` | **The whole engine.** Static `PrinterService` class: builds 3 PDF receipts (order, delivery, shift report), rasterizes them, owns transport for both printer brands, the ESC/POS bit-image encoder, cash-drawer kick, and logo download/cache. 936 lines — the one file to port. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/models/branch.dart` | Façade re-exporting generated `Branch` + `PrinterBrand`; defines `branch.hasPrinter` getter that gates every print entry point (IP present AND brand recognized). |
+| `/Users/shawket/Desktop/madar-pos/packages/madar_api/lib/src/model/printer_brand.dart` | Generated enum: `star` / `epson` / `unknown_default_open_api`. Wire values come from backend. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/models/order.dart` | Façade: app `Order` = generated `OrderFull`; `OrderItem` = `OrderItemFull`. Adds `isBundleLine` (bundleId != null). Primary receipt data model. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/models/delivery_order.dart` | Client-side delivery order model (frozen cart snapshot) — feeds the delivery receipt PDF before finalize. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/models/shift_report.dart` | Façade: `ShiftReport` = `ShiftReportResponse`; `PaymentSummaryItem`, `CashMovementItem`. Feeds the Z-report ("Till Close Report") PDF. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/models/payment_method.dart` | Payment method list w/ `wireFormat` + `labelTranslations`; used to humanize payment labels on receipts. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/utils/formatting.dart` | `egp(piastres)` currency formatter (÷100, drop trailing `.00`) — money on every line. Must be replicated exactly. |
+| `/Users/shawket/Desktop/madar-pos/lib/core/utils/app_tz.dart` | Branch-timezone clock (`AppTz.local`). Receipts/Z-reports print **branch** local time, not device time. |
+| `/Users/shawket/Desktop/madar-pos/lib/features/order/widgets/receipt_sheet.dart` | **Trigger:** in-store order-complete sheet; auto-prints on open (`postFrameCallback`), kicks drawer when payment is cash, offers Reprint. |
+| `/Users/shawket/Desktop/madar-pos/lib/features/order/widgets/receipt_preview_sheet.dart` | **Trigger (reprint):** order-history reprint; enriches delivery orders via detail fetch before reprinting. Renders an on-screen **widget** preview (not the PDF). |
+| `/Users/shawket/Desktop/madar-pos/lib/features/shift/close_shift_screen.dart` | **Trigger:** `_autoPrintReport` — best-effort auto-print of the Z-report right after an online shift close; re-fetches the report from backend first. |
+| `/Users/shawket/Desktop/madar-pos/lib/features/shift/shift_report_preview_sheet.dart` | **Trigger (reprint):** manual Z-report print/reprint from shift history. Widget preview. |
+| `/Users/shawket/Desktop/madar-pos/lib/features/delivery/delivery_orders_screen.dart` | **Trigger:** `_maybePrintReceipt` — prints delivery receipt once at Confirm/accept (guards on `order.receiptPrinted`). |
+| `/Users/shawket/Desktop/madar-pos/lib/shared/widgets/animated_icons.dart` | UI only: `PrinterPainter` printing spinner. Not logic. |
 | `~/.pub-cache/.../starxpand_sdk_wrapper-1.0.2` | **Native plugin (iOS/Android only).** Pigeon bridge to Star's SDK: `startDiscovery`, `connect`, `printPdf` (rasters PDF → PNG → `printImage`), `openCashDrawer`, `getStatus`, `disconnect`. |
 | `pubspec.yaml` deps | `pdf ^3.11.1` (build PDF), `printing ^5.14.2` (`Printing.raster` PDF→bitmap), `starxpand_sdk_wrapper ^1.0.2` (Star native), `flutter_cache_manager ^3.4.1` (logo cache). |
 

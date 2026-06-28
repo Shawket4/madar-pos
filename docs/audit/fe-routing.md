@@ -169,13 +169,13 @@ impl Core {
 ---
 
 ## Key files (absolute paths)
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/router/router.dart` — central redirect (rows 1-11) + `_AuthListenable`.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/auth_notifier.dart` — auth state, `_forceLogout`/`_expireDuringHydrate`, 401/403 callbacks, `revalidateSession`.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/shift_notifier.dart` — `hasOpenShift`, `seedFromAuth`/`loadLocal`/`load`, `handleOpenRejected`.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/api/client.dart` — Dio interceptor wiring 401→`onUnauthorizedCallback`, 403→`onForbiddenCallback`.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/repositories/auth_repository.dart` — `restoreSession`, `login` (401/403/409 mapping), `logout`, `validateToken`.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/repositories/shift_repository.dart` — `loadShiftLocal` (cache→`hasOpenShift`).
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/storage/storage_service.dart` — `isDeviceConfigured`, `loadShift`/`loadBranch`, token, offline-unlock keys.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/shift.dart` — `isOpen == status == 'open'` (no force-closed state).
-- `/Users/shawket/Desktop/sufrix_pos/lib/main.dart` — lifecycle `revalidateSession` (row 14), `onShiftOpenRejected` (row 22).
+- `/Users/shawket/Desktop/madar-pos/lib/core/router/router.dart` — central redirect (rows 1-11) + `_AuthListenable`.
+- `/Users/shawket/Desktop/madar-pos/lib/core/providers/auth_notifier.dart` — auth state, `_forceLogout`/`_expireDuringHydrate`, 401/403 callbacks, `revalidateSession`.
+- `/Users/shawket/Desktop/madar-pos/lib/core/providers/shift_notifier.dart` — `hasOpenShift`, `seedFromAuth`/`loadLocal`/`load`, `handleOpenRejected`.
+- `/Users/shawket/Desktop/madar-pos/lib/core/api/client.dart` — Dio interceptor wiring 401→`onUnauthorizedCallback`, 403→`onForbiddenCallback`.
+- `/Users/shawket/Desktop/madar-pos/lib/core/repositories/auth_repository.dart` — `restoreSession`, `login` (401/403/409 mapping), `logout`, `validateToken`.
+- `/Users/shawket/Desktop/madar-pos/lib/core/repositories/shift_repository.dart` — `loadShiftLocal` (cache→`hasOpenShift`).
+- `/Users/shawket/Desktop/madar-pos/lib/core/storage/storage_service.dart` — `isDeviceConfigured`, `loadShift`/`loadBranch`, token, offline-unlock keys.
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/shift.dart` — `isOpen == status == 'open'` (no force-closed state).
+- `/Users/shawket/Desktop/madar-pos/lib/main.dart` — lifecycle `revalidateSession` (row 14), `onShiftOpenRejected` (row 22).
 - Imperative nav (rows 17-23): `lib/features/order/order_screen.dart`, `lib/features/shift/open_shift_screen.dart`, `lib/features/shift/close_shift_screen.dart`, `lib/features/order/widgets/action_drawer.dart`, `lib/features/setup/device_setup_screen.dart`.

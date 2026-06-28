@@ -4,7 +4,7 @@ I have everything needed for the audit. Both `orders` and `delivery_orders` have
 
 # Backend Audit: Recipe-Driven Stock Depletion & Delivery Lifecycle (Offline-First)
 
-Root audited: `/Users/shawket/Desktop/SufrixRust/src`
+Root audited: `/Users/shawket/Desktop/MadarRust/src`
 
 ## 1. Depletion Model & Replay-Safety Verdict
 

@@ -1,6 +1,6 @@
 # FE Menu / Catalog Layer — Audit & `rust-core::menu` Module Spec
 
-> Focused re-audit (the first pass under-delivered). Scope: the Madar POS catalog that feeds the order screen and the **client-authoritative** pricing engine. Money is integer **piastres** (1 EGP = 100). Evidence cited as `path:line`. FE root: `/Users/shawket/Desktop/sufrix_pos/lib`; wire models `packages/madar_api/lib/src/model`; backend `/Users/shawket/Desktop/SufrixRust`.
+> Focused re-audit (the first pass under-delivered). Scope: the Madar POS catalog that feeds the order screen and the **client-authoritative** pricing engine. Money is integer **piastres** (1 EGP = 100). Evidence cited as `path:line`. FE root: `/Users/shawket/Desktop/madar-pos/lib`; wire models `packages/madar_api/lib/src/model`; backend `/Users/shawket/Desktop/MadarRust`.
 
 ---
 

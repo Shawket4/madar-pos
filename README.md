@@ -29,7 +29,7 @@ madar-rebuild/
 
 ## Source of truth
 
-The backend OpenAPI spec (`../SufrixRust/openapi.json`, OpenAPI 3.1.0 — 230
+The backend OpenAPI spec (`../MadarRust/openapi.json`, OpenAPI 3.1.0 — 230
 operations, 264 schemas) is the **only** source of truth. The Rust API client is
 generated from it with `openapi-generator -g rust` via
 `rust-core/tool/generate_api.sh`. No endpoint paths or payloads are hardcoded.

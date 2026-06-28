@@ -2,7 +2,7 @@ I have everything I need. This is a read-only mapping task; returning the spec d
 
 # Order History Screen — Rebuild Spec (Flutter → SwiftUI/Compose table)
 
-Source: `/Users/shawket/Desktop/sufrix_pos/lib/features/order/order_history_screen.dart` (the whole screen lives in this one file), `order_history_notifier.dart`, `order.dart` (= generated `OrderFull`), `void_order_sheet.dart`, `receipt_preview_sheet.dart`, `helpers/payment_helpers.dart`, `utils/formatting.dart`, `shared/widgets/status_chip.dart`.
+Source: `/Users/shawket/Desktop/madar-pos/lib/features/order/order_history_screen.dart` (the whole screen lives in this one file), `order_history_notifier.dart`, `order.dart` (= generated `OrderFull`), `void_order_sheet.dart`, `receipt_preview_sheet.dart`, `helpers/payment_helpers.dart`, `utils/formatting.dart`, `shared/widgets/status_chip.dart`.
 
 ## 1. List or table?
 

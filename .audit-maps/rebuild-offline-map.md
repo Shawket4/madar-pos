@@ -1,6 +1,6 @@
 I now have a complete picture of the entire end-to-end flow. The `fetch_order_or_404` confirms the void-404 path (order never synced). I have everything needed to write the report.
 
-# Offline Sync System — End-to-End Audit Map (Rust core + SufrixRust backend)
+# Offline Sync System — End-to-End Audit Map (Rust core + MadarRust backend)
 
 This maps the complete offline → online replay system as implemented today. All file paths are absolute. Line references are to the versions read in this session.
 
@@ -15,9 +15,9 @@ This maps the complete offline → online replay system as implemented today. Al
 | Orchestrator | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/lib.rs` | `MadarCore`: enqueue from each op (open/close/order/void/cash), `drain_outbox`, `send_outbox_item`, backoff, connectivity reconcile, login/sign-in, shift adoption. |
 | Session/auth | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/session.rs` | Online login wire build; offline PIN unlock (argon2id) against cached org bundle; teller attribution identity. |
 | Shift logic | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/shift.rs` | Optimistic local shift, close-local, server-vs-local `reconcile` (bounce-proofing). |
-| Backend replay | `/Users/shawket/Desktop/SufrixRust/src/sync/{mod.rs,handlers.rs,routes.rs}` | `POST /sync/replay`; `ActingContext` (live vs replay); per-op org/teller validation; dispatch to the shared `*_inner` handlers. |
-| Backend login guard | `/Users/shawket/Desktop/SufrixRust/src/auth/handlers.rs` | Open-shift login rules + `X-Sufrix-Closing-Shifts` handover acknowledgment. |
-| Inner handlers (idempotency) | `/Users/shawket/Desktop/SufrixRust/src/{shifts,orders}/handlers.rs` | Idempotency early-returns + unique-index backstops; replay-mode guard bypass. |
+| Backend replay | `/Users/shawket/Desktop/MadarRust/src/sync/{mod.rs,handlers.rs,routes.rs}` | `POST /sync/replay`; `ActingContext` (live vs replay); per-op org/teller validation; dispatch to the shared `*_inner` handlers. |
+| Backend login guard | `/Users/shawket/Desktop/MadarRust/src/auth/handlers.rs` | Open-shift login rules + `X-Madar-Closing-Shifts` handover acknowledgment. |
+| Inner handlers (idempotency) | `/Users/shawket/Desktop/MadarRust/src/{shifts,orders}/handlers.rs` | Idempotency early-returns + unique-index backstops; replay-mode guard bypass. |
 | Integration tests | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/tests/offline_replay.rs` | End-to-end offline → replay against a live dev backend (`--ignored`). |
 
 ---
@@ -144,7 +144,7 @@ The net guarantee: a lost-response retry (the same idempotency key replayed any 
 - **`clear_network_backoff`** (store.rs 370–376): zeroes `next_attempt_at` only for `attempts=0` rows with a positive gate (the no-count connectivity reschedules); counted server-error backoffs (`attempts>0`) keep their exponential gate. `sync_now` also calls it (lib.rs 1713–1718) so an explicit sync flushes immediately rather than waiting the 15s network window.
 - **Crash recovery**: every drain first runs `recover_inflight()` (inflight → pending) and `purge_acked_older_than(now − 48h)` (lib.rs 408–409). Idempotency makes the retry of a recovered inflight op safe.
 - **401 un-park**: a successful `login` clears `auth_paused` and re-drains (lib.rs 1160–1161, 1201).
-- **Login-time reconcile & handover**: `login` drains the backlog **before** adopting the shift (lib.rs 1196–1206), so the just-signed-in teller sees current server state. `closing_shift_ids_csv()` (lib.rs 360–369) is sent as `X-Sufrix-Closing-Shifts`; the backend's open-shift login guard (auth/handlers.rs 249–314) permits signing in over another teller's open shift **only** when that shift's id is in the acknowledged CSV (a legitimate offline handover whose close is queued), else 409. `sign_in` (lib.rs 1215–1273) adds an up-front ownership gate (a device's own open shift may only be resumed by its owner), a 7s online timeout, and the captive-portal/transport fallback to offline unlock (`is_connectivity_failure`, net.rs 266–275 — covers Offline/Transient, decode-failures, and 511/407/408, but never 401/403/400/422).
+- **Login-time reconcile & handover**: `login` drains the backlog **before** adopting the shift (lib.rs 1196–1206), so the just-signed-in teller sees current server state. `closing_shift_ids_csv()` (lib.rs 360–369) is sent as `X-Madar-Closing-Shifts`; the backend's open-shift login guard (auth/handlers.rs 249–314) permits signing in over another teller's open shift **only** when that shift's id is in the acknowledged CSV (a legitimate offline handover whose close is queued), else 409. `sign_in` (lib.rs 1215–1273) adds an up-front ownership gate (a device's own open shift may only be resumed by its owner), a 7s online timeout, and the captive-portal/transport fallback to offline unlock (`is_connectivity_failure`, net.rs 266–275 — covers Offline/Transient, decode-failures, and 511/407/408, but never 401/403/400/422).
 - **Shift bounce-proofing** (`shift::reconcile`, shift.rs 287–305): server "no open shift" is authoritative only once our own `open_shift` has acked (`open_pending` → KeepLocal); server "still open" is stale while our `close_shift` is queued (`close_pending` → KeepLocal). This prevents the optimistic shift from flickering on/off as commands sync.
 
 ---

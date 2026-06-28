@@ -468,4 +468,4 @@ These are core-internal invariants the hosts rely on but never implement:
 
 ---
 
-Relevant existing files referenced while grounding this design: `/Users/shawket/Desktop/sufrix_pos/tool/generate_api.sh` (the `./tool/generate_api.sh` regen entrypoint the Rust `madar_api` crate would mirror), `/Users/shawket/Desktop/sufrix_pos/packages/madar_api/` (current generated Dart wire-model package the Rust port replaces), and `/Users/shawket/Desktop/sufrix_pos/CLAUDE.md` (offline-first + generated-wire-model conventions). No Rust/UniFFI scaffolding exists yet — this is a greenfield surface.
+Relevant existing files referenced while grounding this design: `/Users/shawket/Desktop/madar-pos/tool/generate_api.sh` (the `./tool/generate_api.sh` regen entrypoint the Rust `madar_api` crate would mirror), `/Users/shawket/Desktop/madar-pos/packages/madar_api/` (current generated Dart wire-model package the Rust port replaces), and `/Users/shawket/Desktop/madar-pos/CLAUDE.md` (offline-first + generated-wire-model conventions). No Rust/UniFFI scaffolding exists yet — this is a greenfield surface.

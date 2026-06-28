@@ -14,13 +14,13 @@ Here is the spec.
 
 ---
 
-# Offline-Sync Backend Support (SufrixRust)
+# Offline-Sync Backend Support (MadarRust)
 
 > Scope: make the POS survive days offline and replay its write backlog safely. This section specifies the **backend** changes. Money is integer minor-units (piastres) everywhere relevant; nothing here introduces BigDecimal-as-string. All new endpoints are additive — see §6 for the no-break rollout.
 
 ## 0. What already exists (do not re-build)
 
-Audit of `SufrixRust` as of this plan:
+Audit of `MadarRust` as of this plan:
 
 | Capability | Status | Location |
 |---|---|---|

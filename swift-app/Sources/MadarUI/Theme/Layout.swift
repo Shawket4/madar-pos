@@ -1,7 +1,7 @@
 // Responsive layout tokens — one source of truth for breakpoints and content
 // max-widths so phone / tablet / desktop behave consistently across every
 // screen and match the Compose `Layout` object 1:1. Breakpoints mirror the
-// Flutter form-factor rules (sufrix_pos/lib/core/utils/responsive.dart):
+// Flutter form-factor rules (madar-pos/lib/core/utils/responsive.dart):
 // tablet ≥ 600 (shortest side), desktop ≥ 1100 (longest side). The rebuild
 // screens read the *container* width (GeometryReader), so these are the
 // width thresholds the layouts switch on. Values match what the screens

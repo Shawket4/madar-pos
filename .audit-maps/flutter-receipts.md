@@ -261,15 +261,15 @@ All sheets use **`ResponsiveSheet.show`** → a `showModalBottomSheet` (bottom-a
 **Color tokens used (light-ink, theme-invariant on the card):** paper `white`; ink `_ink.textPrimary/textSecondary/textMuted/border`; accents `_ink.navy` (qty, total value, bundle addons), `_ink.success` (discount green), `_ink.warning` (bundle optionals amber), `_ink.danger`+`_ink.dangerBg` (voided). PDF accents: `PdfColors.red700` (discount/short), `grey600/grey700/grey400` (dividers/labels), `green700` (pay-in/match), `orange700` (over).
 
 **Relevant file paths (all absolute):**
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/order/widgets/receipt_preview_sheet.dart` — preview sheet + `ThermalReceiptCard` + `ReceiptItemRow` + dotted divider.
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/order/widgets/receipt_sheet.dart` — post-checkout success/auto-print sheet.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/services/printer_service.dart` — PDF builders + Star/Epson transport + logo download.
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/shift/shift_report_preview_sheet.dart` — Z-report preview sheet.
-- `/Users/shawket/Desktop/sufrix_pos/lib/shared/widgets/responsive_sheet.dart` — 600-wide bottom-sheet wrapper.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/utils/formatting.dart` — `egp`, `dateTime`, `timeShort`, `normaliseName`.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/utils/app_tz.dart` — branch-timezone clock.
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/theme/app_theme.dart` — `ui()`/`money()`, `AppSpace`, `AppRadius`, `sheetRadius`, Cairo family.
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/order/helpers/payment_helpers.dart` — `methodLabel`, `isCashMethod`.
-- `/Users/shawket/Desktop/sufrix_pos/packages/madar_api/lib/src/model/branch.dart` — wire `Branch` (`orgLogoUrl`, `name`, `timezone`, `printer*`; `address`/`phone` exist but unused on receipts; no tax-id/org-name field).
-- `/Users/shawket/Desktop/sufrix_pos/lib/l10n/app_en.arb` — all i18n keys above.
+- `/Users/shawket/Desktop/madar-pos/lib/features/order/widgets/receipt_preview_sheet.dart` — preview sheet + `ThermalReceiptCard` + `ReceiptItemRow` + dotted divider.
+- `/Users/shawket/Desktop/madar-pos/lib/features/order/widgets/receipt_sheet.dart` — post-checkout success/auto-print sheet.
+- `/Users/shawket/Desktop/madar-pos/lib/core/services/printer_service.dart` — PDF builders + Star/Epson transport + logo download.
+- `/Users/shawket/Desktop/madar-pos/lib/features/shift/shift_report_preview_sheet.dart` — Z-report preview sheet.
+- `/Users/shawket/Desktop/madar-pos/lib/shared/widgets/responsive_sheet.dart` — 600-wide bottom-sheet wrapper.
+- `/Users/shawket/Desktop/madar-pos/lib/core/utils/formatting.dart` — `egp`, `dateTime`, `timeShort`, `normaliseName`.
+- `/Users/shawket/Desktop/madar-pos/lib/core/utils/app_tz.dart` — branch-timezone clock.
+- `/Users/shawket/Desktop/madar-pos/lib/core/theme/app_theme.dart` — `ui()`/`money()`, `AppSpace`, `AppRadius`, `sheetRadius`, Cairo family.
+- `/Users/shawket/Desktop/madar-pos/lib/features/order/helpers/payment_helpers.dart` — `methodLabel`, `isCashMethod`.
+- `/Users/shawket/Desktop/madar-pos/packages/madar_api/lib/src/model/branch.dart` — wire `Branch` (`orgLogoUrl`, `name`, `timezone`, `printer*`; `address`/`phone` exist but unused on receipts; no tax-id/org-name field).
+- `/Users/shawket/Desktop/madar-pos/lib/l10n/app_en.arb` — all i18n keys above.
 - Entry points: `order_history_screen.dart:1355`, `checkout_sheet.dart:350` & `:718`, `shift_history_screen.dart:727`.

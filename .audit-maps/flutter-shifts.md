@@ -190,10 +190,10 @@ Report-sheet status chip: open → `shiftReportOpenChip` (success); else → `sh
 - Row "action" today is a single expand affordance; explicit per-row actions worth surfacing as table buttons: **View/Print report** (`_printReport` → `ShiftReportPreviewSheet`) and per-order **print receipt** (inside the expansion).
 
 Relevant files (absolute):
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/shift/shift_history_screen.dart`
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/shift/shift_report_preview_sheet.dart`
-- `/Users/shawket/Desktop/sufrix_pos/lib/features/shift/cash_movements_screen.dart`
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/shift.dart`
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/models/shift_report.dart`
-- `/Users/shawket/Desktop/sufrix_pos/lib/core/providers/shift_notifier.dart`
-- Formatting helpers: `/Users/shawket/Desktop/sufrix_pos/lib/core/utils/formatting.dart`, `/Users/shawket/Desktop/sufrix_pos/lib/core/utils/app_tz.dart`
+- `/Users/shawket/Desktop/madar-pos/lib/features/shift/shift_history_screen.dart`
+- `/Users/shawket/Desktop/madar-pos/lib/features/shift/shift_report_preview_sheet.dart`
+- `/Users/shawket/Desktop/madar-pos/lib/features/shift/cash_movements_screen.dart`
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/shift.dart`
+- `/Users/shawket/Desktop/madar-pos/lib/core/models/shift_report.dart`
+- `/Users/shawket/Desktop/madar-pos/lib/core/providers/shift_notifier.dart`
+- Formatting helpers: `/Users/shawket/Desktop/madar-pos/lib/core/utils/formatting.dart`, `/Users/shawket/Desktop/madar-pos/lib/core/utils/app_tz.dart`
