@@ -1,4 +1,4 @@
-//! Sufrix POS shared core.
+//! Madar POS shared core.
 //!
 //! THE ONE RULE: all real logic lives here. The Swift (iPhone/iPad) and Kotlin
 //! (Android + desktop) apps are UI and platform glue only — they call into this
@@ -102,7 +102,7 @@ pub fn ffi_surface_version() -> u32 {
 /// Smoke-test call used to prove the binding pipeline end-to-end from each host.
 #[uniffi::export]
 pub fn greet(name: String) -> String {
-    format!("Sufrix core v{} says hello, {name}", core_version())
+    format!("Madar core v{} says hello, {name}", core_version())
 }
 
 /// The screen the host should show, decided by the core (PLAN §R11). The host
@@ -1998,7 +1998,7 @@ impl MadarCore {
         let ack_closing = self.closing_shift_ids_csv();
         let body = self
             .api
-            .post_with_header("/auth/login", &wire, ("X-Sufrix-Closing-Shifts", &ack_closing))
+            .post_with_header("/auth/login", &wire, ("X-Madar-Closing-Shifts", &ack_closing))
             .await?;
         let resp: madar_api::models::LoginResponse = serde_json::from_str(&body)
             .map_err(|e| CoreError::Internal { detail: format!("decode: {e}") })?;
@@ -4079,11 +4079,12 @@ mod tests {
         .unwrap();
 
         // Seed the org bundle the offline unlock verifies against.
-        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
         let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
         let bundle = serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": [{
                 "user_id": "00000000-0000-0000-0000-0000000000bb",
                 "name": "Sara", "role": "teller", "is_active": true,
@@ -4219,7 +4220,7 @@ mod lifecycle_tests {
             locale: "en".into(),
         })
         .unwrap();
-        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
         let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
         core.store
             .kv_put(
@@ -4227,6 +4228,7 @@ mod lifecycle_tests {
                 &serde_json::json!({
                     "org_id": "00000000-0000-0000-0000-0000000000aa",
                     "generated_at": "2026-06-19T10:00:00Z",
+                    "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
                     "tellers": [{ "user_id": "00000000-0000-0000-0000-0000000000bb",
                         "name": "Sara", "role": "teller", "is_active": true, "offline_pin_hash": phc }]
                 })
@@ -4367,7 +4369,7 @@ mod lifecycle_tests {
             locale: "en".into(),
         })
         .unwrap();
-        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
         let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
         core.store
             .kv_put(
@@ -4375,6 +4377,7 @@ mod lifecycle_tests {
                 &serde_json::json!({
                     "org_id": "00000000-0000-0000-0000-0000000000aa",
                     "generated_at": "2026-06-19T10:00:00Z",
+                    "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
                     "tellers": [{ "user_id": "00000000-0000-0000-0000-0000000000bb",
                         "name": "Sara", "role": "teller", "is_active": true, "offline_pin_hash": phc }]
                 })
@@ -4445,7 +4448,7 @@ mod lifecycle_tests {
             locale: "en".into(),
         })
         .unwrap();
-        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
         let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
         core.store
             .kv_put(
@@ -4453,6 +4456,7 @@ mod lifecycle_tests {
                 &serde_json::json!({
                     "org_id": "00000000-0000-0000-0000-0000000000aa",
                     "generated_at": "2026-06-19T10:00:00Z",
+                    "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
                     "tellers": [{ "user_id": "00000000-0000-0000-0000-0000000000bb",
                         "name": "Sara", "role": "teller", "is_active": true, "offline_pin_hash": phc }]
                 })
@@ -4580,11 +4584,12 @@ mod lifecycle_tests {
         })
         .unwrap();
 
-        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
         let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
         let bundle = serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": [{
                 "user_id": "00000000-0000-0000-0000-0000000000bb",
                 "name": "Sara", "role": "teller", "is_active": true,

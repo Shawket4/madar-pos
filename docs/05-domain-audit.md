@@ -1,8 +1,8 @@
-# Sufrix POS — Selling-Core & Domain Audit (Extraction Map, Part 2)
+# Madar POS — Selling-Core & Domain Audit (Extraction Map, Part 2)
 
 > Companion to `04-offline-audit.md`. Covers cart/pricing, checkout/payment/void, menu/catalog, delivery/realtime, inventory/recipe + backend pricing authority & stock depletion. Raw findings in `docs/audit/`.
 
-# Sufrix POS Rebuild — Selling-Core, Inventory & Delivery Audit (Report 02)
+# Madar POS Rebuild — Selling-Core, Inventory & Delivery Audit (Report 02)
 
 > Companion to `docs/04-offline-audit.md` (printing, offline/cache, routing, shift/auth, backend offline support). This report covers the **selling core** (cart pricing, checkout/payment/void), **menu/catalog**, **inventory/recipe**, and **delivery + realtime**, and folds them into the locked rebuild architecture: **all logic in a shared Rust core (UniFFI), thin SwiftUI/Compose UIs; one drawer per branch; Epson + Star fully in Rust over TCP.**
 

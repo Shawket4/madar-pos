@@ -6,12 +6,12 @@ I now have a complete file-by-file picture. Compiling the final parity report.
 
 # Kotlin/Compose vs SwiftUI — File-by-File Parity Gap
 
-Swift is source of truth. Kotlin dir: `…/kotlin-app/composeApp/src/commonMain/kotlin/app/sufrix/`. Every Swift screen/component has a Kotlin counterpart that **exists** — there are **no fully-missing screens**. Gaps are missing *features/states/affordances* and a systematic icon-omission in the shared component library.
+Swift is source of truth. Kotlin dir: `…/kotlin-app/composeApp/src/commonMain/kotlin/app/madar/`. Every Swift screen/component has a Kotlin counterpart that **exists** — there are **no fully-missing screens**. Gaps are missing *features/states/affordances* and a systematic icon-omission in the shared component library.
 
 ## P0 — Missing screen / broken-flow gaps
 
 ### 1. ReauthView → no Kotlin counterpart (entire re-auth flow absent)
-- **Swift**: `ReauthView.swift` (full PIN-pad re-auth sheet) + `AppModel.showReauth`, `reauth(pin:)`, `reauthSwitchTeller()`. `OrderView` presents it via `.sufrixSheet(isPresented: $app.showReauth …)` and the `syncAuthPaused` banner is a **tappable button** (`actionLabel: t("chrome.auth_paused_action")`) that sets `app.showReauth = true`.
+- **Swift**: `ReauthView.swift` (full PIN-pad re-auth sheet) + `AppModel.showReauth`, `reauth(pin:)`, `reauthSwitchTeller()`. `OrderView` presents it via `.madarSheet(isPresented: $app.showReauth …)` and the `syncAuthPaused` banner is a **tappable button** (`actionLabel: t("chrome.auth_paused_action")`) that sets `app.showReauth = true`.
 - **Kotlin**: **No `ReauthScreen`/`ReauthSheet` file. `AppModel.kt` has no `showReauth`, `reauth()`, or `reauthSwitchTeller()`.** In `OrderScreen.kt` the `syncAuthPaused` banner is a plain non-interactive `NoticeBanner` — a teller whose token expires mid-shift has **no in-app way to re-authenticate and resume syncing**. This is a functional dead-end.
 - Action: port `ReauthView`, add `showReauth`/`reauth`/`reauthSwitchTeller` to Kotlin `AppModel`, make the auth-paused banner tappable, present the sheet.
 
@@ -39,7 +39,7 @@ Swift is source of truth. Kotlin dir: `…/kotlin-app/composeApp/src/commonMain/
 
 ### 7. ReceiptConfirmation — status iconography differs (Kotlin, Tender)
 - **Swift** shows a large success/queued status icon (`checkmark.circle.fill` vs `clock.badge.checkmark`), a queued/sent `StatusChip` *with* icon, and "New order" as an **outline** button with a `plus` icon.
-- **Kotlin** shows `SufrixMark` (logo) instead of the success/queued status glyph; the queued/sent chip has no icon; "New order" is a default primary button. Also `ReceiptLineRow` is defined but appears **unused** (ReceiptPaper renders lines) — dead code.
+- **Kotlin** shows `MadarMark` (logo) instead of the success/queued status glyph; the queued/sent chip has no icon; "New order" is a default primary button. Also `ReceiptLineRow` is defined but appears **unused** (ReceiptPaper renders lines) — dead code.
 
 ### 8. Sync center — leading tone icon missing (Kotlin)
 - **Swift** `SyncView` row has a 38×38 tone-bg square with an **op icon** (`opIcon`: play.circle / lock / doc.text / exclamationmark.circle for dead). 
@@ -47,8 +47,8 @@ Swift is source of truth. Kotlin dir: `…/kotlin-app/composeApp/src/commonMain/
 
 ### 9. Shared component library — systematic icon omissions (Kotlin `ui/Components.kt`)
 The Kotlin component APIs drop the icon parameters that Swift's expose and that the screens rely on:
-- **`SufrixButton`** — Swift has `icon:` (renders SF Symbol beside label, used everywhere: checkmark/printer/lock/plus/lock.open/creditcard…). Kotlin `SufrixButton` has **no icon param** → every Kotlin button is text-only.
-- **`SufrixTextField`** — Swift has `icon:` + `caps:` (person/envelope/lock/magnifyingglass/note.text/text.bubble). Kotlin has **no icon/caps params** → all fields are icon-less.
+- **`MadarButton`** — Swift has `icon:` (renders SF Symbol beside label, used everywhere: checkmark/printer/lock/plus/lock.open/creditcard…). Kotlin `MadarButton` has **no icon param** → every Kotlin button is text-only.
+- **`MadarTextField`** — Swift has `icon:` + `caps:` (person/envelope/lock/magnifyingglass/note.text/text.bubble). Kotlin has **no icon/caps params** → all fields are icon-less.
 - **`StatusChip`** — Swift has optional `icon:` (leading SF Symbol). Kotlin always renders a **colored dot**, no icon support.
 - **`NoticeBanner`** — Swift takes a leading `icon:`. Kotlin renders **text only**, no icon.
 - **`ToastData`/`ToastHost`** — Swift `ToastData.icon` renders a leading symbol; Kotlin `ToastData` has **no `icon` field** → toasts are icon-less.
@@ -66,7 +66,7 @@ The Kotlin component APIs drop the icon parameters that Swift's expose and that 
 - **Toast**: Swift `showToast` accepts `icon:`; Kotlin `showToast` signature has no `icon` (subsumed by #9).
 
 ## Faithful mirrors (parity OK)
-AppModel (modulo #2), ContentView/App, LoginView/LoginScreen, OpenShiftView/OpenShiftScreen (modulo #3), CloseShiftView/CloseShiftScreen, OrderView/OrderScreen (modulo #1 banner, #9 icons, P2 anim), ItemDetailView/ItemDetailSheet (size/addons/optionals/recipe/show-all/search/qty-chips all present), BundleDetailView/BundleDetailSheet, TenderView/TenderScreen (modulo #5–7), OrderHistoryView+VoidSheet/OrderHistoryScreen (void overlay folded in), CashMovements, DeliveryView/DeliveryScreen, DraftsView/DraftsScreen, SettingsView/SettingsScreen, SyncView/SyncScreen (modulo #8), ShiftReportPreview (breakdown + preview), ReceiptPaper + ReceiptPreviewScreen, PinPad, MenuItemCard (category HSL palette, monogram, in-cart badge, decorative ring all matched), BrandPanel, SufrixMark, Skeleton, Money, MaxExtentCells.
+AppModel (modulo #2), ContentView/App, LoginView/LoginScreen, OpenShiftView/OpenShiftScreen (modulo #3), CloseShiftView/CloseShiftScreen, OrderView/OrderScreen (modulo #1 banner, #9 icons, P2 anim), ItemDetailView/ItemDetailSheet (size/addons/optionals/recipe/show-all/search/qty-chips all present), BundleDetailView/BundleDetailSheet, TenderView/TenderScreen (modulo #5–7), OrderHistoryView+VoidSheet/OrderHistoryScreen (void overlay folded in), CashMovements, DeliveryView/DeliveryScreen, DraftsView/DraftsScreen, SettingsView/SettingsScreen, SyncView/SyncScreen (modulo #8), ShiftReportPreview (breakdown + preview), ReceiptPaper + ReceiptPreviewScreen, PinPad, MenuItemCard (category HSL palette, monogram, in-cart badge, decorative ring all matched), BrandPanel, MadarMark, Skeleton, Money, MaxExtentCells.
 
 ### Suggested port order
 1. **Reauth flow** (P0 #1) + AppModel reconnect-adoption (#2) + OpenShift heartbeat (#3) — these are functional/offline-correctness defects.

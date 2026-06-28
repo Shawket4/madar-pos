@@ -1,0 +1,158 @@
+name: Release
+
+# Multi-platform build for the Madar POS (Kotlin Multiplatform + SwiftUI + Rust core).
+# Modeled on the legacy Flutter app's Release workflow. Triggered by a version tag.
+#
+# The Rust core (madar-core) is compiled per-platform; the typed API client
+# (crates/madar-api) is gitignored and regenerated from the committed openapi.json
+# snapshot before any build.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+env:
+  NDK_VERSION: "26.3.11579264"
+
+jobs:
+  # ── Android APK ──────────────────────────────────────────────────────────────
+  android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust (Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: sdkmanager "ndk;${NDK_VERSION}"
+
+      - name: Regenerate typed API client
+        run: SKIP_EXPORT=1 MADAR_BACKEND_DIR="$PWD" bash rust-core/tool/generate_api.sh
+
+      - name: Build native libs + Kotlin bindings
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+        run: bash rust-core/tool/build-android.sh
+
+      - name: Generate debug keystore (release is debug-signed for testing)
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -v -keystore ~/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" || true
+
+      - name: Build APK
+        working-directory: kotlin-app
+        run: ./gradlew :composeApp:assembleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: kotlin-app/composeApp/build/outputs/apk/release/*.apk
+
+  # ── Desktop (Linux + macOS) ──────────────────────────────────────────────────
+  desktop:
+    name: Build Desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Regenerate typed API client
+        run: SKIP_EXPORT=1 MADAR_BACKEND_DIR="$PWD" bash rust-core/tool/generate_api.sh
+
+      - name: Build host native lib + bindings
+        run: bash rust-core/tool/build-bindings.sh
+
+      - name: Package desktop distribution
+        working-directory: kotlin-app
+        run: ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: kotlin-app/composeApp/build/compose/binaries/main-release/**
+
+  # ── iOS (build check; unsigned) ──────────────────────────────────────────────
+  ios:
+    name: Build iOS (unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust (iOS targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Regenerate typed API client
+        run: SKIP_EXPORT=1 MADAR_BACKEND_DIR="$PWD" bash rust-core/tool/generate_api.sh
+
+      - name: Build Rust xcframework + Swift bindings
+        run: bash rust-core/tool/build-ios.sh
+
+      - name: Build app (simulator, no code signing)
+        working-directory: swift-app
+        run: |
+          xcodebuild -project MadarPOS.xcodeproj -scheme MadarPOS \
+            -sdk iphonesimulator -configuration Release \
+            CODE_SIGNING_ALLOWED=NO build
+
+  # ── GitHub Release ───────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [android, desktop]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Madar POS ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: artifacts/**/*

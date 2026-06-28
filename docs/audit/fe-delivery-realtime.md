@@ -1,6 +1,6 @@
 Confirmed: delivery mutations never touch the offline queue — they are online-only direct API calls. I have everything needed.
 
-# Delivery + Realtime Subsystem Audit — Sufrix POS
+# Delivery + Realtime Subsystem Audit — Madar POS
 
 ## 1. Realtime delivery flow
 

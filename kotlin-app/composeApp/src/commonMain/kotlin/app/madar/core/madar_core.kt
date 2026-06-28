@@ -7901,7 +7901,7 @@ public object FfiConverterTypeLoginRequest: FfiConverterRustBuffer<LoginRequest>
  */
 data class MadarConfig (
     /**
-     * API base URL, e.g. `https://api.sufrix.app`.
+     * API base URL, e.g. `https://api.madar-pos.cloud`.
      */
     var `baseUrl`: kotlin.String, 
     /**

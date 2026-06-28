@@ -30,7 +30,7 @@ kotlin {
             // Compose resources — the real brand assets in composeResources/.
             implementation(compose.components.resources)
             implementation(libs.kotlinx.coroutines.core)
-            // The generated UniFFI binding (app/sufrix/core/sufrix_core.kt) lives in
+            // The generated UniFFI binding (app/madar/core/madar_core.kt) lives in
             // commonMain and needs JNA to COMPILE. `compileOnly` keeps the plain jna
             // .jar off the runtime classpath so it can't collide with the Android
             // @aar below (same com.sun.jna classes → checkDuplicateClasses fails).

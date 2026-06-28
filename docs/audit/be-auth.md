@@ -2,7 +2,7 @@ Confirmed: the only token issuance for app auth is `auth/handlers.rs::login`, an
 
 ---
 
-# Sufrix Backend Auth/Token Audit — Offline Re-Auth & Shift-Reopen
+# Madar Backend Auth/Token Audit — Offline Re-Auth & Shift-Reopen
 
 ## 1. Token / Claims Model
 

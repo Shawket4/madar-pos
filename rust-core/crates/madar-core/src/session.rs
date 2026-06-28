@@ -361,6 +361,7 @@ mod tests {
         let bundle = serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": [{
                 "user_id": "00000000-0000-0000-0000-0000000000bb",
                 "name": "Sara", "role": "teller", "is_active": true,
@@ -400,7 +401,7 @@ mod tests {
     fn backend_hash(pin: &str) -> String {
         use argon2::password_hash::SaltString;
         use argon2::PasswordHasher;
-        let salt = SaltString::encode_b64(b"sufrix-test-salt").unwrap();
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
         Argon2::default().hash_password(pin.as_bytes(), &salt).unwrap().to_string()
     }
 
@@ -722,6 +723,7 @@ mod tests {
         let bundle: models::OfflineAuthBundle = serde_json::from_value(serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": []
         })).unwrap();
         let snapshot = SessionSnapshot {
@@ -756,6 +758,7 @@ mod tests {
         let bundle: models::OfflineAuthBundle = serde_json::from_value(serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": [{
                 "user_id": "00000000-0000-0000-0000-0000000000bb",
                 "name": "Mona", "role": "teller", "is_active": true,
@@ -791,6 +794,7 @@ mod tests {
         let bundle = serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": [{
                 "user_id": "00000000-0000-0000-0000-0000000000bb",
                 "name": name, "role": "teller", "is_active": is_active,
@@ -848,6 +852,7 @@ mod tests {
         let bundle = serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": [{
                 "user_id": "00000000-0000-0000-0000-0000000000bb",
                 "name": "Sara", "role": "teller", "is_active": true,
@@ -897,6 +902,7 @@ mod tests {
         let bundle = serde_json::json!({
             "org_id": "00000000-0000-0000-0000-0000000000aa",
             "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
             "tellers": [
                 {"user_id": "00000000-0000-0000-0000-0000000000b1",
                  "name": "Alice", "role": "teller", "is_active": true, "offline_pin_hash": phc_a},

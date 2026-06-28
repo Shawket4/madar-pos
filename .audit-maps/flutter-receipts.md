@@ -2,7 +2,7 @@ I now have the complete picture. Here is the exhaustive spec.
 
 ---
 
-# Sufrix POS — RECEIPT SYSTEM MAP (spec to mirror 1:1)
+# Madar POS — RECEIPT SYSTEM MAP (spec to mirror 1:1)
 
 ## 0. Critical architectural fact: ON-SCREEN ≠ PRINTED
 
@@ -48,7 +48,7 @@ Vertical structure (exact, top→bottom):
 - `errorBuilder` → placeholder.
 - **Placeholder (`_buildPlaceholderLogo`):** bundled asset `Image.asset('assets/IconForeground.png', width:72, height:72)`. Used when no logo URL OR network image fails.
 - Padding around logo: `EdgeInsets.only(top: AppSpace.xl=24, bottom: AppSpace.sm=8)`.
-- **Branch name** below logo, centered: `branch?.name ?? 'Sufrix POS'`, `ui(size:15, weight:w700, color:_ink.textPrimary)`. (No org name, no address, no phone, no tax id.)
+- **Branch name** below logo, centered: `branch?.name ?? 'Madar POS'`, `ui(size:15, weight:w700, color:_ink.textPrimary)`. (No org name, no address, no phone, no tax id.)
 
 **ORDER DETAILS (`_buildOrderDetails`, L386–438):** left-aligned `_ReceiptInfoRow`s, horizontal padding `AppSpace.lg=16`, each separated by `SizedBox(AppSpace.xs=4)`.
 - **Voided stamp** (only if `order.isVoided`): full-width centered box, `_ink.dangerBg` fill, `_ink.danger@0.3` border, radius 4, `vertical: AppSpace.xs` padding, `margin bottom sm`; text `s.receiptVoidedStamp` = `"*** VOIDED ***"`, `ui(size:14, weight:w800, color:_ink.danger, letterSpacing:1.5)`.
@@ -244,7 +244,7 @@ All sheets use **`ResponsiveSheet.show`** → a `showModalBottomSheet` (bottom-a
 **Shift-report keys:** `shiftReportTitle`="Shift Report", `shiftReportOpenChip`="Open shift", `shiftStatusClosed`="Closed", `shiftReportDetails`="SHIFT DETAILS", `shiftColOpened`="Opened", `shiftColClosed`="Closed", `shiftOpeningCash`="Opening Cash", `shiftExpectedCash`="Expected Cash", `shiftDeclaredCash`="Declared cash", `shiftPaymentBreakdown`="PAYMENT BREAKDOWN", `shiftNoPayments`="No payments recorded", `commonOrdersCount`=`{count, plural, =1{1 order} other{{count} orders}}`, `shiftTotalPayments`="Total Payments", `shiftVoidedOrders`="Voided Orders", `shiftNetPayments`="Net Payments", `shiftCashMovementsHeader`="CASH MOVEMENTS", `shiftNoCashMovements`="No cash movements", `shiftPayIn`="Pay In", `shiftPayOut`="Pay Out", `shiftReportGenerated`=`Report generated {time}`, `shiftDrawerMatches`="Drawer matches", `shiftDrawerOver`=`Drawer is over by {amount}`, `shiftDrawerShort`=`Drawer is short by {amount}`, `commonPrintReport`="Print Report", `shiftReportPrinted`="Report printed".
 
 **HARDCODED string literals (NOT in arb — must be ported as literals):**
-- On-screen card: `'Ref'` label, `'Sufrix POS'` branch fallback, `'#${orderNumber}'`, ` · ` size separator, glyphs `+ • – ×`.
+- On-screen card: `'Ref'` label, `'Madar POS'` branch fallback, `'#${orderNumber}'`, ` · ` size separator, glyphs `+ • – ×`.
 - PDF: ALL strings are hardcoded English literals — `'Order #...'`, `'Ref: ...'`, `'*** VOIDED ***'`, `'*** DELIVERY — {ch} ***'`/`'*** DELIVERY ***'`, `In-Mall`/`Outside`, `Customer`/`Phone`/`Address:`/`Unit`/`Floor`/`Zone`/`Delivery Ref`/`Payment (hint)`/`Notes:`, `Subtotal`/`Discount`/`Tax`/`Delivery Fee`/`TOTAL`/`Payment`/`Teller`, `'Thank you for visiting!'`, `'Thank you for your order!'`, `'Till Close Report'`, `'Business Date:'`, `'Printed at'`/`'Closed at'`, `PAYMENTS`/`DRAWER OPERATIONS`/`CASH RECONCILIATION`, `'Pay In'`/`'Pay Out'`, `'Opening Cash'`/`'Expected in Drawer'`/`'Actual in Drawer'`, `'Short by'`/`'Over by'`/`'Difference'`, `'— End of Report —'`, `'— Interim Report (Shift Still Open) —'`, `'(Shift not yet closed)'`. **The printed output is English-only; only the on-screen previews are localized.**
 
 **Hardcoded layout constants:**
@@ -270,6 +270,6 @@ All sheets use **`ResponsiveSheet.show`** → a `showModalBottomSheet` (bottom-a
 - `/Users/shawket/Desktop/sufrix_pos/lib/core/utils/app_tz.dart` — branch-timezone clock.
 - `/Users/shawket/Desktop/sufrix_pos/lib/core/theme/app_theme.dart` — `ui()`/`money()`, `AppSpace`, `AppRadius`, `sheetRadius`, Cairo family.
 - `/Users/shawket/Desktop/sufrix_pos/lib/features/order/helpers/payment_helpers.dart` — `methodLabel`, `isCashMethod`.
-- `/Users/shawket/Desktop/sufrix_pos/packages/sufrix_api/lib/src/model/branch.dart` — wire `Branch` (`orgLogoUrl`, `name`, `timezone`, `printer*`; `address`/`phone` exist but unused on receipts; no tax-id/org-name field).
+- `/Users/shawket/Desktop/sufrix_pos/packages/madar_api/lib/src/model/branch.dart` — wire `Branch` (`orgLogoUrl`, `name`, `timezone`, `printer*`; `address`/`phone` exist but unused on receipts; no tax-id/org-name field).
 - `/Users/shawket/Desktop/sufrix_pos/lib/l10n/app_en.arb` — all i18n keys above.
 - Entry points: `order_history_screen.dart:1355`, `checkout_sheet.dart:350` & `:718`, `shift_history_screen.dart:727`.

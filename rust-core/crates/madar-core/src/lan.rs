@@ -257,7 +257,7 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-/// mDNS service type for Sufrix LAN peers.
+/// mDNS service type for Madar LAN peers.
 const SERVICE_TYPE: &str = "_madar._tcp.local.";
 /// Default TCP relay port (fixed so a manual hub-IP needs only the host typed in).
 pub const DEFAULT_TCP_PORT: u16 = 47600;
@@ -540,7 +540,7 @@ impl LanRelay {
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let instance = format!("sufrix-{}", self.shared.cfg.device_id);
+        let instance = format!("madar-{}", self.shared.cfg.device_id);
         let host = format!("{}.local.", self.shared.cfg.device_id);
         if let Ok(info) =
             mdns_sd::ServiceInfo::new(SERVICE_TYPE, &instance, &host, "", port, props)

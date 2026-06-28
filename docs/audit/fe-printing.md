@@ -2,7 +2,7 @@ I now have a complete and verified picture of the printing subsystem. The audit 
 
 ---
 
-# Sufrix POS — Printing Subsystem Audit (for Rust core reimplementation)
+# Madar POS — Printing Subsystem Audit (for Rust core reimplementation)
 
 ## 1. File inventory (printing-related)
 
@@ -10,7 +10,7 @@ I now have a complete and verified picture of the printing subsystem. The audit 
 |---|---|
 | `/Users/shawket/Desktop/sufrix_pos/lib/core/services/printer_service.dart` | **The whole engine.** Static `PrinterService` class: builds 3 PDF receipts (order, delivery, shift report), rasterizes them, owns transport for both printer brands, the ESC/POS bit-image encoder, cash-drawer kick, and logo download/cache. 936 lines — the one file to port. |
 | `/Users/shawket/Desktop/sufrix_pos/lib/core/models/branch.dart` | Façade re-exporting generated `Branch` + `PrinterBrand`; defines `branch.hasPrinter` getter that gates every print entry point (IP present AND brand recognized). |
-| `/Users/shawket/Desktop/sufrix_pos/packages/sufrix_api/lib/src/model/printer_brand.dart` | Generated enum: `star` / `epson` / `unknown_default_open_api`. Wire values come from backend. |
+| `/Users/shawket/Desktop/sufrix_pos/packages/madar_api/lib/src/model/printer_brand.dart` | Generated enum: `star` / `epson` / `unknown_default_open_api`. Wire values come from backend. |
 | `/Users/shawket/Desktop/sufrix_pos/lib/core/models/order.dart` | Façade: app `Order` = generated `OrderFull`; `OrderItem` = `OrderItemFull`. Adds `isBundleLine` (bundleId != null). Primary receipt data model. |
 | `/Users/shawket/Desktop/sufrix_pos/lib/core/models/delivery_order.dart` | Client-side delivery order model (frozen cart snapshot) — feeds the delivery receipt PDF before finalize. |
 | `/Users/shawket/Desktop/sufrix_pos/lib/core/models/shift_report.dart` | Façade: `ShiftReport` = `ShiftReportResponse`; `PaymentSummaryItem`, `CashMovementItem`. Feeds the Z-report ("Till Close Report") PDF. |

@@ -7,7 +7,7 @@
 /// Runtime configuration handed to [`crate::MadarCore`].
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct MadarConfig {
-    /// API base URL, e.g. `https://api.sufrix.app`.
+    /// API base URL, e.g. `https://api.madar-pos.cloud`.
     pub base_url: String,
     /// Environment name: `prod` | `staging` | `dev`.
     pub environment: String,
@@ -26,7 +26,7 @@ impl MadarConfig {
     pub fn from_env() -> Self {
         Self {
             base_url: option_env!("MADAR_BASE_URL")
-                .unwrap_or("https://sufrix.duckdns.org")
+                .unwrap_or("https://api.madar-pos.cloud")
                 .to_string(),
             environment: option_env!("MADAR_ENV").unwrap_or("prod").to_string(),
             db_path: String::new(),
@@ -90,10 +90,10 @@ mod tests {
     fn config_is_cloneable_and_field_writable() {
         // It's a plain Record: the host mutates fields directly (e.g. db_path).
         let mut c = MadarConfig::from_env();
-        c.db_path = "/tmp/sufrix.sqlite".to_string();
+        c.db_path = "/tmp/madar.sqlite".to_string();
         c.locale = "ar".to_string();
         let cloned = c.clone();
-        assert_eq!(cloned.db_path, "/tmp/sufrix.sqlite");
+        assert_eq!(cloned.db_path, "/tmp/madar.sqlite");
         assert_eq!(cloned.locale, "ar");
     }
 }

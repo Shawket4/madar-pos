@@ -1,12 +1,12 @@
-This is a Flutter POS app with no Rust core yet — the task is to author the design for one as a section of PLAN.md. The generated API package confirms the wire models live in `packages/sufrix_api`. I have everything I need from the domain inventory. Let me write the design.
+This is a Flutter POS app with no Rust core yet — the task is to author the design for one as a section of PLAN.md. The generated API package confirms the wire models live in `packages/madar_api`. I have everything I need from the domain inventory. Let me write the design.
 
 This is my return value, so I'll output the markdown directly.
 
 ---
 
-# Local Store & Offline/Sync Engine — Sufrix POS Rust Core
+# Local Store & Offline/Sync Engine — Madar POS Rust Core
 
-> Scope: the `sufrix_core` Rust crate (compiled as a `cdylib`, bridged to Flutter over FFI). It owns a single embedded SQLite database (via `rusqlite` + `r2d2_sqlite` pool) that is **the source of truth the Dart UI reads from**, online or offline. The UI never talks to Dio for hot-path reads; it calls FFI read APIs that resolve entirely against SQLite. Writes on the selling hot path go into a durable **outbox** and are drained by a background sync worker.
+> Scope: the `madar_core` Rust crate (compiled as a `cdylib`, bridged to Flutter over FFI). It owns a single embedded SQLite database (via `rusqlite` + `r2d2_sqlite` pool) that is **the source of truth the Dart UI reads from**, online or offline. The UI never talks to Dio for hot-path reads; it calls FFI read APIs that resolve entirely against SQLite. Writes on the selling hot path go into a durable **outbox** and are drained by a background sync worker.
 
 ## 0. Design tenets
 
@@ -18,7 +18,7 @@ This is my return value, so I'll output the markdown directly.
 | **Client owns identity & time** | No server `Idempotency-Key` contract exists. The client generates UUID `client_temp_id`, an `idempotency_key`, and stamps real-event timestamps (`created_at`/`opened_at`/`closed_at`/`voided_at`). |
 | **Money = integer minor-units** | `INTEGER` columns everywhere (piastres). `int32` vs `int64` width is a wire-deser concern only; SQLite `INTEGER` is 64-bit and absorbs both. **No `BigDecimal`-as-string in any teller-path domain.** |
 | **Quantities = REAL** | `current_stock`, `quantity_used`, `quantity_ordered`, recipe qtys are doubles → SQLite `REAL`. `NULL` means *unknown*, never 0. |
-| **Wire models are generated** | Mirror tables store the canonical wire JSON in a `payload` column + extract only the columns needed for indexing/filtering/merge. Deserialization uses the generated `sufrix_api` structs (Rust side), so untyped `*_translations`, free-form string "enums", and `serde(other)` fallbacks are handled once at the edge. |
+| **Wire models are generated** | Mirror tables store the canonical wire JSON in a `payload` column + extract only the columns needed for indexing/filtering/merge. Deserialization uses the generated `madar_api` structs (Rust side), so untyped `*_translations`, free-form string "enums", and `serde(other)` fallbacks are handled once at the edge. |
 
 ---
 
@@ -203,7 +203,7 @@ Why refinery over hand-rolled:
 
 **Staying in sync with backend schema changes** — the local schema is *not* the backend schema; it's a cache shaped by the **generated wire models**. The contract:
 
-1. Backend OpenAPI changes → run `./tool/generate_api.sh` (regenerates `packages/sufrix_api`, and the Rust `sufrix_api` model crate).
+1. Backend OpenAPI changes → run `./tool/generate_api.sh` (regenerates `packages/madar_api`, and the Rust `madar_api` model crate).
 2. **Mirror tables store full wire JSON in `payload`**, so additive wire fields (new optional field, new translation key) need **no migration** — they flow through transparently. A migration is only needed when a *new column* must be indexed/filtered/merged on (e.g. a new `is_featured` flag the grid sorts by).
 3. CI guard: a test deserializes a captured server sample through the generated model **and** re-serializes from `payload` to assert round-trip fidelity. If the backend renames/removes a field used as an extracted column, this test fails and forces a `Vxxx` migration.
 4. **Defensive deser is mandatory** so a newer backend never bricks an un-updated POS:
@@ -425,6 +425,6 @@ FFI also exposes **pull, non-streaming, query functions** for the dead-letter / 
 
 ### Notes for the rest of PLAN.md
 
-- No existing Rust core is present in the repo yet; the current Flutter app has hand-written wire facades in `lib/core/models/` and a generated Dart client in `packages/sufrix_api`. This engine adds a Rust `sufrix_core` crate (new `rust/` workspace) that the Flutter app loads over FFI, replacing direct Dio reads on the hot path while Dio remains the transport the core's own sync worker uses internally.
+- No existing Rust core is present in the repo yet; the current Flutter app has hand-written wire facades in `lib/core/models/` and a generated Dart client in `packages/madar_api`. This engine adds a Rust `madar_core` crate (new `rust/` workspace) that the Flutter app loads over FFI, replacing direct Dio reads on the hot path while Dio remains the transport the core's own sync worker uses internally.
 - `lib/core/models/pending_action.dart` already hints at an outbox concept on the Dart side; it should be retired in favor of the durable Rust `outbox` table so the queue survives process death and is drained off the UI isolate.
 - The four teller-path money widths (`int32` Shift vs `int64` ShiftSummary, etc.) are a *wire-deser* concern only; all SQLite money columns are 64-bit `INTEGER`, so no local truncation risk.

@@ -2,7 +2,7 @@ I have a complete and precise picture of all five flows. Here is the audit.
 
 ---
 
-# Sufrix POS — Shift / Cash-Movement / Auth-Session Audit
+# Madar POS — Shift / Cash-Movement / Auth-Session Audit
 
 ## TL;DR
 

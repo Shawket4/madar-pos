@@ -1,31 +1,31 @@
-Confirmed: no Rust/UniFFI scaffold exists yet (pure Flutter + generated Dart `sufrix_api`), and the API generation pattern (`tool/generate_api.sh`) and offline strategy match the brief. This is a greenfield FFI design. Here is the PLAN.md section.
+Confirmed: no Rust/UniFFI scaffold exists yet (pure Flutter + generated Dart `madar_api`), and the API generation pattern (`tool/generate_api.sh`) and offline strategy match the brief. This is a greenfield FFI design. Here is the PLAN.md section.
 
 ---
 
-# Sufrix POS Rust Core — UniFFI FFI Surface (v0)
+# Madar POS Rust Core — UniFFI FFI Surface (v0)
 
 > **Status legend:** **[P1]** ships in Phase 1 (login + order hot-path + shift open/close + outbox). **[P2]** Phase 2 (full read-cache mirror, reactive observers, delivery tickets). **[Later]** post-MVP / back-office, not on the teller path. Anything unmarked is the stable contract that all three hosts (SwiftUI, Compose-Android, Compose-Desktop) bind to.
 >
-> **Naming convention:** all generated wire structs live in the `sufrix_api` crate (Rust port of the OpenAPI spec, regenerated via `./tool/generate_api.sh`). The FFI crate (`sufrix_ffi`) re-exports a **curated subset** of those as `Record`s and defines **hand-written view DTOs** where the wire shape is hostile (allOf flattening, untyped `*_translations`, int32/int64 money splits). Hosts never see raw wire types they shouldn't.
+> **Naming convention:** all generated wire structs live in the `madar_api` crate (Rust port of the OpenAPI spec, regenerated via `./tool/generate_api.sh`). The FFI crate (`madar_ffi`) re-exports a **curated subset** of those as `Record`s and defines **hand-written view DTOs** where the wire shape is hostile (allOf flattening, untyped `*_translations`, int32/int64 money splits). Hosts never see raw wire types they shouldn't.
 
 ---
 
 ## 0. Crate layout & where the boundary sits
 
 ```
-sufrix_core/                      (Rust workspace)
-├── sufrix_api/        # generated wire models + raw HTTP client (Orval-equivalent). NEVER exported directly.
-├── sufrix_domain/     # business logic: pricing, cart math, outbox, sync engine, recipe depletion.
-├── sufrix_store/      # SQLite (sqlite via rusqlite/sqlx) read-mirror + outbox tables.
-└── sufrix_ffi/        # #[uniffi::export] surface. THIS is the binding boundary. Thin.
+madar_core/                      (Rust workspace)
+├── madar_api/        # generated wire models + raw HTTP client (Orval-equivalent). NEVER exported directly.
+├── madar_domain/     # business logic: pricing, cart math, outbox, sync engine, recipe depletion.
+├── madar_store/      # SQLite (sqlite via rusqlite/sqlx) read-mirror + outbox tables.
+└── madar_ffi/        # #[uniffi::export] surface. THIS is the binding boundary. Thin.
 ```
 
-- **Everything** the prompt lists as logic — API calls, offline store, sync, printing, pricing, recipe depletion — lives below `sufrix_ffi`. The hosts are glue: render DTOs, fire commands, subscribe to observers.
+- **Everything** the prompt lists as logic — API calls, offline store, sync, printing, pricing, recipe depletion — lives below `madar_ffi`. The hosts are glue: render DTOs, fire commands, subscribe to observers.
 - UniFFI is used in **proc-macro mode** (`#[uniffi::export]`, `#[derive(uniffi::Record/Enum/Object)]`), not a `.udl` file. The library exposes `uniffi::setup_scaffolding!()`.
 
 ---
 
-## 1. Top-level handle: `SufrixCore`
+## 1. Top-level handle: `MadarCore`
 
 A single long-lived `Object` (Arc-wrapped, `Send + Sync`) owns the DB pool, HTTP client, token store, sync engine, and observer registry. Hosts create exactly one and keep it for app lifetime.
 
@@ -34,7 +34,7 @@ A single long-lived `Object` (Arc-wrapped, `Send + Sync`) owns the DB pool, HTTP
 ```rust
 /// Built once at app launch and held for the process lifetime.
 #[derive(uniffi::Object)]
-pub struct SufrixCore { /* opaque: db pool, http, token store, sync engine, observers */ }
+pub struct MadarCore { /* opaque: db pool, http, token store, sync engine, observers */ }
 
 /// Host-supplied, device-local only. Base URL / env are NOT here — they come from
 /// the core's bundled .env (compile-time `env!` + runtime dotenv override file).
@@ -61,11 +61,11 @@ pub enum HostPlatform { Iphone, Ipad, AndroidPhone, AndroidTablet, Desktop }
 pub enum CoreEnv { Dev, Staging, Prod }
 
 #[uniffi::export(async_runtime = "tokio")]
-impl SufrixCore {
+impl MadarCore {
     /// Opens the DB, runs migrations, loads the token blob, starts the sync engine paused.
     /// Async because it touches disk + runs migrations; fast-fails on a corrupt store.
     #[uniffi::constructor]
-    pub async fn new(config: CoreConfig) -> Result<Arc<SufrixCore>, CoreError>;
+    pub async fn new(config: CoreConfig) -> Result<Arc<MadarCore>, CoreError>;
 
     /// Effective config the core resolved (base_url, env) — for the "About/Debug" screen.
     pub fn runtime_info(&self) -> RuntimeInfo;
@@ -111,7 +111,7 @@ The host registers its `TokenStore` once; thereafter token rotation is invisible
 
 ```rust
 #[uniffi::export(async_runtime = "tokio")]
-impl SufrixCore {
+impl MadarCore {
     /// Host registers its secure-store callback exactly once, right after `new`.
     pub fn set_token_store(&self, store: Box<dyn TokenStore>);
 
@@ -183,7 +183,7 @@ pub struct SessionSnapshot {
 
 ```rust
 #[uniffi::export(async_runtime = "tokio")]
-impl SufrixCore {
+impl MadarCore {
     /// Async: hits network if online, else serves cache. Cancellable (drops HTTP).
     pub async fn sync_now(&self) -> Result<SyncReport, CoreError>;
 }
@@ -208,7 +208,7 @@ Reads serve the SQLite read-mirror. They **layer branch/channel overrides over t
 
 ```rust
 #[uniffi::export]
-impl SufrixCore {
+impl MadarCore {
     /// Sellable menu = base items ∪ branch overrides (availability + price_override),
     /// soft-deleted rows filtered. base_price is i64 minor-units in the DTO even though
     /// the wire is int32 — the FFI normalizes ALL money to i64 minor-units (see §money).
@@ -248,7 +248,7 @@ The cart is **server-stateless and core-owned**: the host opens a draft, mutates
 
 ```rust
 #[uniffi::export(async_runtime = "tokio")]
-impl SufrixCore {
+impl MadarCore {
     // ---- cart lifecycle: in-memory, synchronous, no network ----
 
     /// Open a draft cart for an order type. Returns a CartView with a client cart_id.
@@ -365,7 +365,7 @@ pub struct OutboxFailure {
 }
 
 #[uniffi::export]
-impl SufrixCore {
+impl MadarCore {
     /// Register one observer (replaces any prior). Returns the current snapshot so the
     /// host can render before the first event.
     pub fn set_observer(&self, observer: Box<dyn CoreObserver>) -> SyncStatus;
@@ -433,9 +433,9 @@ The sync engine and serde-fallbacks absorb the *quirks* the prompt flags (open e
 
 The risk: SwiftUI / Compose-Android / Compose-Desktop drift against the core. Three layers keep them locked:
 
-1. **Single source of truth, single artifact.** The `.swift` and `.kt` bindings are **generated from the one `sufrix_ffi` crate** by `uniffi-bindgen` in CI, and published as versioned artifacts (Swift package + Maven `.aar` + desktop `.jar`) tagged `ffi-vMAJOR.MINOR`. No host hand-writes bindings. A host pins exactly one artifact version.
+1. **Single source of truth, single artifact.** The `.swift` and `.kt` bindings are **generated from the one `madar_ffi` crate** by `uniffi-bindgen` in CI, and published as versioned artifacts (Swift package + Maven `.aar` + desktop `.jar`) tagged `ffi-vMAJOR.MINOR`. No host hand-writes bindings. A host pins exactly one artifact version.
 
-2. **`FFI_VERSION` handshake at runtime.** A monotonic integer constant is baked into the core and echoed in `RuntimeInfo.ffi_version` (§1). The host bundles the `FFI_VERSION` it was built against; on `SufrixCore::new` the core compares:
+2. **`FFI_VERSION` handshake at runtime.** A monotonic integer constant is baked into the core and echoed in `RuntimeInfo.ffi_version` (§1). The host bundles the `FFI_VERSION` it was built against; on `MadarCore::new` the core compares:
    - host major < core major → core returns `CoreError::Internal{"ffi version too old, update app"}` and refuses to run (forces an app update before a teller hits a broken surface).
    - host minor < core minor → allowed (additive-only minor changes are backward compatible).
 
@@ -460,7 +460,7 @@ pub struct FfiVersion { pub major: u32, pub minor: u32 }
 
 These are core-internal invariants the hosts rely on but never implement:
 
-- **All money → `i64` minor-units at the FFI.** The wire's int32 (catalog/order) vs int64 (summaries/costing) split, and any BigDecimal-as-string in inventory/recipe schemas, are normalized in `sufrix_ffi`. Hosts format `*_minor` with `currency_code` from `SessionSnapshot`.
+- **All money → `i64` minor-units at the FFI.** The wire's int32 (catalog/order) vs int64 (summaries/costing) split, and any BigDecimal-as-string in inventory/recipe schemas, are normalized in `madar_ffi`. Hosts format `*_minor` with `currency_code` from `SessionSnapshot`.
 - **All open string enums stay `String`** in DTOs (`order_type`, `payment_method`, `status`, `dtype`, `addon_type`, `channel`, `reason`, `movement_type`, `variance_reason`). Closed enums with no server-default (`UserRole`, `PrinterBrand`, `BundleStatus`, `RunStatus`, `SuggestionKind`, `Decision`, `Action`) get `#[serde(other)] Unknown` below the boundary; the FFI either maps `Unknown` to a string or hides it.
 - **`*_translations` resolved to a single `String`** against `CoreConfig.locale` before crossing the FFI — hosts never receive raw `serde_json::Value` maps.
 - **Idempotency keys + client temp-ids + client timestamps** are all generated in Rust for every outbox command (no server Idempotency-Key contract exists; the client owns it). Replay ordering and temp-id→server-id reconciliation are core-internal.
@@ -468,4 +468,4 @@ These are core-internal invariants the hosts rely on but never implement:
 
 ---
 
-Relevant existing files referenced while grounding this design: `/Users/shawket/Desktop/sufrix_pos/tool/generate_api.sh` (the `./tool/generate_api.sh` regen entrypoint the Rust `sufrix_api` crate would mirror), `/Users/shawket/Desktop/sufrix_pos/packages/sufrix_api/` (current generated Dart wire-model package the Rust port replaces), and `/Users/shawket/Desktop/sufrix_pos/CLAUDE.md` (offline-first + generated-wire-model conventions). No Rust/UniFFI scaffolding exists yet — this is a greenfield surface.
+Relevant existing files referenced while grounding this design: `/Users/shawket/Desktop/sufrix_pos/tool/generate_api.sh` (the `./tool/generate_api.sh` regen entrypoint the Rust `madar_api` crate would mirror), `/Users/shawket/Desktop/sufrix_pos/packages/madar_api/` (current generated Dart wire-model package the Rust port replaces), and `/Users/shawket/Desktop/sufrix_pos/CLAUDE.md` (offline-first + generated-wire-model conventions). No Rust/UniFFI scaffolding exists yet — this is a greenfield surface.

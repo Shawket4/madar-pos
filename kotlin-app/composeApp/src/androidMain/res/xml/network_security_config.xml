@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Cleartext (http) is permitted ONLY for the dev LAN backend; everything else
-     (including prod https://sufrix.duckdns.org) keeps Android's secure HTTPS-only
+     (including prod https://api.madar-pos.cloud) keeps Android's secure HTTPS-only
      defaults. The <domain> MUST match the host in MADAR_BASE_URL (rust-core/.env)
      — when the dev machine's LAN IP changes, update BOTH (and rebuild the native
      lib, since MADAR_BASE_URL is baked in at build time). Also listed: the Android

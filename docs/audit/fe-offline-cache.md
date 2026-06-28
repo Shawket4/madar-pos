@@ -2,7 +2,7 @@ I now have a complete picture. Critical reconciliation detail confirmed: for que
 
 Here is the audit.
 
-# Sufrix POS — Offline + Caching Engine Audit
+# Madar POS — Offline + Caching Engine Audit
 
 Single local DB file `sufrix_pos.db` (sqflite; FFI on desktop/web, native on mobile), schema **version 2**. Two cooperating subsystems: a **durable write outbox** (`outbox` table + `OfflineQueueNotifier`) and a **read-through cache** (KV blobs in the `kv` table + `sync_meta` TTL timestamps, fronted by per-domain repositories). Menu images cache separately on disk via `flutter_cache_manager`.
 
@@ -19,7 +19,7 @@ Single local DB file `sufrix_pos.db` (sqflite; FFI on desktop/web, native on mob
 **Not in SQLite (relevant boundaries):**
 - JWT lives in the platform keychain (`SecureTokenStore`), never in `kv`.
 - All cached *domain data* (menu, orders, shifts, inventory, drafts, carts, discounts, payment methods, offline-unlock PIN hashes) are JSON blobs inside the `kv` table — there are **no relational tables for business entities**. Everything is opaque JSON keyed by string.
-- Menu images: separate on-disk store `sufrix_menu_images` with its own `JsonCacheInfoRepository` sqlite db (managed by `flutter_cache_manager`, not `AppDatabase`).
+- Menu images: separate on-disk store `madar_menu_images` with its own `JsonCacheInfoRepository` sqlite db (managed by `flutter_cache_manager`, not `AppDatabase`).
 
 ## 2. Outbox model & lifecycle
 

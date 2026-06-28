@@ -7,7 +7,7 @@
 //!
 //! ```sh
 //! MADAR_IT_BASE=http://127.0.0.1:8082 \
-//! cargo test -p sufrix-core --test offline_replay -- --ignored --nocapture
+//! cargo test -p madar-core --test offline_replay -- --ignored --nocapture
 //! ```
 //!
 //! Fixture defaults match the throwaway org/branch/teller seeded for these
@@ -77,7 +77,9 @@ impl Fixture {
 /// the dev Postgres (`MADAR_IT_DB`, or the dev default).
 async fn provision_fixture() -> Fixture {
     let base = env("MADAR_IT_BASE", "http://127.0.0.1:8082");
-    let db_url = env("MADAR_IT_DB", "postgres://sufrix:REDACTED@localhost:5432/madar_dev");
+    // No real credentials in source — set MADAR_IT_DB in your local env/.env to run these
+    // (ignored) integration tests. The default is a non-secret local placeholder.
+    let db_url = env("MADAR_IT_DB", "postgres://madar:madar@localhost:5432/madar_dev");
     let (db, conn) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await.expect("dev DB connect");
     tokio::spawn(async move {
         let _ = conn.await;
@@ -219,7 +221,7 @@ async fn offline_login_unlocks_after_an_online_login() {
     let branch = fx.branch.clone();
     let teller = fx.t1.clone();
 
-    let db = std::env::temp_dir().join(format!("sufrix_it_offlogin_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_offlogin_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -285,7 +287,7 @@ async fn captive_portal_login_falls_back_to_offline() {
     let branch = fx.branch.clone();
     let teller = fx.t1.clone();
 
-    let db = std::env::temp_dir().join(format!("sufrix_it_portal_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_portal_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -423,7 +425,7 @@ async fn offline_backlog_replays_exactly_once_across_a_reconnect() {
     let branch = fx.branch.clone();
     let teller = fx.t1.clone();
 
-    let db = std::env::temp_dir().join(format!("sufrix_it_offline_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_offline_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -496,7 +498,7 @@ async fn full_offline_day_open_sell_close_replays_in_dependency_order() {
     let branch = fx.branch.clone();
     let teller = fx.t1.clone();
 
-    let db = std::env::temp_dir().join(format!("sufrix_it_day_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_day_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -578,7 +580,7 @@ async fn another_teller_flushes_the_backlog_attributed_to_the_original() {
     let teller_b = fx.t2.clone();
     let teller_b_id = fx.t2_id.clone();
 
-    let db = std::env::temp_dir().join(format!("sufrix_it_xteller_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_xteller_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -694,7 +696,7 @@ async fn offline_teller_switch_close_open_syncs_on_reconnect() {
         email: None, password: None, org_id: None,
     };
 
-    let db = std::env::temp_dir().join(format!("sufrix_it_tswitch_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_tswitch_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -703,7 +705,7 @@ async fn offline_teller_switch_close_open_syncs_on_reconnect() {
     //    login caches the org's offline-auth bundle — otherwise the cached bundle
     //    predates t2's hash and the later offline unlock can't verify it. (On the old
     //    shared fixture t2's hash was already derived in a prior run, masking this.)
-    let warmdb = std::env::temp_dir().join(format!("sufrix_it_warm_{}.sqlite", std::process::id()));
+    let warmdb = std::env::temp_dir().join(format!("madar_it_warm_{}.sqlite", std::process::id()));
     let warm = core_at(base.clone(), warmdb.to_string_lossy().into());
     warm.login(login_req(&t2)).await.expect("warm t2 online");
     let _ = std::fs::remove_file(&warmdb);
@@ -791,7 +793,7 @@ async fn offline_orphaned_orders_recover_onto_the_real_shift() {
     };
 
     // Device OTHER opens the teller's REAL shift A online and leaves it open.
-    let otherdb = std::env::temp_dir().join(format!("sufrix_it_orphan_other_{}.sqlite", std::process::id()));
+    let otherdb = std::env::temp_dir().join(format!("madar_it_orphan_other_{}.sqlite", std::process::id()));
     let _ = std::fs::remove_file(&otherdb);
     let captured = Arc::new(Mutex::new(None));
     let other = core_at(base.clone(), otherdb.to_string_lossy().into());
@@ -810,7 +812,7 @@ async fn offline_orphaned_orders_recover_onto_the_real_shift() {
 
     // Device MAIN gets the catalog via restore_session WITHOUT reconciling the
     // shift, so it never learns about A — mimicking a fresh device / cache loss.
-    let maindb = std::env::temp_dir().join(format!("sufrix_it_orphan_main_{}.sqlite", std::process::id()));
+    let maindb = std::env::temp_dir().join(format!("madar_it_orphan_main_{}.sqlite", std::process::id()));
     let _ = std::fs::remove_file(&maindb);
     let main_online = core_at(base.clone(), maindb.to_string_lossy().into());
     main_online.restore_session(blob.clone());
@@ -866,7 +868,7 @@ async fn offline_receipt_number_and_ref_match_the_server() {
         mode: LoginMode::Pin, name: Some(teller), pin: Some("1234".into()),
         branch_id: Some(branch), email: None, password: None, org_id: None,
     };
-    let db = std::env::temp_dir().join(format!("sufrix_it_refmatch_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_refmatch_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -940,7 +942,7 @@ async fn login_rejected_taking_over_another_tellers_open_shift() {
         email: None, password: None, org_id: None,
     };
 
-    let db = std::env::temp_dir().join(format!("sufrix_it_takeover_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_takeover_{}.sqlite", std::process::id()));
     let live = core_at(base.clone(), db.to_string_lossy().into());
     live.login(login_req(&fx.t1)).await.expect("t1 login");
     live.refresh_connectivity().await;
@@ -953,7 +955,7 @@ async fn login_rejected_taking_over_another_tellers_open_shift() {
 
     // Teller 2 on a FRESH device (no queued close → no acknowledgment) must be
     // rejected: they can't take over teller 1's live shift.
-    let t2db = std::env::temp_dir().join(format!("sufrix_it_takeover_t2_{}.sqlite", std::process::id()));
+    let t2db = std::env::temp_dir().join(format!("madar_it_takeover_t2_{}.sqlite", std::process::id()));
     let t2core = core_at(base.clone(), t2db.to_string_lossy().into());
     let r = t2core.login(login_req(&fx.t2)).await;
     eprintln!("TAKEOVER login result = {r:?}");
@@ -1015,7 +1017,7 @@ async fn offline_lists_show_last_synced_server_rows() {
         mode: LoginMode::Pin, name: Some(teller), pin: Some("1234".into()),
         branch_id: Some(branch), email: None, password: None, org_id: None,
     };
-    let db = std::env::temp_dir().join(format!("sufrix_it_offlists_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_offlists_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -1083,7 +1085,7 @@ async fn offline_closed_shift_shows_closed_not_active_in_past_shifts() {
         mode: LoginMode::Pin, name: Some(teller), pin: Some("1234".into()),
         branch_id: Some(branch), email: None, password: None, org_id: None,
     };
-    let db = std::env::temp_dir().join(format!("sufrix_it_offclosed_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_offclosed_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -1138,7 +1140,7 @@ async fn offline_opened_and_closed_shift_is_complete_in_history() {
         mode: LoginMode::Pin, name: Some(teller), pin: Some("1234".into()),
         branch_id: Some(branch), email: None, password: None, org_id: None,
     };
-    let db = std::env::temp_dir().join(format!("sufrix_it_offwhole_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_offwhole_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -1303,7 +1305,7 @@ async fn resuming_a_shift_mid_day_predicts_max_plus_one() {
         mode: LoginMode::Pin, name: Some(teller), pin: Some("1234".into()),
         branch_id: Some(branch), email: None, password: None, org_id: None,
     };
-    let db = std::env::temp_dir().join(format!("sufrix_it_resume_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_resume_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -1319,7 +1321,7 @@ async fn resuming_a_shift_mid_day_predicts_max_plus_one() {
 
     // Device B: a FRESH core+store logs in mid-shift. Login seeds the base from the
     // server (MAX=2), so B's first ring-up is #3 — not #1.
-    let bdb = std::env::temp_dir().join(format!("sufrix_it_resume_b_{}.sqlite", std::process::id()));
+    let bdb = std::env::temp_dir().join(format!("madar_it_resume_b_{}.sqlite", std::process::id()));
     let b = core_at(base.clone(), bdb.to_string_lossy().into());
     b.login(login_req.clone()).await.expect("B login");
     b.refresh_connectivity().await;
@@ -1357,7 +1359,7 @@ async fn online_then_offline_order_numbers_stay_contiguous() {
         mode: LoginMode::Pin, name: Some(teller), pin: Some("1234".into()),
         branch_id: Some(branch), email: None, password: None, org_id: None,
     };
-    let db = std::env::temp_dir().join(format!("sufrix_it_mixednum_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_mixednum_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 
@@ -1422,7 +1424,7 @@ async fn offline_close_a_then_open_b_with_orders_all_sync() {
         mode: LoginMode::Pin, name: Some(teller), pin: Some("1234".into()),
         branch_id: Some(branch), email: None, password: None, org_id: None,
     };
-    let db = std::env::temp_dir().join(format!("sufrix_it_handover_{}.sqlite", std::process::id()));
+    let db = std::env::temp_dir().join(format!("madar_it_handover_{}.sqlite", std::process::id()));
     let db_path = db.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&db);
 

@@ -4,7 +4,7 @@ Here is the complete audit.
 
 ---
 
-# Sufrix POS — Checkout / Payment / Void Audit
+# Madar POS — Checkout / Payment / Void Audit
 
 Scope: `lib/features/order/checkout/**`, `void_order_sheet.dart`, `pending_orders_screen.dart`, `core/repositories/order_repository.dart`, `core/providers/order_history_notifier.dart`, `core/models/{order,cart,pending_action}.dart`, plus the load-bearing `core/services/offline_queue.dart`, `core/api/order_api.dart`, `core/providers/cart_notifier.dart`, `main.dart`.
 

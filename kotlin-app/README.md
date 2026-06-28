@@ -1,4 +1,4 @@
-# kotlin-app — Sufrix POS (Android + Desktop)
+# kotlin-app — Madar POS (Android + Desktop)
 
 Thin Compose Multiplatform host. **No business logic** — it calls into
 `rust-core` over the UniFFI Kotlin bindings (JNA). The same `commonMain` UI runs
@@ -9,7 +9,7 @@ on Android and JVM desktop; only the native artifact and entry point differ.
 ```
 composeApp/src/
 ├── commonMain/  App.kt + AppModel.kt + LoginScreen.kt   # shared Compose UI + state
-│   └── app/sufrix/core/             # generated sufrix_core.kt drops in here
+│   └── app/madar/core/             # generated madar_core.kt drops in here
 ├── desktopMain/ main.kt            # JVM window entry + FileVault (home dir)
 └── androidMain/ MainActivity.kt + FileVault (filesDir) + AndroidManifest.xml + jniLibs/
 ```
@@ -33,8 +33,8 @@ persists the session blob + device branch in app-private storage.
 ```bash
 # Desktop (no Android SDK needed): builds the host dylib + Kotlin bindings.
 cd ../rust-core && ./tool/build-bindings.sh
-cp -r bindings/kotlin/app/sufrix/core \
-      ../kotlin-app/composeApp/src/commonMain/kotlin/app/sufrix/
+cp -r bindings/kotlin/app/madar/core \
+      ../kotlin-app/composeApp/src/commonMain/kotlin/app/madar/
 
 # Android (needs ANDROID_NDK_HOME + cargo-ndk): per-ABI .so into jniLibs.
 cd ../rust-core && ./tool/build-android.sh

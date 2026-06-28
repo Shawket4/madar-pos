@@ -1,6 +1,6 @@
-# Sufrix POS — Rebuild
+# Madar POS — Rebuild
 
-A from-scratch rebuild of the Sufrix Point-of-Sale ("Teller") app as a **shared
+A from-scratch rebuild of the Madar Point-of-Sale ("Teller") app as a **shared
 Rust core** with **thin native UIs**.
 
 ## The one rule
@@ -14,11 +14,11 @@ differ between platforms, that's a bug; it belongs in Rust.
 ## Layout
 
 ```
-sufrix-rebuild/
+madar-rebuild/
 ├── rust-core/        # the shared library — all logic, API, store, sync, printing
 │   ├── crates/
-│   │   ├── sufrix-core/   # the UniFFI library (Swift + Kotlin bindings)
-│   │   └── sufrix-api/    # GENERATED openapi client (tool/generate_api.sh) — gitignored
+│   │   ├── madar-core/   # the UniFFI library (Swift + Kotlin bindings)
+│   │   └── madar-api/    # GENERATED openapi client (tool/generate_api.sh) — gitignored
 │   ├── tool/             # generate_api.sh, build-bindings.sh, build-ios.sh, build-android.sh
 │   └── .env              # base URL + environment, baked in at build time (gitignored)
 ├── swift-app/        # iPhone + iPad (SwiftUI). UI + platform glue only.
@@ -38,11 +38,11 @@ generated from it with `openapi-generator -g rust` via
 
 ```bash
 cd rust-core
-cargo build                 # compiles sufrix-core + runs nothing
-cargo test -p sufrix-core   # unit tests
+cargo build                 # compiles madar-core + runs nothing
+cargo test -p madar-core   # unit tests
 ./tool/generate_api.sh      # (re)generate the Rust API client from the spec
 ./tool/build-bindings.sh    # emit Swift + Kotlin bindings into bindings/
-./tool/build-ios.sh         # assemble SufrixCore.xcframework for swift-app
+./tool/build-ios.sh         # assemble MadarCore.xcframework for swift-app
 ./tool/build-android.sh     # build per-ABI .so + Kotlin bindings (needs Android NDK)
 ```
 

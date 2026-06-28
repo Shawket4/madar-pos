@@ -273,7 +273,7 @@ impl Renderer {
             self.center(&format!("*** {} ***", lab.voided), SZ_BODY, Weight::BOLD);
         }
         let store = if ctx.store_name.trim().is_empty() {
-            "SUFRIX".to_string()
+            "MADAR".to_string()
         } else {
             ctx.store_name.to_uppercase()
         };
@@ -373,7 +373,7 @@ impl Renderer {
     /// (opening, expected, actual, over/short) → voided → end.
     fn build_shift(&mut self, r: &ShiftReportView, store: &str, currency: &str, lab: &ShiftReportLabels) {
         let m = |minor: i64| money(minor, currency);
-        let store_up = if store.trim().is_empty() { "SUFRIX".to_string() } else { store.to_uppercase() };
+        let store_up = if store.trim().is_empty() { "MADAR".to_string() } else { store.to_uppercase() };
 
         // ── header ──
         self.center(&store_up, SZ_STORE, Weight::BOLD);
@@ -580,7 +580,7 @@ mod tests {
 
     fn ctx() -> EscPosCtx {
         EscPosCtx {
-            store_name: "Cafe Sufrix".into(),
+            store_name: "Cafe Madar".into(),
             currency: "EGP".into(),
             width: 48,
             labels: ReceiptLabels {
@@ -746,7 +746,7 @@ mod tests {
 
     #[test]
     fn renders_shift_report_bitmap() {
-        let bmp = render_shift_report(&shift_report(), "Cafe Sufrix", "EGP", &shift_labels());
+        let bmp = render_shift_report(&shift_report(), "Cafe Madar", "EGP", &shift_labels());
         assert_eq!(bmp.width, PRINT_WIDTH);
         assert!(bmp.rows > 150);
         assert!(bmp.bytes.iter().any(|&b| b != 0), "shift report bitmap is blank");
@@ -765,13 +765,13 @@ mod tests {
         eprintln!("wrote {} ({}x{})", path, bmp.width, bmp.rows);
     }
 
-    // Visual check: `cargo test -p sufrix-core dump_receipt_png -- --ignored`
+    // Visual check: `cargo test -p madar-core dump_receipt_png -- --ignored`
     // writes the rendered receipt + shift report to /tmp to be eyeballed.
     #[test]
     #[ignore]
     fn dump_receipt_png() {
         save_png(&render_receipt(&receipt(), &ctx(), None), "/tmp/receipt.png");
-        save_png(&render_shift_report(&shift_report(), "Cafe Sufrix", "EGP", &shift_labels()), "/tmp/shift_report.png");
+        save_png(&render_shift_report(&shift_report(), "Cafe Madar", "EGP", &shift_labels()), "/tmp/shift_report.png");
         // Synthetic 4:1 wordmark (border + diagonal) to check logo sizing.
         let mut logo = image::RgbaImage::new(800, 200);
         for (x, y, px) in logo.enumerate_pixels_mut() {

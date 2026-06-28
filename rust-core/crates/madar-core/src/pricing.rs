@@ -1,6 +1,6 @@
 //! The pricing engine — the single source of truth for order money.
 //!
-//! Pricing is **client-authoritative** in the Sufrix backend: `create_order`
+//! Pricing is **client-authoritative** in the Madar backend: `create_order`
 //! records the POS-supplied `subtotal`/`discount`/`tax`/`total` **verbatim** and
 //! only *flags* deviations (it never rejects). So whatever this module computes
 //! IS the money, the receipt, and the revenue figure — there is no server safety

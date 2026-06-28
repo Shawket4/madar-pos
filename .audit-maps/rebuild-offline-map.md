@@ -10,15 +10,15 @@ This maps the complete offline → online replay system as implemented today. Al
 
 | Layer | File | Responsibility |
 |---|---|---|
-| HTTP transport | `/Users/shawket/Desktop/sufrix-rebuild/rust-core/crates/sufrix-core/src/net.rs` | One pooled `reqwest` client; bearer injection; error → `CoreError` classification; `ping` (connectivity + clock skew). |
-| Durable store | `/Users/shawket/Desktop/sufrix-rebuild/rust-core/crates/sufrix-core/src/store.rs` | SQLite `kv` mirror, `outbox`, `id_map`, `sync_cursors`; all outbox state transitions. |
-| Orchestrator | `/Users/shawket/Desktop/sufrix-rebuild/rust-core/crates/sufrix-core/src/lib.rs` | `SufrixCore`: enqueue from each op (open/close/order/void/cash), `drain_outbox`, `send_outbox_item`, backoff, connectivity reconcile, login/sign-in, shift adoption. |
-| Session/auth | `/Users/shawket/Desktop/sufrix-rebuild/rust-core/crates/sufrix-core/src/session.rs` | Online login wire build; offline PIN unlock (argon2id) against cached org bundle; teller attribution identity. |
-| Shift logic | `/Users/shawket/Desktop/sufrix-rebuild/rust-core/crates/sufrix-core/src/shift.rs` | Optimistic local shift, close-local, server-vs-local `reconcile` (bounce-proofing). |
+| HTTP transport | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/net.rs` | One pooled `reqwest` client; bearer injection; error → `CoreError` classification; `ping` (connectivity + clock skew). |
+| Durable store | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/store.rs` | SQLite `kv` mirror, `outbox`, `id_map`, `sync_cursors`; all outbox state transitions. |
+| Orchestrator | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/lib.rs` | `MadarCore`: enqueue from each op (open/close/order/void/cash), `drain_outbox`, `send_outbox_item`, backoff, connectivity reconcile, login/sign-in, shift adoption. |
+| Session/auth | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/session.rs` | Online login wire build; offline PIN unlock (argon2id) against cached org bundle; teller attribution identity. |
+| Shift logic | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/src/shift.rs` | Optimistic local shift, close-local, server-vs-local `reconcile` (bounce-proofing). |
 | Backend replay | `/Users/shawket/Desktop/SufrixRust/src/sync/{mod.rs,handlers.rs,routes.rs}` | `POST /sync/replay`; `ActingContext` (live vs replay); per-op org/teller validation; dispatch to the shared `*_inner` handlers. |
 | Backend login guard | `/Users/shawket/Desktop/SufrixRust/src/auth/handlers.rs` | Open-shift login rules + `X-Sufrix-Closing-Shifts` handover acknowledgment. |
 | Inner handlers (idempotency) | `/Users/shawket/Desktop/SufrixRust/src/{shifts,orders}/handlers.rs` | Idempotency early-returns + unique-index backstops; replay-mode guard bypass. |
-| Integration tests | `/Users/shawket/Desktop/sufrix-rebuild/rust-core/crates/sufrix-core/tests/offline_replay.rs` | End-to-end offline → replay against a live dev backend (`--ignored`). |
+| Integration tests | `/Users/shawket/Desktop/madar-rebuild/rust-core/crates/madar-core/tests/offline_replay.rs` | End-to-end offline → replay against a live dev backend (`--ignored`). |
 
 ---
 

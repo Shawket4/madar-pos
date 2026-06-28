@@ -50,7 +50,7 @@ argon2 = "0.5"
 
 # ── LAN offline relay (lan.rs, Phase E) ───────────────────────────────────────
 # mDNS / DNS-SD service discovery — pure Rust (no Bonjour/avahi system dep), so it
-# cross-compiles to Android/desktop/macOS clean. Service `_sufrix._tcp.local`. (iOS
+# cross-compiles to Android/desktop/macOS clean. Service `_madar._tcp.local`. (iOS
 # uses platform Bonjour via host glue → injected through `lan_add_peer`; the crate
 # still compiles on iOS, it's just not the iOS discovery path.) The embedded relay
 # SERVER + UDP beacon ride the tokio `net` feature already enabled above — no

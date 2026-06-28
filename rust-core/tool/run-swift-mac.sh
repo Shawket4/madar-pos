@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds + launches the SwiftUI host as a native macOS .app — no Xcode, no
-# simulator. Compiles SufrixUI against the generated binding + libmadar_core,
+# simulator. Compiles MadarUI against the generated binding + libmadar_core,
 # bundles the Cairo fonts and brand assets, and `open`s the app so you can click
 # through the real login on your Mac.
 #
@@ -20,7 +20,7 @@ DEBUG="$CORE_DIR/target/debug"
 RES_SRC="$CORE_DIR/../swift-app/Resources"
 
 # 2/4 — assemble the .app skeleton.
-APP="$CORE_DIR/target/SufrixPOS.app"
+APP="$CORE_DIR/target/MadarPOS.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
@@ -29,10 +29,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Sufrix POS</string>
-  <key>CFBundleDisplayName</key><string>Sufrix POS</string>
-  <key>CFBundleExecutable</key><string>SufrixPOS</string>
-  <key>CFBundleIdentifier</key><string>app.sufrix.pos.mac</string>
+  <key>CFBundleName</key><string>Madar POS</string>
+  <key>CFBundleDisplayName</key><string>Madar POS</string>
+  <key>CFBundleExecutable</key><string>MadarPOS</string>
+  <key>CFBundleIdentifier</key><string>app.madar.pos.mac</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
@@ -61,7 +61,7 @@ if [[ -d "$RES_SRC/Assets.xcassets" ]]; then
     || echo "  (actool failed — the logo asset may not render)"
 fi
 
-# 3/4 — compile the SwiftUI app (the @main lives in SufrixApp.swift).
+# 3/4 — compile the SwiftUI app (the @main lives in MadarApp.swift).
 INC="$(mktemp -d)"
 cp "$SW/MadarCoreFFIFFI.h" "$INC/"
 cp "$SW/MadarCoreFFIFFI.modulemap" "$INC/module.modulemap"
@@ -74,9 +74,9 @@ swiftc -O \
   -Xlinker -rpath -Xlinker "@executable_path/../Frameworks" \
   "$SW/MadarCoreFFI.swift" \
   $UI_SOURCES \
-  -o "$APP/Contents/MacOS/SufrixPOS"
+  -o "$APP/Contents/MacOS/MadarPOS"
 
 # 4/4 — launch.
 echo "── Launching $APP"
 open "$APP"
-echo "✓ Sufrix POS is running. (Quit with ⌘Q.)"
+echo "✓ Madar POS is running. (Quit with ⌘Q.)"

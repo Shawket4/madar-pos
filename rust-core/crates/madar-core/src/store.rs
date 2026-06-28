@@ -699,7 +699,7 @@ mod tests {
         // Reproduces the startup crash: an app updated in place has a DB whose
         // `outbox` predates the offline-orchestration columns. Opening it MUST
         // migrate (not fail on the backoff index that references a new column).
-        let path = std::env::temp_dir().join("sufrix_old_schema_upgrade_test.sqlite");
+        let path = std::env::temp_dir().join("madar_old_schema_upgrade_test.sqlite");
         let _ = std::fs::remove_file(&path);
         {
             let conn = Connection::open(&path).unwrap();
@@ -798,7 +798,7 @@ mod tests {
     /// Unique on-disk path per test (no shared-fixture collisions when the suite
     /// runs in parallel). Pre-removed so a leftover from a prior run can't taint.
     fn temp_db(tag: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("sufrix_store_mig_{tag}.sqlite"));
+        let path = std::env::temp_dir().join(format!("madar_store_mig_{tag}.sqlite"));
         let _ = std::fs::remove_file(&path);
         // WAL/SHM siblings can linger and confuse a re-create; clear them too.
         let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));

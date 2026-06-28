@@ -1,10 +1,10 @@
-# Sufrix POS — Offline-First Audit & Rust-Core Extraction Map
+# Madar POS — Offline-First Audit & Rust-Core Extraction Map
 
 > Generated from a cross-repo audit (Flutter POS + Actix backend). Raw per-area findings in `docs/audit/`.
 
-# Sufrix POS — Rust-Core Rebuild & Backend Offline-First: Decision-Grade Synthesis
+# Madar POS — Rust-Core Rebuild & Backend Offline-First: Decision-Grade Synthesis
 
-*Synthesis of seven audits (4 frontend, 3 backend) steering `~/Desktop/sufrix-rebuild` (shared Rust core via UniFFI + thin SwiftUI/Compose UIs) and a backend offline-first workstream. The user has authority to change the backend.*
+*Synthesis of seven audits (4 frontend, 3 backend) steering `~/Desktop/madar-rebuild` (shared Rust core via UniFFI + thin SwiftUI/Compose UIs) and a backend offline-first workstream. The user has authority to change the backend.*
 
 ---
 

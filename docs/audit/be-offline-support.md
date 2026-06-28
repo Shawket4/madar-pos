@@ -2,7 +2,7 @@ That confirms the final piece: `list_delivery_orders` does NOT support `updated_
 
 ---
 
-# Backend Offline-First Readiness Audit — Sufrix (Actix-Web Rust)
+# Backend Offline-First Readiness Audit — Madar (Actix-Web Rust)
 
 Scope: `/Users/shawket/Desktop/SufrixRust/src` + `/migrations`. Target: a POS client that survives **days** offline and replays **in order**.
 

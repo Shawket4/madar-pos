@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		03683CB4AC48F7EA8408C994 /* SufrixTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */; };
+		03683CB4AC48F7EA8408C994 /* MadarTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */; };
 		05F9EB4973CAABC247B17E32 /* BundleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A6454292C0709AACE8B45A /* BundleDetailView.swift */; };
 		08F89ED6EB076D4896A826C5 /* MadarMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8795563D490E093CEE91C055 /* MadarMark.swift */; };
 		09873816146F1EF42544076B /* KitchenDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */; };
@@ -19,7 +19,7 @@
 		21EB774F46284F8D02C7B53C /* PressableScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */; };
 		239E908C3ECC66D03A3F7B24 /* IncomingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FF0E6F55971DD7E3028220 /* IncomingView.swift */; };
 		26727D4F1A77B19A5ECC8900 /* ReceiptPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */; };
-		2A0CAE7F0DCBC5A79133310D /* SufrixApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* SufrixApp.swift */; };
+		2A0CAE7F0DCBC5A79133310D /* MadarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* MadarApp.swift */; };
 		2A887437B40C0FA04E59DB3C /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */; };
 		2C95DFE71E228CB531FE596F /* ShiftReportPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5267241C1AC9273C755769A /* ShiftReportPreview.swift */; };
 		2DBC5CA87ADB1AC071A22C23 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = E1DBA34D4FA0D50D4C76A885 /* Fonts */; };
@@ -48,7 +48,7 @@
 		6305C4121F26EA0F35026990 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */; };
 		6494EE6529F2C0AAB60CBC42 /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82B289DA69BD5025D17B4 /* SyncView.swift */; };
 		649B98786D9C7FB457C7FF19 /* VoidSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE62D3E6261191D17405952 /* VoidSheet.swift */; };
-		6553D25445EE87CB459C4652 /* SufrixTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */; };
+		6553D25445EE87CB459C4652 /* MadarTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */; };
 		6915093EC1BC9A75A3F70343 /* Toast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A7BF24EAFACE649636D4B69 /* Toast.swift */; };
 		6AA0762EDC259BA844B87E11 /* CashAndShiftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 169E08DA5AF85857B87F99A4 /* CashAndShiftsView.swift */; };
 		6B05893F1978CD59DCF06C7D /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82B289DA69BD5025D17B4 /* SyncView.swift */; };
@@ -60,9 +60,9 @@
 		82903BFE2A159A50EAB06D16 /* KitchenDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */; };
 		858852E6484187E9073DBBB0 /* MadarSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A961800CB4E1087339EE466 /* MadarSheet.swift */; };
 		863353F1C0538F15DE5D76DF /* AmountField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */; };
-		8993040D17F0F30AB691B911 /* SufrixButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* SufrixButton.swift */; };
+		8993040D17F0F30AB691B911 /* MadarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* MadarButton.swift */; };
 		89FE8AB7518E42196F9E8AF6 /* IconCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B8D71C4ABB9C77FEB5D791D /* IconCatalog.swift */; };
-		90056101E664424A53B432D4 /* SufrixButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* SufrixButton.swift */; };
+		90056101E664424A53B432D4 /* MadarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* MadarButton.swift */; };
 		911BA6D1C522F65F45F05AB7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */; };
 		94CD9E84942A2F2F8264FBE2 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = 8C6605B4728E0ADB8518EBBD /* Sounds */; };
 		9BED347D34E21BB606FDE7B7 /* ReauthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E562E93C40F1D2174325680 /* ReauthView.swift */; };
@@ -83,7 +83,7 @@
 		C05382CB0C3A98AC46AB4A97 /* Skeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */; };
 		C2FF9B24DC12758D87A5B478 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */; };
 		C340E0E525DAC4B389DD5ACC /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */; };
-		C709B7853F0C5FD2A2EBB106 /* SufrixApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* SufrixApp.swift */; };
+		C709B7853F0C5FD2A2EBB106 /* MadarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* MadarApp.swift */; };
 		C8FF91E53F40CFF2B86C418F /* AmountField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */; };
 		CF11A2BF8BF4A716C367CD4C /* MadarCoreFFI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */; };
 		CF209FD9BBDC247E00FD5F88 /* MadarCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF309BBD8B8E2B65F262C4E7 /* MadarCore.xcframework */; };
@@ -130,12 +130,12 @@
 		53FD40A576C447C717FCE473 /* OrderHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderHistoryView.swift; sourceTree = "<group>"; };
 		54FF0E6F55971DD7E3028220 /* IncomingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingView.swift; sourceTree = "<group>"; };
 		5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
-		609F2450EB5901840D044B10 /* SufrixButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SufrixButton.swift; sourceTree = "<group>"; };
+		609F2450EB5901840D044B10 /* MadarButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarButton.swift; sourceTree = "<group>"; };
 		686C827C426C041E668CA778 /* PinPad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinPad.swift; sourceTree = "<group>"; };
 		69673262F97BDC545F95A72C /* Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Layout.swift; sourceTree = "<group>"; };
 		6C6E66BFD4496F8B04F180AC /* Money.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Money.swift; sourceTree = "<group>"; };
-		72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SufrixTextField.swift; sourceTree = "<group>"; };
-		75AC8420D25337AFADB833C3 /* SufrixApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SufrixApp.swift; sourceTree = "<group>"; };
+		72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarTextField.swift; sourceTree = "<group>"; };
+		75AC8420D25337AFADB833C3 /* MadarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarApp.swift; sourceTree = "<group>"; };
 		792643251885F57217F40A9B /* Chips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chips.swift; sourceTree = "<group>"; };
 		82FE46CC8890F953EC459FF3 /* TenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TenderView.swift; sourceTree = "<group>"; };
 		83A6454292C0709AACE8B45A /* BundleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleDetailView.swift; sourceTree = "<group>"; };
@@ -234,8 +234,8 @@
 				E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */,
 				AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */,
 				3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */,
-				609F2450EB5901840D044B10 /* SufrixButton.swift */,
-				72E1F6596C6A81FACBFB4AEC /* SufrixTextField.swift */,
+				609F2450EB5901840D044B10 /* MadarButton.swift */,
+				72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */,
 				8A7BF24EAFACE649636D4B69 /* Toast.swift */,
 			);
 			path = Components;
@@ -284,7 +284,7 @@
 				ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */,
 				4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */,
 				F5267241C1AC9273C755769A /* ShiftReportPreview.swift */,
-				75AC8420D25337AFADB833C3 /* SufrixApp.swift */,
+				75AC8420D25337AFADB833C3 /* MadarApp.swift */,
 				0DD82B289DA69BD5025D17B4 /* SyncView.swift */,
 				82FE46CC8890F953EC459FF3 /* TenderView.swift */,
 				4EE62D3E6261191D17405952 /* VoidSheet.swift */,
@@ -483,9 +483,9 @@
 				C2FF9B24DC12758D87A5B478 /* SharedComponents.swift in Sources */,
 				F30526588BFBD22695BF37DF /* ShiftReportPreview.swift in Sources */,
 				5DCF9304631011EC7CA35F92 /* Skeleton.swift in Sources */,
-				2A0CAE7F0DCBC5A79133310D /* SufrixApp.swift in Sources */,
-				90056101E664424A53B432D4 /* SufrixButton.swift in Sources */,
-				6553D25445EE87CB459C4652 /* SufrixTextField.swift in Sources */,
+				2A0CAE7F0DCBC5A79133310D /* MadarApp.swift in Sources */,
+				90056101E664424A53B432D4 /* MadarButton.swift in Sources */,
+				6553D25445EE87CB459C4652 /* MadarTextField.swift in Sources */,
 				6494EE6529F2C0AAB60CBC42 /* SyncView.swift in Sources */,
 				A5DDD9E9B9A1CA2E27B0BBA6 /* TenderView.swift in Sources */,
 				6915093EC1BC9A75A3F70343 /* Toast.swift in Sources */,
@@ -538,9 +538,9 @@
 				DE656521EEE33521D3B1B351 /* SharedComponents.swift in Sources */,
 				2C95DFE71E228CB531FE596F /* ShiftReportPreview.swift in Sources */,
 				C05382CB0C3A98AC46AB4A97 /* Skeleton.swift in Sources */,
-				C709B7853F0C5FD2A2EBB106 /* SufrixApp.swift in Sources */,
-				8993040D17F0F30AB691B911 /* SufrixButton.swift in Sources */,
-				03683CB4AC48F7EA8408C994 /* SufrixTextField.swift in Sources */,
+				C709B7853F0C5FD2A2EBB106 /* MadarApp.swift in Sources */,
+				8993040D17F0F30AB691B911 /* MadarButton.swift in Sources */,
+				03683CB4AC48F7EA8408C994 /* MadarTextField.swift in Sources */,
 				6B05893F1978CD59DCF06C7D /* SyncView.swift in Sources */,
 				A5E2BB0E5ACDA4433C82A667 /* TenderView.swift in Sources */,
 				42E8F665FB5A0EC487C1C8D7 /* Toast.swift in Sources */,

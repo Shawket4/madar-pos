@@ -1,4 +1,4 @@
-# Sufrix POS Rebuild — Master Plan
+# Madar POS Rebuild — Master Plan
 
 > **One artifact, three apps.** A shared Rust core (UniFFI) drives thin SwiftUI (iPhone/iPad) and Compose (Android phone/tablet + JVM desktop) UIs. The teller can sell for days offline; everything reconciles when the network returns.
 
@@ -84,7 +84,7 @@ Every behavior that is not "draw a pixel" or "read a touch" belongs to the share
 
 This is enforced structurally:
 
-- **One binding boundary** — the `sufrix-core` crate's `#[uniffi::export]` surface. `uniffi-bindgen` generates the `.swift` and `.kt` bindings from that one crate in CI; no host ever hand-writes a binding or a wire model.
+- **One binding boundary** — the `madar-core` crate's `#[uniffi::export]` surface. `uniffi-bindgen` generates the `.swift` and `.kt` bindings from that one crate in CI; no host ever hand-writes a binding or a wire model.
 - **Hosts receive only curated view DTOs** with money pre-normalized to `i64` minor-units, `*_translations` pre-resolved to the device locale, open enums kept as `String`, and temp-id/idempotency/timestamps all owned by Rust. Hosts never see a raw OpenAPI wire type.
 - **Three thin UIs, one error path** — a single coarse `CoreError` enum crosses the FFI so all three apps share one `catch`/`when`.
 
@@ -94,39 +94,39 @@ The payoff: a bug fix or a pricing-rule change ships once in Rust and lands on a
 
 ## 2. Monorepo layout
 
-Monorepo root: `~/Desktop/sufrix-rebuild/`. The Rust scaffold already exists; the two app shells are empty and filled in Phase 3+.
+Monorepo root: `~/Desktop/madar-rebuild/`. The Rust scaffold already exists; the two app shells are empty and filled in Phase 3+.
 
 ```
-sufrix-rebuild/
+madar-rebuild/
 ├── PLAN.md                         # this file — the canonical roadmap
 ├── rust-core/                      # the shared core (Cargo workspace)
-│   ├── Cargo.toml                  # workspace: members=[sufrix-core], excludes sufrix-api until P2
+│   ├── Cargo.toml                  # workspace: members=[madar-core], excludes madar-api until P2
 │   ├── rust-toolchain.toml         # pinned 1.90.0 + iOS/Android/desktop cross targets
-│   ├── .env / .env.example         # SUFRIX_BASE_URL, SUFRIX_ENV — baked at build via build.rs
+│   ├── .env / .env.example         # MADAR_BASE_URL, MADAR_ENV — baked at build via build.rs
 │   ├── openapitools.json           # pins openapi-generator-cli 7.23.0
 │   ├── tool/
-│   │   └── generate_api.sh          # regenerates crates/sufrix-api from SufrixRust/openapi.json
+│   │   └── generate_api.sh          # regenerates crates/madar-api from SufrixRust/openapi.json
 │   └── crates/
-│       ├── sufrix-api/             # GENERATED openapi-generator -g rust client (excluded from workspace until P2)
+│       ├── madar-api/             # GENERATED openapi-generator -g rust client (excluded from workspace until P2)
 │       │   └── …                    # async reqwest, single-request-param structs, wire models
-│       └── sufrix-core/            # THE crate the apps link. lib name `sufrix_core`.
+│       └── madar-core/            # THE crate the apps link. lib name `madar_core`.
 │           ├── Cargo.toml          # crate-type = [lib, cdylib, staticlib]; uniffi 0.28 (proc-macro)
 │           ├── build.rs            # bakes .env (base_url/env) via cargo:rustc-env
 │           └── src/
-│               ├── lib.rs          # uniffi::setup_scaffolding!(); SufrixCore Object + exports
+│               ├── lib.rs          # uniffi::setup_scaffolding!(); MadarCore Object + exports
 │               ├── bin/uniffi-bindgen.rs   # standalone bindgen used in library mode
 │               ├── ffi/            # #[uniffi::export] surface: Records, Enums, callback traits (§7)
 │               ├── domain/         # pricing, cart math, recipe depletion, outbox, sync engine
 │               ├── store/          # rusqlite pool, migrations (refinery), mirror+outbox tables (§8)
-│               ├── net/            # http wiring over sufrix-api, token refresh, idempotency headers
+│               ├── net/            # http wiring over madar-api, token refresh, idempotency headers
 │               └── print/          # receipt/Z-report render + Star/Epson transport
-├── swift-app/                      # thin SwiftUI host (iPhone + iPad). Links sufrix_core.xcframework.
+├── swift-app/                      # thin SwiftUI host (iPhone + iPad). Links madar_core.xcframework.
 │                                   #   SPM package consuming the CI-published binding artifact.
 └── kotlin-app/                     # thin Compose host (Android phone/tablet + JVM desktop).
                                     #   Compose Multiplatform; links the JNA-loaded .so/.dylib/.dll + .kt bindings.
 ```
 
-Three native artifacts come out of the **one** `sufrix-core` build (`crate-type = ["lib","cdylib","staticlib"]`):
+Three native artifacts come out of the **one** `madar-core` build (`crate-type = ["lib","cdylib","staticlib"]`):
 
 | Artifact | Consumer | Form |
 |---|---|---|
@@ -142,13 +142,13 @@ These are settled; everything below builds on them. (Most are already committed 
 
 | # | Decision | Rationale / ground truth |
 |---|---|---|
-| D1 | **FFI = UniFFI 0.28, proc-macro mode** (`#[uniffi::export]`, no `.udl`). `uniffi::setup_scaffolding!()`. | Already in `sufrix-core/Cargo.toml`. One crate → Swift + Kotlin bindings via `uniffi-bindgen` in library mode. Async support + host-side cancellation since 0.28. |
-| D2 | **Wire codegen = `openapi-generator -g rust` 7.23.0** into `crates/sufrix-api`, regenerated by `tool/generate_api.sh` from `SufrixRust/openapi.json` (3.1.0, **230 ops, 264 schemas**). Flags: `library=reqwest, supportAsync=true, useSingleRequestParameter=true, preferUnsignedInt=true, bestFitInt=true`. | Already wired. POS-side equivalent of Flutter's `tool/generate_api.sh` and the dashboard's `npm run generate:api`. The generated crate is **never exported across the FFI** — it is an internal transport detail. |
+| D1 | **FFI = UniFFI 0.28, proc-macro mode** (`#[uniffi::export]`, no `.udl`). `uniffi::setup_scaffolding!()`. | Already in `madar-core/Cargo.toml`. One crate → Swift + Kotlin bindings via `uniffi-bindgen` in library mode. Async support + host-side cancellation since 0.28. |
+| D2 | **Wire codegen = `openapi-generator -g rust` 7.23.0** into `crates/madar-api`, regenerated by `tool/generate_api.sh` from `SufrixRust/openapi.json` (3.1.0, **230 ops, 264 schemas**). Flags: `library=reqwest, supportAsync=true, useSingleRequestParameter=true, preferUnsignedInt=true, bestFitInt=true`. | Already wired. POS-side equivalent of Flutter's `tool/generate_api.sh` and the dashboard's `npm run generate:api`. The generated crate is **never exported across the FFI** — it is an internal transport detail. |
 | D3 | **Local DB = SQLite via `rusqlite` + `r2d2_sqlite` pool**, WAL mode. Single writer (sync worker), many readers (UI). Migrations via **`refinery`** embedded forward-only SQL. | Offline-first mandate from `CLAUDE.md`. WAL gives snapshot-consistent UI reads while the sync worker writes. |
 | D4 | **Async over FFI via embedded Tokio** (`#[uniffi::export(async_runtime = "tokio")]`). Network/write ops are `async` (→ Kotlin `suspend` / Swift `async`); pure cache reads are sync `fn`. Host-side cancellation drops the Rust future — **except outbox enqueues are non-cancellable past local commit.** | The host never manages threads. A committed sale cannot be lost to a cancelled UI task. |
-| D5 | **Environment via Rust-side `.env`, baked at build time** (`build.rs` → `cargo:rustc-env`, `SUFRIX_BASE_URL`/`SUFRIX_ENV`). Hosts supply only device-local facts (data dir, platform tag, persisted token blob, locale). | Already in `.env.example`. Dev→staging→prod promotion is a Rust-build concern, identical across all three apps. A QA-only `env_override` exists but is `[Later]`. |
-| D6 | **FFI-surface versioning = SemVer with a runtime handshake.** A monotonic `FfiVersion{major,minor}` is baked into the core and asserted at `SufrixCore::new`. Host major < core major → refuse to run (force app update). Additive-only within a major. | Three apps must not drift against the core. Bindings are published as versioned artifacts tagged `ffi-vMAJOR.MINOR`; a host pins exactly one. (§7) |
-| D7 | **Money = `i64` minor-units (piastres) at the FFI boundary, always.** All wire int32/int64 splits and any BigDecimal-as-string fields are normalized in `sufrix-core` before crossing. | Hosts format `*_minor` with `currency_code` from the session. See the BigDecimal reconciliation in §10. |
+| D5 | **Environment via Rust-side `.env`, baked at build time** (`build.rs` → `cargo:rustc-env`, `MADAR_BASE_URL`/`MADAR_ENV`). Hosts supply only device-local facts (data dir, platform tag, persisted token blob, locale). | Already in `.env.example`. Dev→staging→prod promotion is a Rust-build concern, identical across all three apps. A QA-only `env_override` exists but is `[Later]`. |
+| D6 | **FFI-surface versioning = SemVer with a runtime handshake.** A monotonic `FfiVersion{major,minor}` is baked into the core and asserted at `MadarCore::new`. Host major < core major → refuse to run (force app update). Additive-only within a major. | Three apps must not drift against the core. Bindings are published as versioned artifacts tagged `ffi-vMAJOR.MINOR`; a host pins exactly one. (§7) |
+| D7 | **Money = `i64` minor-units (piastres) at the FFI boundary, always.** All wire int32/int64 splits and any BigDecimal-as-string fields are normalized in `madar-core` before crossing. | Hosts format `*_minor` with `currency_code` from the session. See the BigDecimal reconciliation in §10. |
 | D8 | **Toolchain pinned 1.90.0** with iOS (device+sim), Android (arm64/armv7/x86_64), and desktop (macOS+Linux) targets provisioned on checkout. | Already in `rust-toolchain.toml`. |
 
 ---
@@ -194,9 +194,9 @@ Eight phases (0–7). Each boundary is **shippable** — a real artifact a telle
 ### Phase 0 — Foundations & spike (the scaffold, already begun)
 **Goal:** prove the toolchain end-to-end with a trivial exported function before any domain logic.
 **Deliverables:**
-- Cargo workspace builds `sufrix-core` as `lib + cdylib + staticlib`; `uniffi-bindgen` emits `.swift` + `.kt` from a one-method `ffi_version()` export.
-- `tool/generate_api.sh` runs `openapi-generator -g rust` against `SufrixRust/openapi.json` into `crates/sufrix-api` (excluded from the workspace; first run is *expected* not to fully compile — see §10/D2).
-- `build.rs` bakes `SUFRIX_BASE_URL`/`SUFRIX_ENV` from `.env`.
+- Cargo workspace builds `madar-core` as `lib + cdylib + staticlib`; `uniffi-bindgen` emits `.swift` + `.kt` from a one-method `ffi_version()` export.
+- `tool/generate_api.sh` runs `openapi-generator -g rust` against `SufrixRust/openapi.json` into `crates/madar-api` (excluded from the workspace; first run is *expected* not to fully compile — see §10/D2).
+- `build.rs` bakes `MADAR_BASE_URL`/`MADAR_ENV` from `.env`.
 - CI cross-compiles all eight targets; a "hello core" call returns `FfiVersion` from a SwiftUI stub and a Compose stub.
 
 **Exit criteria:** a SwiftUI app on a device and a Compose app on an Android emulator + desktop window each print the core's `FfiVersion` and `runtime_info().base_url`. No domain logic yet.
@@ -205,7 +205,7 @@ Eight phases (0–7). Each boundary is **shippable** — a real artifact a telle
 **Goal:** a teller can log in once online, then **sell, void, open/close shifts, and print receipts fully offline**, with everything queued and replayed.
 **Deliverables:**
 - `store/`: refinery migrations create the mirror tables for the hot-path read-cache (session, permissions, branches, org, timezones, categories, menu items/sizes/addon-slots, addon catalog, bundles, discounts, payment methods, orders, order_items, shifts, cash_movements, shift_reports), the durable **outbox**, `id_map`, `sync_cursors`. WAL + pragmas. (§8)
-- `ffi/`: `SufrixCore::new/shutdown/runtime_info`; `TokenStore` callback + `set_token_store`; `login/logout/is_authenticated/current_session/has_permission`; the cart lifecycle (`start_order/add_line/update_line_qty/remove_line/apply_discount/cart_totals/set_payment`); the outbox writes (`submit_order/void_order/open_shift/close_shift/add_cash_movement`); the read APIs (menu/categories/addon-catalog/bundles/discounts/payment-methods/orders/current_shift); `CoreObserver` + `set_observer/sync_status`; the full `CoreError` enum. (§7)
+- `ffi/`: `MadarCore::new/shutdown/runtime_info`; `TokenStore` callback + `set_token_store`; `login/logout/is_authenticated/current_session/has_permission`; the cart lifecycle (`start_order/add_line/update_line_qty/remove_line/apply_discount/cart_totals/set_payment`); the outbox writes (`submit_order/void_order/open_shift/close_shift/add_cash_movement`); the read APIs (menu/categories/addon-catalog/bundles/discounts/payment-methods/orders/current_shift); `CoreObserver` + `set_observer/sync_status`; the full `CoreError` enum. (§7)
 - `domain/`: the **pricing/cart engine** (subtotal/tax/discount/total) matching the server's math so offline totals equal the eventual server order; outbox enqueue + drain + temp-id reconciliation; defensive serde (open strings, `#[serde(other)]` closed enums, money→i64, translations→String).
 - `net/`: token refresh on 401, client-generated `Idempotency-Key` on every outbox POST, delta-pull loop.
 - `print/`: receipt + Z-report rendering offline from the mirror (transport stub — real printer in P4).
@@ -218,7 +218,7 @@ Eight phases (0–7). Each boundary is **shippable** — a real artifact a telle
 **Deliverables:**
 - Cursor/delta pull per stream (`/sync/changes?since=seq`), tombstones, server-authoritative timestamps + clock-skew recording.
 - Batch replay (`POST /sync/replay`) with stop-on-dependency / continue-on-independent semantics; `depends_on_seq` + late temp-id substitution.
-- `on_data_changed`/`DataChanged` events drive host re-queries; `sufrix-api` finally **wired into `sufrix-core`** (workspace `exclude` removed) with the BigDecimal-string post-processing from §10 completed.
+- `on_data_changed`/`DataChanged` events drive host re-queries; `madar-api` finally **wired into `madar-core`** (workspace `exclude` removed) with the BigDecimal-string post-processing from §10 completed.
 - `refresh_session` manual button; `pending_outbox` listing; FFI-version artifact registry.
 
 **Exit criteria:** simulate a 3-day offline backlog of 400+ mixed commands → one reconnect drains them in order with correct parent/child resolution; a single poisoned 4xx command goes dead-letter without freezing the queue; a wrong device clock does not mis-sequence the shift report.
@@ -274,11 +274,11 @@ Every module below is **shared logic in Rust** with **per-platform layout only**
 
 ## 7. FFI surface v0 (the Phase 1–2 contract)
 
-UniFFI proc-macro mode. One `SufrixCore` Object (Arc, `Send+Sync`) owns the DB pool, HTTP client, token store, sync engine, and observer registry. **[P1]** ships in Phase 1; **[P2]** in Phase 2; **[Later]** post-MVP.
+UniFFI proc-macro mode. One `MadarCore` Object (Arc, `Send+Sync`) owns the DB pool, HTTP client, token store, sync engine, and observer registry. **[P1]** ships in Phase 1; **[P2]** in Phase 2; **[Later]** post-MVP.
 
 ### 7.1 Handle, config, lifecycle — [P1]
 ```rust
-#[derive(uniffi::Object)] pub struct SufrixCore { /* opaque */ }
+#[derive(uniffi::Object)] pub struct MadarCore { /* opaque */ }
 
 #[derive(uniffi::Record)]
 pub struct CoreConfig {
@@ -292,8 +292,8 @@ pub struct CoreConfig {
 #[derive(uniffi::Enum)] pub enum CoreEnv { Dev, Staging, Prod }
 
 #[uniffi::export(async_runtime = "tokio")]
-impl SufrixCore {
-    #[uniffi::constructor] pub async fn new(config: CoreConfig) -> Result<Arc<SufrixCore>, CoreError>; // opens DB, migrates, loads token, asserts FFI major
+impl MadarCore {
+    #[uniffi::constructor] pub async fn new(config: CoreConfig) -> Result<Arc<MadarCore>, CoreError>; // opens DB, migrates, loads token, asserts FFI major
     pub fn runtime_info(&self) -> RuntimeInfo;
     pub async fn shutdown(&self);
 }
@@ -309,7 +309,7 @@ The **core owns the live session**; the host is a dumb secure-bytes vault. The c
 pub trait TokenStore: Send + Sync { fn save_blob(&self, blob: Vec<u8>); fn clear_blob(&self); }
 
 #[uniffi::export(async_runtime = "tokio")]
-impl SufrixCore {
+impl MadarCore {
     pub fn set_token_store(&self, store: Box<dyn TokenStore>);
     pub async fn login(&self, req: LoginRequest) -> Result<SessionSnapshot, CoreError>; // online-only; mirrors me+perms+branch+org+tz
     pub fn is_authenticated(&self) -> bool;
@@ -328,7 +328,7 @@ pub struct SessionSnapshot { pub user_id: String, pub display_name: String, pub 
 Reads serve SQLite, layer branch/channel overrides over base catalog in Rust, and pre-resolve `*_translations` to a `String`. All money is `i64` minor-units.
 ```rust
 #[uniffi::export]
-impl SufrixCore {
+impl MadarCore {
     pub fn list_menu_items(&self) -> Vec<MenuItemView>;       // base ∪ branch overrides, soft-deletes filtered
     pub fn list_categories(&self) -> Vec<CategoryView>;
     pub fn list_addon_catalog(&self) -> Vec<AddonItemView>;
@@ -348,7 +348,7 @@ pub struct MenuItemView { pub id: String, pub name: String, pub category_id: Opt
 The cart is **core-owned and journaled** (survives app kill). `submit_order` is the single outbox write and returns at **local commit**, not server-ack.
 ```rust
 #[uniffi::export(async_runtime = "tokio")]
-impl SufrixCore {
+impl MadarCore {
     // cart — synchronous, no network
     pub fn start_order(&self, branch_id: String, shift_id: String, order_type: String) -> CartView;
     pub fn add_line(&self, cart_id: String, line: NewCartLine) -> Result<CartView, CoreError>; // menu_item_id XOR bundle_id (Rust-enforced)
@@ -386,7 +386,7 @@ pub trait CoreObserver: Send + Sync {
 #[derive(uniffi::Enum)] pub enum Connectivity { Online, Offline, Reconnecting }
 
 #[uniffi::export]
-impl SufrixCore {
+impl MadarCore {
     pub fn set_observer(&self, observer: Box<dyn CoreObserver>) -> SyncStatus; // returns current snapshot for cold start
     pub fn sync_status(&self) -> SyncStatus;
     pub fn pending_outbox(&self) -> Vec<OutboxItemView>; // [P2]
@@ -409,13 +409,13 @@ pub enum CoreError {
 ```
 
 ### 7.7 FFI versioning (lockstep)
-`uniffi-bindgen` emits the one true `.swift`/`.kt` in CI, published as `ffi-vMAJOR.MINOR` artifacts; hosts pin one. `SufrixCore::new` asserts: host major < core major → `Internal{"ffi version too old, update app"}` and refuse; host minor < core minor → allowed (additive). Within a major, **only add** methods / `Option` fields / enum variants (with a host default arm). Any rename/removal/type-change ⇒ major bump ⇒ all three apps rebuild in one release train.
+`uniffi-bindgen` emits the one true `.swift`/`.kt` in CI, published as `ffi-vMAJOR.MINOR` artifacts; hosts pin one. `MadarCore::new` asserts: host major < core major → `Internal{"ffi version too old, update app"}` and refuse; host minor < core minor → allowed (additive). Within a major, **only add** methods / `Option` fields / enum variants (with a host default arm). Any rename/removal/type-change ⇒ major bump ⇒ all three apps rebuild in one release train.
 
 ---
 
 ## 8. Local store & sync (condensed)
 
-**Crate:** `sufrix-core/store/` — one embedded SQLite DB (rusqlite + r2d2 pool), the **source of truth the UI reads from**, online or offline.
+**Crate:** `madar-core/store/` — one embedded SQLite DB (rusqlite + r2d2 pool), the **source of truth the UI reads from**, online or offline.
 
 **Pragmas (every pooled conn):** `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`. Single writer (sync worker) + many snapshot-consistent UI readers.
 
@@ -464,7 +464,7 @@ Backend = `SufrixRust` (Actix-Web). Everything is **additive**; no field removed
 ## 10. Risks & open questions
 
 1. **BigDecimal-as-JSON-string — RESOLVED CONTRADICTION, treat as REAL.** The domain-inventory artifacts repeatedly assert the BigDecimal-string quirk "does not appear." **The actual scaffold contradicts them:** `rust-core/tool/generate_api.sh` step 3 explicitly states *"the backend serializes BigDecimal columns as JSON STRINGS (`current_stock`, `reorder_threshold`, prices, `quantity_used`, …) but the generator types them as `f64`,"* and defers string-tolerant fixups to Phase 2. **Decision:** trust the scaffold. The generator (`preferUnsignedInt`/`bestFitInt`) handles the int32/int64 *minor-units* money split fine, but **inventory/recipe/stock decimal fields that arrive as strings must get `serde_with` string-tolerant deserialization** during the Phase-2 wire-in (`net/`), normalized to `i64` minor-units (money) or `f64` (quantities) before crossing the FFI. This is the single most likely silent-corruption bug; the CI round-trip test (deser sample → reserialize from `payload`) must cover these fields. *Open question: enumerate the exact string-typed decimal fields from a live spec dump before P2 — the four artifacts disagree with the scaffold on which they are.*
-2. **First codegen run does not fully compile (expected).** `generate_api.sh` step 4 already anticipates this. `sufrix-api` stays **excluded from the workspace** through Phase 1 so the foundation builds; wiring it in is a gated Phase-2 task with the decimal fixups above. Risk: the generator mis-emits the 3.1 `oneOf:[{type:null},$ref]` pattern (`OrderFull.delivery`, `printer_brand`), `allOf` flattening (`MenuItemFull`/`BundleWithComponents`/`PurchaseOrderFull`), untyped arrays (`addons`/`bundle_components`→`Vec<Value>`), and multipart (`create_org`/`upload_*_image`). **Mitigation:** the FFI never exposes raw wire types — every hostile shape is re-mapped to a hand-written view DTO; multipart endpoints are verified by hand.
+2. **First codegen run does not fully compile (expected).** `generate_api.sh` step 4 already anticipates this. `madar-api` stays **excluded from the workspace** through Phase 1 so the foundation builds; wiring it in is a gated Phase-2 task with the decimal fixups above. Risk: the generator mis-emits the 3.1 `oneOf:[{type:null},$ref]` pattern (`OrderFull.delivery`, `printer_brand`), `allOf` flattening (`MenuItemFull`/`BundleWithComponents`/`PurchaseOrderFull`), untyped arrays (`addons`/`bundle_components`→`Vec<Value>`), and multipart (`create_org`/`upload_*_image`). **Mitigation:** the FFI never exposes raw wire types — every hostile shape is re-mapped to a hand-written view DTO; multipart endpoints are verified by hand.
 3. **Android SDK / build-machine readiness.** `kotlin-app/` is empty and the SDK/emulator may not be installed on the build machine yet. Compose Multiplatform targeting Android **and** JVM desktop from one module is non-trivial. **Mitigation:** Phase 0 stands up the Compose stub + JNA native-lib loading before Phase 4 domain work; provision Android SDK + NDK and the cross-compile linkers in CI early. iOS toolchain is already pinned (`rust-toolchain.toml`).
 4. **Printing transport — RESOLVED (see Revision 2 / D10).** Fleet is Epson (ESC/POS raster) + Star **TSP100** (raster-only), all LAN — both driven over **raw TCP :9100 from Rust**, identical on every platform incl. desktop; no native SDK seam. The only real cost is the Rust rasterizer (layout → 1-bpp bitmap + Arabic shaping). Residual: confirm no **USB-only TSP143U** units (USB would need a native transport and fails on iOS).
 5. **No server `Idempotency-Key` contract today.** Until backend Phase A lands, exactly-once leans on **client-id-as-dedup** (client-supplied PKs + duplicate-200/409-as-ack). The header is sent forward-compatibly so it activates for free. Risk window: "server committed, ack lost, client retries with a server-minted-PK endpoint" (`finalize`) — mitigated by the `client_ref` echo + change-feed re-keying.

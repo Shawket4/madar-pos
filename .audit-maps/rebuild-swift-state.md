@@ -4,7 +4,7 @@ I have everything needed. Here is the inventory.
 
 # SwiftUI rebuild — Order History / Past Shifts / Receipts inventory
 
-Tokens/components in use across all three screens: `SufrixCard`-equivalent inline cards (surface + `Radii.md`/`Radii.lg` rounded rect + 1pt `theme.colors.border` stroke), `Space.*` spacing scale, `Radii.*`, `StatusChip`, `SufrixButton`, `SufrixTextField`, `AmountField`, `NoticeBanner`, `ScreenHeader` (private), `SkeletonList`, `Money.format`, `.font(.ui())` / `.font(.money())`, `Haptics`, `Motion.standard`, `.sufrixSheet(item:)`. Note: there is no actual shared `SufrixCard` view — every card is hand-rolled `.background(surface).clipShape(RoundedRectangle…).overlay(strokeBorder…)`.
+Tokens/components in use across all three screens: `MadarCard`-equivalent inline cards (surface + `Radii.md`/`Radii.lg` rounded rect + 1pt `theme.colors.border` stroke), `Space.*` spacing scale, `Radii.*`, `StatusChip`, `MadarButton`, `MadarTextField`, `AmountField`, `NoticeBanner`, `ScreenHeader` (private), `SkeletonList`, `Money.format`, `.font(.ui())` / `.font(.money())`, `Haptics`, `Motion.standard`, `.madarSheet(item:)`. Note: there is no actual shared `MadarCard` view — every card is hand-rolled `.background(surface).clipShape(RoundedRectangle…).overlay(strokeBorder…)`.
 
 ---
 
@@ -16,7 +16,7 @@ Tokens/components in use across all three screens: `SufrixCard`-equivalent inlin
 ### Fields shown
 - Collapsed row: order number (`#N`, navy), time (`HH:MM` via `timeOf`), total (`.money`), and a `StatusChip` only for failed/queued/voided (completed orders show no chip).
 - Expanded: per-line rows (`qty× name`, modifiers = sizeLabel · addons · optionals joined with " · ", line total) from `OrderDetailView.lines`; then `Subtotal`, `Tax`, payment label; and a `Print` (printer) + `Void` (trash) action.
-- Filter bar (when history non-empty): a `SufrixTextField` search (matches order number + payment label) and a horizontal capsule chip row: All / Completed / Queued / Voided.
+- Filter bar (when history non-empty): a `MadarTextField` search (matches order number + payment label) and a horizontal capsule chip row: All / Completed / Queued / Voided.
 - Empty/loading states: `SkeletonList` while loading, `tray` icon empty state.
 
 ### Bound DTO (`OrderSummaryView`, `OrderDetailView`/`OrderDetailLineView` in `orders.rs`)
@@ -104,4 +104,4 @@ Thread the core's `ReceiptLabels` / `ShiftReportLabels` (already defined in `rec
 | **Past Shifts** | Responsive table(680)/cards, expand-to-orders, reprint Z-report | **Closest structurally.** Missing real Teller-name column (renders status chip in its place) + a Closed column + local-open pinning. Needs `teller_name` on `ShiftSummaryView`. |
 | **Receipts** | Faithful thermal `ReceiptPaper`, post-checkout confirmation, Z-report breakdown w/ bars | **Most complete.** Main gap: preview strings hard-coded English (not using core `ReceiptLabels`/`ShiftReportLabels`); minor missing Z-report opening-cash row. |
 
-**Key files:** `/Users/shawket/Desktop/sufrix-rebuild/swift-app/Sources/SufrixUI/OrderHistoryView.swift`, `/Users/shawket/Desktop/sufrix-rebuild/swift-app/Sources/SufrixUI/CashAndShiftsView.swift` (`ShiftHistoryView` + `ShiftRow`), `/Users/shawket/Desktop/sufrix-rebuild/swift-app/Sources/SufrixUI/ShiftReportPreview.swift`, `/Users/shawket/Desktop/sufrix-rebuild/swift-app/Sources/SufrixUI/Components/ReceiptPaper.swift`, `/Users/shawket/Desktop/sufrix-rebuild/swift-app/Sources/SufrixUI/TenderView.swift` (`ReceiptConfirmation`). **Core DTOs:** `OrderSummaryView`/`OrderDetailView` in `orders.rs`, `ShiftSummaryView`/`ShiftReportView`/`CashMovementView` in `shift.rs`, `ReceiptView` + `ReceiptLabels`/`ShiftReportLabels` in `receipt.rs`. (No `teller_name` on `OrderSummaryView` or `ShiftSummaryView` — the binding blocker for both table parity gaps.)
+**Key files:** `/Users/shawket/Desktop/madar-rebuild/swift-app/Sources/MadarUI/OrderHistoryView.swift`, `/Users/shawket/Desktop/madar-rebuild/swift-app/Sources/MadarUI/CashAndShiftsView.swift` (`ShiftHistoryView` + `ShiftRow`), `/Users/shawket/Desktop/madar-rebuild/swift-app/Sources/MadarUI/ShiftReportPreview.swift`, `/Users/shawket/Desktop/madar-rebuild/swift-app/Sources/MadarUI/Components/ReceiptPaper.swift`, `/Users/shawket/Desktop/madar-rebuild/swift-app/Sources/MadarUI/TenderView.swift` (`ReceiptConfirmation`). **Core DTOs:** `OrderSummaryView`/`OrderDetailView` in `orders.rs`, `ShiftSummaryView`/`ShiftReportView`/`CashMovementView` in `shift.rs`, `ReceiptView` + `ReceiptLabels`/`ShiftReportLabels` in `receipt.rs`. (No `teller_name` on `OrderSummaryView` or `ShiftSummaryView` — the binding blocker for both table parity gaps.)

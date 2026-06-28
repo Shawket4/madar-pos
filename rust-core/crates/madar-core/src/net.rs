@@ -65,7 +65,7 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(base_url: String, clock_skew: Arc<std::sync::atomic::AtomicI64>) -> CoreResult<Self> {
-        let user_agent = format!("sufrix-core/{}", env!("CARGO_PKG_VERSION"));
+        let user_agent = format!("madar-core/{}", env!("CARGO_PKG_VERSION"));
         let http = reqwest::Client::builder()
             // ring + bundled Mozilla roots (see default_tls_config) — keeps cert
             // verification identical on Android/iOS/desktop with no OpenSSL.
@@ -194,7 +194,7 @@ impl ApiClient {
 
     /// Authenticated raw POST of a JSON `body` with one extra request header,
     /// returning the response text on 2xx (status → `CoreError` otherwise). Used
-    /// for `/auth/login`, which carries the device's `X-Sufrix-Closing-Shifts`
+    /// for `/auth/login`, which carries the device's `X-Madar-Closing-Shifts`
     /// acknowledgment so the server's "another teller's shift is open" guard can
     /// tell a legitimate offline handover (the device has that shift's close
     /// queued) from a takeover.
@@ -654,7 +654,7 @@ mod tests {
         let c = ApiClient::new("http://example.test".into(), Arc::new(std::sync::atomic::AtomicI64::new(0))).unwrap();
         let cfg = c.config();
         assert_eq!(cfg.base_path, "http://example.test");
-        assert!(cfg.user_agent.as_deref().unwrap().starts_with("sufrix-core/"));
+        assert!(cfg.user_agent.as_deref().unwrap().starts_with("madar-core/"));
         assert!(cfg.bearer_access_token.is_none());
         assert!(cfg.basic_auth.is_none());
         assert!(cfg.api_key.is_none());

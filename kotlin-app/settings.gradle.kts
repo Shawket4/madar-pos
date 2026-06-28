@@ -1,4 +1,4 @@
-rootProject.name = "sufrix-pos"
+rootProject.name = "madar-pos"
 
 pluginManagement {
     repositories {

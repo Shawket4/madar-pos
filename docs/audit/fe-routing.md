@@ -2,7 +2,7 @@ I have everything needed. Here is the complete audit.
 
 ---
 
-# Cache-Based Routing Audit — Sufrix POS
+# Cache-Based Routing Audit — Madar POS
 
 ## 1. Architecture as-found
 
