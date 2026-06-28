@@ -442,47 +442,61 @@ private fun ChangeBanner(change: Long, short: Long, currency: String) {
 private fun ReceiptConfirmation(model: AppModel, receipt: ReceiptView, currency: String, onDone: () -> Unit) {
     val c = madarColors()
     val scope = rememberCoroutineScope()
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.xl),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.lg),
-    ) {
-        // Large status glyph — queued-offline shows a clock, sent shows a check
-        // (mirrors the Swift clock.badge.checkmark / checkmark.circle.fill).
-        val queued = receipt.queuedOffline
-        MadarIcon(
-            if (queued) "clock" else "checkmark.circle",
-            tint = if (queued) c.warning else c.success,
-            size = 44.dp,
-        )
-        Text(t("order.order_placed"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 22.sp)
-        StatusChip(
-            t(if (queued) "order.queued_hint" else "order.sent_hint"),
-            if (queued) ChipTone.WARNING else ChipTone.SUCCESS,
-            icon = if (queued) "clock" else "checkmark.circle",
-        )
-
-        // The printable receipt, exactly as it will print (preview before print).
-        // Pass the org logo so the on-screen paper shows the brand mark.
-        ReceiptPaper(model, receipt, model.branchName, currency, model.orgLogoUrl)
-
-        // The receipt is auto-printed on checkout. Show the print status, and keep
-        // a Reprint button available (a reprint does NOT re-pop the cash drawer).
-        when (model.printState) {
-            PrintState.PRINTED -> StatusChip(t("receipt.printed"), ChipTone.SUCCESS, icon = "checkmark.circle")
-            PrintState.NO_PRINTER -> StatusChip(t("receipt.no_printer"), ChipTone.WARNING, icon = "exclamationmark.triangle")
-            PrintState.FAILED -> StatusChip(t("receipt.print_failed"), ChipTone.DANGER, icon = "exclamationmark.triangle")
-            else -> {}
+    val queued = receipt.queuedOffline
+    // Fixed status header · scrolling receipt · pinned footer — so the print
+    // controls + New Order stay reachable however long the receipt is (was one
+    // big scroll that pushed the buttons off-screen on a long order). Mirrors Swift.
+    Column(Modifier.fillMaxSize()) {
+        // ── Fixed status header ──
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            MadarIcon(
+                if (queued) "clock" else "checkmark.circle",
+                tint = if (queued) c.warning else c.success,
+                size = 44.dp,
+            )
+            Text(t("order.order_placed"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 22.sp)
+            StatusChip(
+                t(if (queued) "order.queued_hint" else "order.sent_hint"),
+                if (queued) ChipTone.WARNING else ChipTone.SUCCESS,
+                icon = if (queued) "clock" else "checkmark.circle",
+            )
         }
-        MadarButton(
-            t("receipt.reprint"),
-            { scope.launch { model.printReceipt(kickDrawer = false) } },
-            variant = BtnVariant.OUTLINE,
-            loading = model.printState == PrintState.PRINTING,
-            icon = "printer",
-        )
 
-        MadarButton(t("order.new_order"), { onDone() }, variant = BtnVariant.OUTLINE, icon = "plus")
+        // ── Scrolling receipt (only the paper scrolls) ──
+        Column(
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Space.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ReceiptPaper(model, receipt, model.branchName, currency, model.orgLogoUrl)
+        }
+
+        // ── Pinned footer (surface + top hairline): print status + actions ──
+        Column(Modifier.fillMaxWidth().background(c.surface)) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+            Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                when (model.printState) {
+                    PrintState.PRINTED -> StatusChip(t("receipt.printed"), ChipTone.SUCCESS, icon = "checkmark.circle")
+                    PrintState.NO_PRINTER -> StatusChip(t("receipt.no_printer"), ChipTone.WARNING, icon = "exclamationmark.triangle")
+                    PrintState.FAILED -> StatusChip(t("receipt.print_failed"), ChipTone.DANGER, icon = "exclamationmark.triangle")
+                    else -> {}
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    MadarButton(
+                        t("receipt.reprint"),
+                        { scope.launch { model.printReceipt(kickDrawer = false) } },
+                        modifier = Modifier.weight(1f),
+                        variant = BtnVariant.OUTLINE,
+                        loading = model.printState == PrintState.PRINTING,
+                        icon = "printer",
+                    )
+                    MadarButton(t("order.new_order"), { onDone() }, modifier = Modifier.weight(1f), icon = "plus")
+                }
+            }
+        }
     }
 }
 
