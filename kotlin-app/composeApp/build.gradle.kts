@@ -131,6 +131,11 @@ compose.desktop {
         // desktop JVM — JNA reads jna.library.path. Without this the app compiles
         // but crashes at launch with UnsatisfiedLinkError.
         jvmArgs += "-Djna.library.path=${rootProject.projectDir}/../rust-core/target/debug"
+        // Disable ProGuard for the release distribution — it chokes on JNA/UniFFI
+        // reflection and isn't needed for a desktop JVM bundle.
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+        }
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Madar"

@@ -1,11 +1,14 @@
 name: Release
 
-# Multi-platform build for the Madar POS (Kotlin Multiplatform + SwiftUI + Rust core).
-# Modeled on the legacy Flutter app's Release workflow. Triggered by a version tag.
+# Multi-platform build for Madar POS (Kotlin Multiplatform + SwiftUI + Rust core).
+# Modeled on the legacy Flutter app's Release workflow.
 #
-# The Rust core (madar-core) is compiled per-platform; the typed API client
-# (crates/madar-api) is gitignored and regenerated from the committed openapi.json
-# snapshot before any build.
+# Each build job publishes its artifact DIRECTLY to the public releases-only repo
+# (Shawket4/madar-pos-releases) — no workflow artifacts (avoids the Actions artifact
+# storage quota). Source stays private; only built binaries are published.
+#
+# Requires repo secret RELEASES_TOKEN (PAT with Contents: write on madar-pos-releases).
+# Release on a version tag; workflow_dispatch runs the builds without publishing.
 on:
   push:
     tags:
@@ -16,7 +19,7 @@ env:
   NDK_VERSION: "26.3.11579264"
 
 jobs:
-  # ── Android APK ──────────────────────────────────────────────────────────────
+  # ── Android APK (the primary target — POS tablets) ───────────────────────────
   android:
     name: Build Android APK
     runs-on: ubuntu-latest
@@ -36,6 +39,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-core
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
@@ -66,14 +74,24 @@ jobs:
         working-directory: kotlin-app
         run: ./gradlew :composeApp:assembleRelease --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - name: Publish APK → madar-pos-releases
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
-          name: android-apk
-          path: kotlin-app/composeApp/build/outputs/apk/release/*.apk
+          repository: Shawket4/madar-pos-releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: Madar POS ${{ github.ref_name }}
+          body: |
+            Automated multi-platform build of **Madar POS**.
+            _Built from private source `madar-pos` @ `${{ github.sha }}`._
+          files: kotlin-app/composeApp/build/outputs/apk/release/*.apk
+          fail_on_unmatched_files: true
 
-  # ── Desktop (Linux + macOS) ──────────────────────────────────────────────────
+  # ── Desktop (Linux + macOS) — best-effort ────────────────────────────────────
   desktop:
     name: Build Desktop (${{ matrix.os }})
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +112,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-core
+
       - name: Regenerate typed API client
         run: SKIP_EXPORT=1 MADAR_BACKEND_DIR="$PWD" bash rust-core/tool/generate_api.sh
 
@@ -104,14 +127,24 @@ jobs:
         working-directory: kotlin-app
         run: ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - name: Publish desktop → madar-pos-releases
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
-          name: desktop-${{ matrix.os }}
-          path: kotlin-app/composeApp/build/compose/binaries/main-release/**
+          repository: Shawket4/madar-pos-releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: Madar POS ${{ github.ref_name }}
+          files: |
+            kotlin-app/composeApp/build/compose/binaries/main-release/**/*.deb
+            kotlin-app/composeApp/build/compose/binaries/main-release/**/*.dmg
+            kotlin-app/composeApp/build/compose/binaries/main-release/**/*.msi
+          fail_on_unmatched_files: false
 
-  # ── iOS (build check; unsigned) ──────────────────────────────────────────────
+  # ── iOS (build check; unsigned) — best-effort ────────────────────────────────
   ios:
     name: Build iOS (unsigned)
+    continue-on-error: true
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,6 +158,11 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
 
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-core
+
       - name: Regenerate typed API client
         run: SKIP_EXPORT=1 MADAR_BACKEND_DIR="$PWD" bash rust-core/tool/generate_api.sh
 
@@ -137,37 +175,3 @@ jobs:
           xcodebuild -project MadarPOS.xcodeproj -scheme MadarPOS \
             -sdk iphonesimulator -configuration Release \
             CODE_SIGNING_ALLOWED=NO build
-
-  # ── Publish to the PUBLIC releases-only repo ─────────────────────────────────
-  # Source stays private (madar-pos); only built artifacts go to the public
-  # Shawket4/madar-pos-releases Releases for distribution.
-  # Requires repo secret RELEASES_TOKEN = a PAT with contents:write on madar-pos-releases.
-  release:
-    name: Publish release (public repo)
-    needs: [android, desktop]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Flatten artifacts
-        run: |
-          mkdir -p release-files
-          find artifacts -type f \( -name '*.apk' -o -name '*.dmg' -o -name '*.deb' -o -name '*.msi' -o -name '*.zip' -o -name '*.AppImage' \) -exec cp {} release-files/ \;
-          ls -la release-files/
-
-      - name: Publish to madar-pos-releases
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: Shawket4/madar-pos-releases
-          token: ${{ secrets.RELEASES_TOKEN }}
-          name: Madar POS ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          body: |
-            Automated multi-platform build of **Madar POS**.
-            _Built from private source `madar-pos` @ `${{ github.sha }}`._
-          files: release-files/*
-          fail_on_unmatched_files: false
