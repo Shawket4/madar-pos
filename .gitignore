@@ -24,3 +24,7 @@ kotlin-app/composeApp/src/commonMain/kotlin/app/sufrix/core/
 
 # Xcode per-user state
 **/xcuserdata/
+
+# Icon-generation scratch dir — npm-installs lucide-static (regenerate with
+# `tool/gen-icons.sh`); never track its node_modules / vendored package.
+tool/.icon-build/
