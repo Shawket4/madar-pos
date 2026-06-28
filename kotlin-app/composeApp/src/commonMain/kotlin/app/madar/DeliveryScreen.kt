@@ -152,6 +152,7 @@ fun DeliveryBody(model: AppModel) {
                                 onPrep = { scope.launch { model.addDeliveryPrep(o) } },
                                 onFinalize = { finalizing = o },
                                 onCancel = { cancelling = o },
+                                onReject = { scope.launch { model.rejectDelivery(o) } },
                             )
                         }
                     }
@@ -222,6 +223,7 @@ private fun DeliveryOrderCard(
     onPrep: () -> Unit,
     onFinalize: () -> Unit,
     onCancel: () -> Unit,
+    onReject: () -> Unit,
 ) {
     val c = madarColors()
     Column(
@@ -282,6 +284,15 @@ private fun DeliveryOrderCard(
                             leadingIcon = { MadarIcon("checkmark.seal", tint = c.textSecondary, size = IconSize.md) },
                             onClick = { menuOpen = false; onFinalize() },
                         )
+                        // Reject is the terminal "refuse incoming work" action — only
+                        // a just-received order can be rejected (before any prep).
+                        if (o.status == "received") {
+                            DropdownMenuItem(
+                                text = { Text(t("delivery.reject"), color = c.danger, fontFamily = LocalMadarFont.current, fontSize = 14.sp) },
+                                leadingIcon = { MadarIcon("hand.raised", tint = c.danger, size = IconSize.md) },
+                                onClick = { menuOpen = false; onReject() },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(t("delivery.cancel"), color = c.danger, fontFamily = LocalMadarFont.current, fontSize = 14.sp) },
                             leadingIcon = { MadarIcon("xmark.circle", tint = c.danger, size = IconSize.md) },

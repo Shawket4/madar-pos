@@ -23,6 +23,7 @@ struct SettingsView: View {
                         appearanceCard
                         languageCard
                         printerCard
+                        tillCard
                         lanCard
                         deviceCard
                         diagnosticsCard
@@ -157,6 +158,30 @@ struct SettingsView: View {
         }
     }
 
+    // Till (drawer) binding — which POS drawer this device controls. Hidden on
+    // kitchen devices (they bind a station, not a till) and when there are none.
+    @ViewBuilder private var tillCard: some View {
+        if !app.isKitchenDevice && !app.tills.isEmpty {
+            card(t("settings.till")) {
+                tillRow(t("settings.till_default"), app.deviceConfig.tillId == nil) { app.setDeviceTill(nil) }
+                ForEach(app.tills, id: \.id) { till in
+                    tillRow(till.name, app.deviceConfig.tillId == till.id) { app.setDeviceTill(till.id) }
+                }
+            }
+        }
+    }
+
+    private func tillRow(_ label: String, _ selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: Space.sm) {
+                MadarIcon(selected ? "checkmark.circle" : "circle", size: IconSize.lg)
+                    .foregroundStyle(selected ? theme.colors.accent : theme.colors.textMuted)
+                Text(label).font(.ui(14, .medium)).foregroundStyle(theme.colors.textPrimary)
+                Spacer()
+            }
+        }.buttonStyle(.plain)
+    }
+
     private var lanCard: some View {
         card(t("settings.lan")) {
             // Optional fixed hub-IP for the LAN relay when mDNS auto-discovery can't
@@ -201,7 +226,10 @@ struct SettingsView: View {
                 }
             }
         }
-        .task { app.loadDiagnostics() }
+        .task {
+            app.loadDiagnostics()
+            if !app.isKitchenDevice { await app.loadTills() }
+        }
     }
 
     // MARK: - Parts

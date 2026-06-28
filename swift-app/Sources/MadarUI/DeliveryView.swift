@@ -107,7 +107,8 @@ struct DeliveryBody: View {
                         DeliveryOrderCard(
                             app: app, order: order,
                             onFinalize: { finalizing = order },
-                            onCancel: { cancelling = order }
+                            onCancel: { cancelling = order },
+                            onReject: { Task { _ = await app.rejectDelivery(order) } }
                         )
                     }
                 }
@@ -126,6 +127,7 @@ private struct DeliveryOrderCard: View {
     let order: DeliveryOrderView
     let onFinalize: () -> Void
     let onCancel: () -> Void
+    let onReject: () -> Void
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -182,6 +184,9 @@ private struct DeliveryOrderCard: View {
             Menu {
                 Button { Task { await app.addDeliveryPrep(order) } } label: { Label(t("delivery.add_prep"), systemImage: "clock") }
                 Button { onFinalize() } label: { Label(t("delivery.finalize"), systemImage: "checkmark.seal") }
+                if order.status == "received" {
+                    Button(role: .destructive) { onReject() } label: { Label(t("delivery.reject"), systemImage: "hand.raised") }
+                }
                 Button(role: .destructive) { onCancel() } label: { Label(t("delivery.cancel"), systemImage: "xmark.circle") }
             } label: {
                 MadarIcon("ellipsis.circle", size: 22).foregroundStyle(theme.colors.textSecondary)

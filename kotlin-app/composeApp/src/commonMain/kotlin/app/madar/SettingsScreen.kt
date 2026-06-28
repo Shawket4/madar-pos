@@ -122,6 +122,20 @@ fun SettingsScreen(model: AppModel) {
                         }
                     }
                 }
+                // Till (drawer) binding — which POS drawer this device controls.
+                // Multi-till branches pin a device to one; others use the branch
+                // default. Hidden on kitchen devices (they bind a station, not a till).
+                if (!model.isKitchenDevice) {
+                    LaunchedEffect(Unit) { model.loadTills() }
+                    if (model.tills.isNotEmpty()) {
+                        Card(t("settings.till")) {
+                            TillRow(t("settings.till_default"), model.deviceConfig.tillId == null) { model.setDeviceTill(null) }
+                            model.tills.forEach { till ->
+                                TillRow(till.name, model.deviceConfig.tillId == till.id) { model.setDeviceTill(till.id) }
+                            }
+                        }
+                    }
+                }
                 Card(t("settings.lan")) {
                     // Optional fixed hub-IP for the LAN relay when mDNS auto-discovery
                     // can't reach peers. Writes route through the core (setLanHub),
@@ -214,6 +228,22 @@ private fun Chip(modifier: Modifier, label: String, active: Boolean, onClick: ()
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = if (active) c.textOnAccent else c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun TillRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    val c = madarColors()
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        MadarIcon(if (selected) "checkmark.circle" else "circle", tint = if (selected) c.accent else c.textMuted, size = IconSize.lg)
+        Text(
+            label, color = c.textPrimary, fontFamily = LocalMadarFont.current,
+            fontWeight = FontWeight.Medium, fontSize = 14.sp, modifier = Modifier.weight(1f),
+        )
     }
 }
 

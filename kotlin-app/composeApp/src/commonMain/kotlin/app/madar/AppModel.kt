@@ -8,6 +8,7 @@ import app.madar.core.BranchView
 import app.madar.core.DeviceConfigView
 import app.madar.core.EventListener
 import app.madar.core.KdsStationView
+import app.madar.core.TillView
 import app.madar.core.KdsTicketView
 import app.madar.core.RealtimeEvent
 import app.madar.core.RealtimePlayer
@@ -952,6 +953,14 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
         catch (e: CoreException) { error = humanMessage(e); false }
         finally { isBusy = false }
     }
+    /** Reject a just-received delivery order — a terminal state the core models
+     *  distinctly from cancel (refusing incoming work, before any prep). */
+    suspend fun rejectDelivery(o: DeliveryOrderView): Boolean {
+        isBusy = true; error = null
+        return try { core.deliverySetStatus(o.id, "rejected"); loadDeliveryOrders(); true }
+        catch (e: CoreException) { error = humanMessage(e); false }
+        finally { isBusy = false }
+    }
     /** Finalize into a real sale on the open shift, charged to a payment method. */
     suspend fun finalizeDelivery(o: DeliveryOrderView, paymentMethodId: String): Boolean {
         isBusy = true; error = null
@@ -1191,6 +1200,10 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
         runCatching { core.kdsList(deviceConfig.stationId) }.getOrNull()?.let { kdsTickets = it }
     }
     suspend fun loadKdsStations() { kdsStations = runCatching { core.kdsListStations() }.getOrDefault(emptyList()) }
+
+    /** The branch's tills (drawers) — for the Settings till picker. */
+    var tills by mutableStateOf<List<TillView>>(emptyList()); private set
+    suspend fun loadTills() { tills = runCatching { core.listTills() }.getOrDefault(emptyList()) }
     suspend fun bumpKdsItem(itemId: String) {
         runCatching { core.kdsBump(itemId); loadKds() }
             .onFailure { if (it is CoreException) showToast(humanMessage(it), tone = ChipTone.DANGER) }

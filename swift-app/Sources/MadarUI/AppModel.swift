@@ -992,6 +992,13 @@ final class AppModel: ObservableObject {
         do { _ = try await core.deliveryCancel(id: o.id, reason: reason, restoreInventory: restoreInventory); await loadDeliveryOrders(); return true }
         catch { errorMessage = humanMessage(error); return false }
     }
+    /// Reject a just-received delivery order — a terminal state the core models
+    /// distinctly from cancel (refusing incoming work, before any prep).
+    func rejectDelivery(_ o: DeliveryOrderView) async -> Bool {
+        isBusy = true; errorMessage = nil; defer { isBusy = false }
+        do { _ = try await core.deliverySetStatus(id: o.id, status: "rejected"); await loadDeliveryOrders(); return true }
+        catch { errorMessage = humanMessage(error); return false }
+    }
     /// Finalize into a real sale on the open shift, charged to a payment method.
     func finalizeDelivery(_ o: DeliveryOrderView, paymentMethodId: String) async -> Bool {
         isBusy = true; errorMessage = nil; defer { isBusy = false }
@@ -1091,6 +1098,10 @@ final class AppModel: ObservableObject {
         if let feed = try? await core.kdsList(stationId: deviceConfig.stationId) { kdsTickets = feed }
     }
     func loadKdsStations() async { kdsStations = (try? await core.kdsListStations()) ?? [] }
+
+    /// The branch's tills (drawers) — for the Settings till picker.
+    @Published private(set) var tills: [TillView] = []
+    func loadTills() async { tills = (try? await core.listTills()) ?? [] }
     /// Bump a kitchen line (mark done at its station); a ticket goes ready when all
     /// its lines are bumped. Reloads the feed on success.
     func bumpKdsItem(_ itemId: String) async {
