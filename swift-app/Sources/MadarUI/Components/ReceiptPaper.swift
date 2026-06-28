@@ -21,6 +21,8 @@ struct ReceiptPaper: View {
     /// branch name (the receipt still reads correctly without the brand mark).
     var orgLogoUrl: String? = nil
 
+    @Environment(\.localize) private var t
+
     // Fixed paper palette (not theme-driven).
     private let paper = Color(white: 1.0)
     private let ink = Color(white: 0.10)
@@ -67,14 +69,15 @@ struct ReceiptPaper: View {
                     .padding(.bottom, 6)
             }
             if receipt.isVoided {
-                Text("*** VOIDED ***")
+                Text("*** \(t("receipt.voided")) ***")
                     .font(.ui(13, .bold))
                     .foregroundStyle(Color(red: 0.72, green: 0.10, blue: 0.10))
             }
             Text(storeName.isEmpty ? "MADAR" : storeName.uppercased())
                 .font(.ui(15, .bold))
             if receipt.isDelivery, let ch = receipt.deliveryChannel {
-                Text("— \(ch == "in_mall" ? "IN-MALL" : "DELIVERY") —")
+                let label = ch == "in_mall" ? t("delivery.in_mall") : t("receipt.delivery")
+                Text("— \(label.uppercased()) —")
                     .font(.ui(11, .regular)).foregroundStyle(faint)
             }
         }
@@ -85,31 +88,32 @@ struct ReceiptPaper: View {
     private var meta: some View {
         VStack(spacing: 2) {
             row(orderTitle, dateText)
-            if let r = receipt.orderRef { row("Ref: \(r)", "") }
+            if let r = receipt.orderRef { row("\(t("receipt.ref")): \(r)", "") }
         }
     }
 
     private var orderTitle: String {
-        if let n = receipt.orderNumber { return "Order #\(n)" }
+        let label = t("receipt.order")
+        if let n = receipt.orderNumber { return "\(label) #\(n)" }
         let seg = receipt.localOrderId.split(separator: "-").first.map(String.init) ?? receipt.localOrderId
-        return "Order \(seg.uppercased())"
+        return "\(label) \(seg.uppercased())"
     }
 
     // MARK: delivery block
     private var deliveryBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if let v = receipt.customerName { row("Customer", v) }
-            if let v = receipt.customerPhone { row("Phone", v) }
+            if let v = receipt.customerName { row(t("receipt.customer"), v) }
+            if let v = receipt.customerPhone { row(t("receipt.phone"), v) }
             if let v = receipt.deliveryAddress {
-                Text("Addr: \(v)").frame(maxWidth: .infinity, alignment: .leading)
+                Text("\(t("receipt.address")) \(v)").frame(maxWidth: .infinity, alignment: .leading)
             }
-            if let v = receipt.deliveryZone { row("Zone", v) }
+            if let v = receipt.deliveryZone { row(t("receipt.zone"), v) }
             // Courier ref + COD/payment hint + customer instructions (matches the
             // printed raster receipt; were dropped from the preview).
-            if let v = receipt.deliveryRef { row("Delivery Ref", v) }
-            if let v = receipt.paymentHint { row("Payment", v) }
+            if let v = receipt.deliveryRef { row(t("receipt.delivery_ref"), v) }
+            if let v = receipt.paymentHint { row(t("receipt.payment_hint"), v) }
             if let v = receipt.deliveryNotes, !v.isEmpty {
-                Text("Notes: \(v)").frame(maxWidth: .infinity, alignment: .leading)
+                Text("\(t("receipt.notes")) \(v)").frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -137,15 +141,15 @@ struct ReceiptPaper: View {
     // MARK: totals
     private var totals: some View {
         VStack(spacing: 2) {
-            row("Subtotal", money(receipt.subtotalMinor))
-            if receipt.discountMinor > 0 { row("Discount", "−\(money(receipt.discountMinor))") }
-            if receipt.taxMinor > 0 { row("Tax", money(receipt.taxMinor)) }
-            if receipt.deliveryFeeMinor > 0 { row("Delivery", money(receipt.deliveryFeeMinor)) }
-            row("TOTAL", money(receipt.totalMinor), bold: true)
-            if receipt.tipMinor > 0 { row("Tip", money(receipt.tipMinor)) }
+            row(t("order.subtotal"), money(receipt.subtotalMinor))
+            if receipt.discountMinor > 0 { row(t("order.discount"), "−\(money(receipt.discountMinor))") }
+            if receipt.taxMinor > 0 { row(t("order.tax"), money(receipt.taxMinor)) }
+            if receipt.deliveryFeeMinor > 0 { row(t("receipt.delivery_fee"), money(receipt.deliveryFeeMinor)) }
+            row(t("order.total").uppercased(), money(receipt.totalMinor), bold: true)
+            if receipt.tipMinor > 0 { row(t("order.tip"), money(receipt.tipMinor)) }
             if receipt.isCash {
-                row("Cash", money(receipt.amountTenderedMinor))
-                row("Change", money(receipt.changeMinor))
+                row(t("receipt.cash"), money(receipt.amountTenderedMinor))
+                row(t("order.change"), money(receipt.changeMinor))
             }
         }
     }
@@ -155,8 +159,8 @@ struct ReceiptPaper: View {
         VStack(spacing: 2) {
             Text(receipt.paymentLabel.uppercased())
                 .font(.ui(11, .semibold))
-            if let teller = receipt.tellerName { Text("Served by \(teller)").foregroundStyle(faint) }
-            Text("Thank you!").padding(.top, 2)
+            if let teller = receipt.tellerName { Text("\(t("receipt.served_by")) \(teller)").foregroundStyle(faint) }
+            Text(t("receipt.thank_you")).padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }

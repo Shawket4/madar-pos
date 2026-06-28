@@ -92,52 +92,53 @@ fun ReceiptPaper(
                     contentScale = ContentScale.Fit,
                 )
             }
-            if (receipt.isVoided) mono("*** VOIDED ***", 13, FontWeight.Bold, Color(0xFFB71C1C))
+            if (receipt.isVoided) mono("*** ${t("receipt.voided")} ***", 13, FontWeight.Bold, Color(0xFFB71C1C))
             mono(if (storeName.isBlank()) "MADAR" else storeName.uppercase(), 15, FontWeight.Bold, Ink)
             if (receipt.isDelivery && receipt.deliveryChannel != null) {
-                mono("— ${if (receipt.deliveryChannel == "in_mall") "IN-MALL" else "DELIVERY"} —", 11, FontWeight.Normal, Faint)
+                val ch = if (receipt.deliveryChannel == "in_mall") t("delivery.in_mall") else t("receipt.delivery")
+                mono("— ${ch.uppercase()} —", 11, FontWeight.Normal, Faint)
             }
         }
         rule()
-        moneyRow(orderTitle(receipt), model.fmtReceipt(receipt.createdAt))
-        receipt.orderRef?.let { moneyRow("Ref: $it", "") }
+        moneyRow(orderTitle(receipt, t("receipt.order")), model.fmtReceipt(receipt.createdAt))
+        receipt.orderRef?.let { moneyRow("${t("receipt.ref")}: $it", "") }
         rule()
         if (receipt.isDelivery) {
-            receipt.customerName?.let { moneyRow("Customer", it) }
-            receipt.customerPhone?.let { moneyRow("Phone", it) }
-            receipt.deliveryAddress?.let { mono("Addr: $it", 12, FontWeight.Normal, Ink) }
-            receipt.deliveryZone?.let { moneyRow("Zone", it) }
+            receipt.customerName?.let { moneyRow(t("receipt.customer"), it) }
+            receipt.customerPhone?.let { moneyRow(t("receipt.phone"), it) }
+            receipt.deliveryAddress?.let { mono("${t("receipt.address")} $it", 12, FontWeight.Normal, Ink) }
+            receipt.deliveryZone?.let { moneyRow(t("receipt.zone"), it) }
             // Courier ref + COD/payment hint + customer instructions (matches the
             // printed raster receipt; were dropped from the preview).
-            receipt.deliveryRef?.let { moneyRow("Delivery Ref", it) }
-            receipt.paymentHint?.let { moneyRow("Payment", it) }
-            receipt.deliveryNotes?.takeIf { it.isNotBlank() }?.let { mono("Notes: $it", 12, FontWeight.Normal, Ink) }
+            receipt.deliveryRef?.let { moneyRow(t("receipt.delivery_ref"), it) }
+            receipt.paymentHint?.let { moneyRow(t("receipt.payment_hint"), it) }
+            receipt.deliveryNotes?.takeIf { it.isNotBlank() }?.let { mono("${t("receipt.notes")} $it", 12, FontWeight.Normal, Ink) }
             rule()
         }
         receipt.lines.forEach { line -> lineBlock(line, ::money) }
         rule()
-        moneyRow("Subtotal", money(receipt.subtotalMinor))
-        if (receipt.discountMinor > 0) moneyRow("Discount", "−${money(receipt.discountMinor)}")
-        if (receipt.taxMinor > 0) moneyRow("Tax", money(receipt.taxMinor))
-        if (receipt.deliveryFeeMinor > 0) moneyRow("Delivery", money(receipt.deliveryFeeMinor))
-        moneyRow("TOTAL", money(receipt.totalMinor), bold = true)
-        if (receipt.tipMinor > 0) moneyRow("Tip", money(receipt.tipMinor))
+        moneyRow(t("order.subtotal"), money(receipt.subtotalMinor))
+        if (receipt.discountMinor > 0) moneyRow(t("order.discount"), "−${money(receipt.discountMinor)}")
+        if (receipt.taxMinor > 0) moneyRow(t("order.tax"), money(receipt.taxMinor))
+        if (receipt.deliveryFeeMinor > 0) moneyRow(t("receipt.delivery_fee"), money(receipt.deliveryFeeMinor))
+        moneyRow(t("order.total").uppercase(), money(receipt.totalMinor), bold = true)
+        if (receipt.tipMinor > 0) moneyRow(t("order.tip"), money(receipt.tipMinor))
         if (receipt.isCash) {
-            moneyRow("Cash", money(receipt.amountTenderedMinor))
-            moneyRow("Change", money(receipt.changeMinor))
+            moneyRow(t("receipt.cash"), money(receipt.amountTenderedMinor))
+            moneyRow(t("order.change"), money(receipt.changeMinor))
         }
         rule()
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             mono(receipt.paymentLabel.uppercase(), 11, FontWeight.SemiBold, Ink)
-            receipt.tellerName?.let { mono("Served by $it", 11, FontWeight.Normal, Faint) }
-            mono("Thank you!", 12, FontWeight.Normal, Ink)
+            receipt.tellerName?.let { mono("${t("receipt.served_by")} $it", 11, FontWeight.Normal, Faint) }
+            mono(t("receipt.thank_you"), 12, FontWeight.Normal, Ink)
         }
     }
 }
 
-private fun orderTitle(r: ReceiptView): String =
-    r.orderNumber?.let { "Order #$it" }
-        ?: "Order ${(r.localOrderId.substringBefore('-')).uppercase()}"
+private fun orderTitle(r: ReceiptView, orderLabel: String): String =
+    r.orderNumber?.let { "$orderLabel #$it" }
+        ?: "$orderLabel ${(r.localOrderId.substringBefore('-')).uppercase()}"
 
 @Composable
 private fun mono(text: String, size: Int, weight: FontWeight, color: Color) {

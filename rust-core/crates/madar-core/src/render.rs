@@ -345,18 +345,18 @@ impl Renderer {
         }
         self.row(&lab.total.to_uppercase(), &m(r.total_minor), SZ_TOTAL, Weight::BOLD);
         if r.tip_minor > 0 {
-            self.row("Tip", &m(r.tip_minor), SZ_BODY, Weight::NORMAL);
+            self.row(&lab.tip, &m(r.tip_minor), SZ_BODY, Weight::NORMAL);
         }
         if r.is_cash {
-            self.row("Cash", &m(r.amount_tendered_minor), SZ_BODY, Weight::NORMAL);
-            self.row("Change", &m(r.change_minor), SZ_BODY, Weight::NORMAL);
+            self.row(&lab.cash, &m(r.amount_tendered_minor), SZ_BODY, Weight::NORMAL);
+            self.row(&lab.change, &m(r.change_minor), SZ_BODY, Weight::NORMAL);
         }
         self.rule();
 
         // ── footer ──
         self.center(&r.payment_label.to_uppercase(), SZ_SMALL, Weight::SEMIBOLD);
         if let Some(t) = &r.teller_name {
-            self.center(&format!("Served by {}", t), SZ_SMALL, Weight::NORMAL);
+            self.center(&format!("{} {}", lab.served_by, t), SZ_SMALL, Weight::NORMAL);
         }
         if r.queued_offline {
             self.center(&lab.queued, SZ_SMALL, Weight::NORMAL);
@@ -602,8 +602,12 @@ mod tests {
                 tax: "Tax".into(),
                 delivery_fee: "Delivery".into(),
                 total: "Total".into(),
+                tip: "Tip".into(),
+                cash: "Cash".into(),
+                change: "Change".into(),
                 payment: "Payment".into(),
                 teller: "Teller".into(),
+                served_by: "Served by".into(),
                 queued: "Saved — will sync".into(),
                 thank_you: "Thank you!".into(),
             },
