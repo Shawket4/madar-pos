@@ -57,6 +57,14 @@ kotlin {
     }
 }
 
+// Mark the UniFFI-generated core records as stable (see compose_stability.conf)
+// so Compose can skip recomposing list items whose data hasn't changed.
+composeCompiler {
+    stabilityConfigurationFiles.add(
+        rootProject.layout.projectDirectory.file("compose_stability.conf")
+    )
+}
+
 android {
     namespace = "app.madar"
     compileSdk = libs.versions.android.compileSdk.get().toInt()

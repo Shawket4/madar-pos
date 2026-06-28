@@ -132,9 +132,11 @@ fun MenuItemCard(
     }
 }
 
+private val WHITESPACE = Regex("\\s+")
+
 /** Up to two initials from the item name (Flutter's monogram rule). */
 private fun monogram(name: String): String {
-    val words = name.split(Regex("\\s+")).filter { it.isNotBlank() }
+    val words = name.split(WHITESPACE).filter { it.isNotBlank() }
     return when {
         words.size >= 2 -> (words[0].take(1) + words[1].take(1)).uppercase()
         words.isNotEmpty() -> words[0].take(2).uppercase()

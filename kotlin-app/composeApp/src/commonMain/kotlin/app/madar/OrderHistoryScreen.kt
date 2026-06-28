@@ -142,10 +142,13 @@ fun OrderHistoryScreen(model: AppModel) {
         }
     }
 
-    // All rows passing search + both axes (AND), then sorted.
-    val filtered = model.history
-        .filter { matchesSearch(it) && syncFilter.matches(it) && typeFilter.matches(it) }
-        .sortedWith(comparator)
+    // All rows passing search + both axes (AND), then sorted. Memoized so a row
+    // expand / void-dialog toggle doesn't re-filter and re-sort the whole history.
+    val filtered = remember(model.history, search, syncFilter, typeFilter, sortCol, sortAscending) {
+        model.history
+            .filter { matchesSearch(it) && syncFilter.matches(it) && typeFilter.matches(it) }
+            .sortedWith(comparator)
+    }
     // The slice actually painted (client-side pagination).
     val visible = filtered.take(visibleLimit)
 

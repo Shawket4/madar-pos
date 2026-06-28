@@ -175,14 +175,17 @@ fun OrderScreen(model: AppModel) {
         if (showTender) showTender = false else showCart = false
     }
 
-    val visible = model.menuItems
-        .filter { it.isActive }
-        .filter { selectedCategory == null || it.categoryId == selectedCategory }
-        .filter {
-            search.isBlank() ||
-                it.name.contains(search, ignoreCase = true) ||
-                (it.description?.contains(search, ignoreCase = true) ?: false)
+    // Memoized: re-filter only when the menu, category, or query actually change —
+    // not on every cart edit / connectivity tick. One pass, no intermediate lists.
+    val visible = remember(model.menuItems, selectedCategory, search) {
+        model.menuItems.filter { item ->
+            item.isActive &&
+                (selectedCategory == null || item.categoryId == selectedCategory) &&
+                (search.isBlank() ||
+                    item.name.contains(search, ignoreCase = true) ||
+                    (item.description?.contains(search, ignoreCase = true) ?: false))
         }
+    }
 
     // Hardware-keyboard shortcut (desktop): Ctrl/⌘+Enter checks out a non-empty
     // cart. The root holds focus; non-matching keys fall through (search still types).
