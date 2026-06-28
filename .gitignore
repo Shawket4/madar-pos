@@ -11,6 +11,7 @@ swift-app/Generated/
 
 # Kotlin / Gradle / Android
 kotlin-app/.gradle/
+kotlin-app/.idea/
 kotlin-app/build/
 kotlin-app/**/build/
 kotlin-app/local.properties
