@@ -1127,9 +1127,11 @@ final class AppModel: ObservableObject {
     /// Waiter checkout: fire the current cart as a NEW ticket, or — when an
     /// `activeTicketId` is targeted (from "add round" on the tickets list) — add it
     /// as a ROUND to that ticket. Clears the target on success.
-    func fireOrAddRound() async {
+    func fireOrAddRound(tableId: String? = nil, customerName: String? = nil,
+                        notes: String? = nil, guestCount: Int32? = nil) async {
         let ok: Bool
-        if let id = activeTicketId { ok = await addRound(ticketId: id) } else { ok = await fireTicket() }
+        if let id = activeTicketId { ok = await addRound(ticketId: id) }
+        else { ok = await fireTicket(tableId: tableId, customerName: customerName, notes: notes, guestCount: guestCount) }
         if ok { activeTicketId = nil }
     }
 

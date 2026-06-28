@@ -85,8 +85,11 @@ private struct SettleSheet: View {
     @Environment(\.localize) private var t
 
     @State private var methodId: String?
+    @State private var tipMinor: Int64 = 0
+    @State private var tenderedMinor: Int64 = 0
 
     private var currency: String { app.session?.currencyCode ?? "" }
+    private var isCash: Bool { app.paymentMethods.first(where: { $0.id == methodId })?.isCash ?? false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.md) {
@@ -127,10 +130,30 @@ private struct SettleSheet: View {
                 }
             }
 
+            // Optional tip.
+            Text(t("order.tip")).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
+            AmountField(amountMinor: $tipMinor, currencyCode: currency)
+            // Cash: amount tendered → change due.
+            if isCash {
+                Text(t("order.cash_received")).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
+                AmountField(amountMinor: $tenderedMinor, currencyCode: currency)
+                if tenderedMinor > 0 {
+                    HStack {
+                        Text(t("order.change_due")).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textSecondary)
+                        Spacer()
+                        Text(Money.format(max(0, tenderedMinor - (ticket.subtotalMinor + tipMinor)), currency))
+                            .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
+                    }
+                }
+            }
+
             MadarButton(label: t("waiter.settle"), icon: "checkmark.circle", loading: app.isBusy) {
                 guard let id = methodId, !app.isBusy else { return }
                 Task {
-                    let ok = await app.settleTicket(ticket.id, paymentMethodId: id, amountTenderedMinor: nil)
+                    let ok = await app.settleTicket(
+                        ticket.id, paymentMethodId: id,
+                        amountTenderedMinor: isCash && tenderedMinor > 0 ? tenderedMinor : nil,
+                        tipMinor: tipMinor, tipPaymentMethodId: tipMinor > 0 ? id : nil)
                     if ok { onClose() }
                 }
             }

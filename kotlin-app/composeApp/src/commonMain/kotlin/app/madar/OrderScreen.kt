@@ -125,6 +125,7 @@ fun OrderScreen(model: AppModel) {
     var search by remember { mutableStateOf("") }
     var showCart by remember { mutableStateOf(false) }
     var showTender by remember { mutableStateOf(false) }
+    var showFireDetails by remember { mutableStateOf(false) }
     val currency = model.session?.currencyCode ?: ""
     val scope = rememberCoroutineScope()
     val isWaiter = model.isWaiterDevice
@@ -136,7 +137,13 @@ fun OrderScreen(model: AppModel) {
         else -> t("waiter.fire")
     }
     val checkoutIcon = if (isWaiter) "paperplane.fill" else "creditcard"
-    fun doCheckout() { if (isWaiter) scope.launch { model.fireOrAddRound() } else showTender = true }
+    // Waiter firing a NEW ticket → collect dine-in details (customer, table, covers,
+    // notes) first; adding a round to an existing ticket fires straight away.
+    fun doCheckout() {
+        if (isWaiter) {
+            if (model.activeTicketId == null) showFireDetails = true else scope.launch { model.fireOrAddRound() }
+        } else showTender = true
+    }
 
     // Reconcile the shift (catches a dashboard force-close) and load the catalog
     // + cart on appear. A waiter holds no shift/history — it fires tickets, so it
@@ -270,6 +277,13 @@ fun OrderScreen(model: AppModel) {
         // Tender overlay (checkout) — covers either layout.
         if (showTender) {
             TenderOverlay(model, currency) { showTender = false; model.dismissReceipt() }
+        }
+
+        // Waiter fire-details sheet — optional dine-in capture before firing.
+        if (showFireDetails) {
+            app.madar.ui.MadarSheet(onDismiss = { showFireDetails = false }, size = app.madar.ui.SheetSize.HUG, maxWidth = 480.dp) { dismiss ->
+                FireDetailsSheet(model, scope) { dismiss() }
+            }
         }
 
         // Close-shift flow — full-screen over the order screen.
@@ -1292,3 +1306,51 @@ private fun CartBar(model: AppModel, currency: String, onOpen: () -> Unit) {
 
 /** "EGP 500.00" — opening cash, formatted from minor units. */
 fun ShiftView.currencyDisplay(code: String): String = Money.format(openingCashMinor, code)
+
+/** Dine-in capture before a waiter fires a NEW ticket: customer, table, covers,
+ *  kitchen notes — all optional, all now passed to the core (was firing blank). */
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.FireDetailsSheet(
+    model: AppModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onDone: () -> Unit,
+) {
+    val c = madarColors()
+    var customer by remember { mutableStateOf("") }
+    var table by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var covers by remember { mutableStateOf(0) }
+    Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+        Text(t("waiter.fire"), style = app.madar.ui.Type.h2(), color = c.textPrimary)
+        app.madar.ui.MadarTextField(customer, { customer = it }, t("waiter.customer_optional"), icon = "person")
+        app.madar.ui.MadarTextField(table, { table = it }, t("waiter.table"), icon = "tablecells")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+            Text(t("waiter.covers"), style = app.madar.ui.Type.title(), color = c.textSecondary, modifier = Modifier.weight(1f))
+            FireStepBox("minus") { if (covers > 0) covers-- }
+            Text("$covers", style = app.madar.ui.Type.h3(), color = c.textPrimary, modifier = Modifier.widthIn(min = 28.dp), textAlign = TextAlign.Center)
+            FireStepBox("plus") { covers++ }
+        }
+        app.madar.ui.MadarTextField(notes, { notes = it }, t("order.notes_hint"), icon = "text.bubble")
+        MadarButton(t("waiter.fire"), {
+            scope.launch {
+                model.fireOrAddRound(
+                    customerName = customer.ifBlank { null },
+                    tableId = table.ifBlank { null },
+                    notes = notes.ifBlank { null },
+                    guestCount = if (covers > 0) covers else null,
+                )
+                onDone()
+            }
+        }, loading = model.isBusy, icon = "paperplane.fill")
+    }
+}
+
+@Composable
+private fun FireStepBox(icon: String, onClick: () -> Unit) {
+    val c = madarColors()
+    Box(
+        Modifier.size(36.dp).clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
+            .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) { MadarIcon(icon, tint = c.textPrimary, size = IconSize.md) }
+}

@@ -1230,14 +1230,27 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     }
     /** Waiter checkout: fire the cart as a NEW ticket, or add it as a ROUND to the
      *  targeted `activeTicketId`. Clears the target on success. */
-    suspend fun fireOrAddRound() {
-        val ok = activeTicketId?.let { addRound(it) } ?: fireTicket()
+    suspend fun fireOrAddRound(
+        customerName: String? = null,
+        tableId: String? = null,
+        notes: String? = null,
+        guestCount: Int? = null,
+    ) {
+        val ok = activeTicketId?.let { addRound(it) } ?: fireTicket(customerName, tableId, notes, guestCount)
         if (ok) activeTicketId = null
     }
-    suspend fun fireTicket(customerName: String? = null): Boolean {
+    /** Fire the cart as a new dine-in ticket. The core captures the table, covers
+     *  (guestCount), customer, and kitchen notes — all of which the UI now collects
+     *  (was firing with everything null). */
+    suspend fun fireTicket(
+        customerName: String? = null,
+        tableId: String? = null,
+        notes: String? = null,
+        guestCount: Int? = null,
+    ): Boolean {
         isBusy = true; error = null
         return try {
-            val fired = core.fireTicket(null, customerName, null, null)
+            val fired = core.fireTicket(tableId, customerName, notes, guestCount)
             loadCart(); loadOpenTickets()
             showToast(t("waiter.fired") + if (fired.queuedOffline) " · " + t("waiter.queued") else "", tone = ChipTone.SUCCESS)
             true
@@ -1254,11 +1267,17 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
         runCatching { core.voidTicket(ticketId, reason); loadOpenTickets() }
             .onFailure { if (it is CoreException) showToast(humanMessage(it), tone = ChipTone.DANGER) }
     }
-    suspend fun settleTicket(ticketId: String, paymentMethodId: String, amountTenderedMinor: Long? = null): Boolean {
+    suspend fun settleTicket(
+        ticketId: String,
+        paymentMethodId: String,
+        amountTenderedMinor: Long? = null,
+        tipMinor: Long? = null,
+        tipPaymentMethodId: String? = null,
+    ): Boolean {
         val shiftId = shift?.id ?: run { error = t("waiter.need_shift"); return false }
         isBusy = true; error = null
         return try {
-            core.settleTicket(ticketId, shiftId, paymentMethodId, amountTenderedMinor, null, null, null, null, null)
+            core.settleTicket(ticketId, shiftId, paymentMethodId, amountTenderedMinor, tipMinor, tipPaymentMethodId, null, null, null)
             loadOpenTickets(); loadHistory()
             showToast(t("waiter.settled"), tone = ChipTone.SUCCESS); true
         } catch (e: CoreException) { error = humanMessage(e); false } finally { isBusy = false }

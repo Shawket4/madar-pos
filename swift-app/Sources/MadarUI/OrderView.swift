@@ -24,6 +24,7 @@ struct OrderView: View {
     /// content to tender (avoids unreliable sheet-over-sheet presentation).
     @State private var showTenderWide = false
     @State private var tenderInCart = false
+    @State private var showFireDetails = false
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
@@ -36,7 +37,9 @@ struct OrderView: View {
     private var checkoutIcon: String { app.isWaiterDevice ? "paperplane.fill" : "creditcard" }
     private func onCheckout(wide: Bool) {
         if app.isWaiterDevice {
-            Task { await app.fireOrAddRound() }
+            // New ticket → collect dine-in details first; a round fires straight away.
+            if app.activeTicketId == nil { showFireDetails = true }
+            else { Task { await app.fireOrAddRound() } }
         } else if wide {
             showTenderWide = true
         } else {
@@ -114,8 +117,10 @@ struct OrderView: View {
                     } else {
                         CartPanel(app: app, onClose: dismiss, checkoutLabel: checkoutLabel, checkoutIcon: checkoutIcon,
                                   onCheckout: {
-                                      if app.isWaiterDevice { Task { await app.fireOrAddRound(); dismiss() } }
-                                      else { tenderInCart = true }
+                                      if app.isWaiterDevice {
+                                          if app.activeTicketId == nil { dismiss(); showFireDetails = true }
+                                          else { Task { await app.fireOrAddRound(); dismiss() } }
+                                      } else { tenderInCart = true }
                                   })
                     }
                 }
@@ -125,6 +130,10 @@ struct OrderView: View {
             .madarSheet(isPresented: $showTenderWide, size: .large, maxWidth: 600,
                          onDismiss: { app.dismissReceipt() }) { dismiss in
                 TenderView(app: app, onClose: dismiss)
+            }
+            // Waiter fire-details — optional dine-in capture before firing.
+            .madarSheet(isPresented: $showFireDetails, size: .hug, maxWidth: 480) { dismiss in
+                FireDetailsView(app: app, onDone: dismiss)
             }
             // Item customization. The derived binding runs closeItemDetail() on
             // EVERY dismissal route — tap-out, drag-down, or the header ✕.
@@ -1269,4 +1278,55 @@ private struct OrderScreenRouter: ViewModifier {
 
 extension View {
     func orderScreenRouter(app: AppModel) -> some View { modifier(OrderScreenRouter(app: app)) }
+}
+
+/// Dine-in capture before a waiter fires a NEW ticket: customer, table, covers,
+/// kitchen notes — all optional, all now passed to the core (was firing blank).
+private struct FireDetailsView: View {
+    @ObservedObject var app: AppModel
+    let onDone: () -> Void
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    @State private var customer = ""
+    @State private var table = ""
+    @State private var notes = ""
+    @State private var covers = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.md) {
+            Text(t("waiter.fire")).font(.ui(22, .bold)).foregroundStyle(theme.colors.textPrimary)
+            MadarTextField(placeholder: t("waiter.customer_optional"), text: $customer, icon: "person")
+            MadarTextField(placeholder: t("waiter.table"), text: $table, icon: "tablecells")
+            HStack(spacing: Space.md) {
+                Text(t("waiter.covers")).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textSecondary)
+                Spacer()
+                stepBox("minus") { if covers > 0 { covers -= 1 } }
+                Text("\(covers)").font(.ui(17, .semibold)).foregroundStyle(theme.colors.textPrimary).frame(minWidth: 28)
+                stepBox("plus") { covers += 1 }
+            }
+            MadarTextField(placeholder: t("order.notes_hint"), text: $notes, icon: "text.bubble")
+            MadarButton(label: t("waiter.fire"), icon: "paperplane.fill", loading: app.isBusy) {
+                Task {
+                    await app.fireOrAddRound(
+                        tableId: table.isEmpty ? nil : table,
+                        customerName: customer.isEmpty ? nil : customer,
+                        notes: notes.isEmpty ? nil : notes,
+                        guestCount: covers > 0 ? Int32(covers) : nil)
+                    onDone()
+                }
+            }
+        }
+        .padding(Space.lg)
+    }
+
+    private func stepBox(_ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            MadarIcon(icon, size: IconSize.md).foregroundStyle(theme.colors.textPrimary)
+                .frame(width: 36, height: 36)
+                .background(theme.colors.surfaceAlt)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                    .strokeBorder(theme.colors.border, lineWidth: 1))
+        }.buttonStyle(.plain)
+    }
 }

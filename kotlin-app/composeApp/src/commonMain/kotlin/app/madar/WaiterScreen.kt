@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.madar.core.TicketView
+import app.madar.ui.AmountField
 import app.madar.ui.BtnVariant
 import app.madar.ui.ChipTone
 import app.madar.ui.LocalMadarFont
@@ -228,6 +229,8 @@ private fun ColumnScope.SettleSheetContent(model: AppModel, ticket: TicketView, 
     val c = madarColors()
     val scope = rememberCoroutineScope()
     var methodId by remember { mutableStateOf(model.paymentMethods.firstOrNull()?.id) }
+    var tipMinor by remember { mutableStateOf(0L) }
+    var tenderedMinor by remember { mutableStateOf(0L) }
     Column(Modifier.fillMaxSize().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         Text(ticket.ticketRef ?: t("waiter.ticket"), style = Type.h2(), color = c.textPrimary)
 
@@ -262,9 +265,35 @@ private fun ColumnScope.SettleSheetContent(model: AppModel, ticket: TicketView, 
             }
         }
 
+        val isCash = model.paymentMethods.firstOrNull { it.id == methodId }?.isCash == true
+        // Optional tip.
+        SectionHeader(t("order.tip"))
+        AmountField(amountMinor = tipMinor, onAmountMinor = { tipMinor = it }, currencyCode = currency)
+        // Cash: amount tendered → change due.
+        if (isCash) {
+            SectionHeader(t("order.cash_received"))
+            AmountField(amountMinor = tenderedMinor, onAmountMinor = { tenderedMinor = it }, currencyCode = currency)
+            val due = ticket.subtotalMinor + tipMinor
+            if (tenderedMinor > 0) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(t("order.change_due"), style = Type.title(), color = c.textSecondary)
+                    Spacer(Modifier.weight(1f))
+                    Text(Money.format((tenderedMinor - due).coerceAtLeast(0L), currency), style = Type.moneyLg(), color = c.accent)
+                }
+            }
+        }
+
         MadarButton(t("waiter.settle"), {
             val id = methodId ?: return@MadarButton
-            scope.launch { if (model.settleTicket(ticket.id, id, null)) dismiss() }
+            scope.launch {
+                val ok = model.settleTicket(
+                    ticket.id, id,
+                    amountTenderedMinor = if (isCash && tenderedMinor > 0) tenderedMinor else null,
+                    tipMinor = if (tipMinor > 0) tipMinor else null,
+                    tipPaymentMethodId = if (tipMinor > 0) id else null,
+                )
+                if (ok) dismiss()
+            }
         }, loading = model.isBusy, enabled = methodId != null, icon = "checkmark.circle")
     }
 }
