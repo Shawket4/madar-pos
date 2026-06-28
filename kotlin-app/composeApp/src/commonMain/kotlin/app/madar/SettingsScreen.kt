@@ -171,6 +171,9 @@ fun SettingsScreen(model: AppModel) {
                     InfoRow(t("settings.version"), model.core.version())
                     InfoRow(t("settings.server"), model.core.baseUrl())
                     InfoRow(t("settings.pending"), "${model.pendingCount}")
+                    // Realtime (SSE) channel health — the teller's order alerts ride
+                    // this; surfacing it makes a silent drop diagnosable.
+                    InfoRow(t("settings.realtime"), if (model.realtimeConnected) t("settings.realtime_on") else t("settings.realtime_off"))
                     if (model.diagnostics.isNotEmpty()) {
                         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

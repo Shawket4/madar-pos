@@ -204,6 +204,9 @@ struct SettingsView: View {
             infoRow(t("settings.version"), app.core.version())
             infoRow(t("settings.server"), app.core.baseUrl())
             infoRow(t("settings.pending"), "\(app.pendingCount)")
+            // Realtime (SSE) channel health — the teller's order alerts ride this;
+            // surfacing it makes a silent drop diagnosable.
+            infoRow(t("settings.realtime"), app.realtimeConnected ? t("settings.realtime_on") : t("settings.realtime_off"))
             if !app.diagnostics.isEmpty {
                 Divider().background(theme.colors.border)
                 HStack {
