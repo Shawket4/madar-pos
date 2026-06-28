@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerates the typed Rust API client (crates/madar-api) from the SufrixRust
+# Regenerates the typed Rust API client (crates/madar-api) from the MadarRust
 # backend OpenAPI spec. Rust-core equivalent of the Flutter app's
 # tool/generate_api.sh and the dashboard's `npm run generate:api`.
 #
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 CORE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BACKEND_DIR="${MADAR_BACKEND_DIR:-$CORE_DIR/../../SufrixRust}"
+BACKEND_DIR="${MADAR_BACKEND_DIR:-$CORE_DIR/../../MadarRust}"
 PKG_DIR="$CORE_DIR/crates/madar-api"
 SPEC="$BACKEND_DIR/openapi.json"
 
