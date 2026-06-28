@@ -138,9 +138,12 @@ jobs:
             -sdk iphonesimulator -configuration Release \
             CODE_SIGNING_ALLOWED=NO build
 
-  # ── GitHub Release ───────────────────────────────────────────────────────────
+  # ── Publish to the PUBLIC releases-only repo ─────────────────────────────────
+  # Source stays private (madar-pos); only built artifacts go to the public
+  # Shawket4/madar-pos-releases Releases for distribution.
+  # Requires repo secret RELEASES_TOKEN = a PAT with contents:write on madar-pos-releases.
   release:
-    name: Create GitHub Release
+    name: Publish release (public repo)
     needs: [android, desktop]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
@@ -150,9 +153,21 @@ jobs:
         with:
           path: artifacts
 
-      - name: Create Release
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release-files
+          find artifacts -type f \( -name '*.apk' -o -name '*.dmg' -o -name '*.deb' -o -name '*.msi' -o -name '*.zip' -o -name '*.AppImage' \) -exec cp {} release-files/ \;
+          ls -la release-files/
+
+      - name: Publish to madar-pos-releases
         uses: softprops/action-gh-release@v2
         with:
+          repository: Shawket4/madar-pos-releases
+          token: ${{ secrets.RELEASES_TOKEN }}
           name: Madar POS ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          files: artifacts/**/*
+          body: |
+            Automated multi-platform build of **Madar POS**.
+            _Built from private source `madar-pos` @ `${{ github.sha }}`._
+          files: release-files/*
+          fail_on_unmatched_files: false
