@@ -29,7 +29,16 @@ struct RootView: View {
         ThemedRoot(mode: app.themeMode) {
             Group {
                 switch app.route {
-                case .deviceSetup, .login:
+                case .deviceSetup:
+                    // A kitchen-role device bound to a branch but with no station
+                    // yet lands on .deviceSetup → show the station picker (not the
+                    // manager binding, which is for an unconfigured device).
+                    if app.session != nil && app.isKitchenDevice {
+                        StationPickerView(app: app)
+                    } else {
+                        LoginView(app: app)
+                    }
+                case .login:
                     LoginView(app: app)
                 case .openShift:
                     OpenShiftView(app: app)

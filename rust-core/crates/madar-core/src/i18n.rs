@@ -42,6 +42,11 @@ fn en(key: &str) -> Option<&'static str> {
         "setup.password" => "Password",
         "setup.continue" => "Continue",
         "setup.cancel" => "Cancel",
+        // kitchen-display commissioning — a KDS device picks which station it shows
+        "setup.choose_station" => "Choose a station",
+        "setup.choose_station_desc" => "Pick which kitchen station this display shows.",
+        "setup.no_stations" => "No kitchen stations for this branch yet.",
+        "setup.station_default" => "Default",
         // brand panel
         "brand.headline" => "Welcome\nback.",
         "brand.tagline" => "Sign in to open your till. Works online and off — your sales keep flowing either way.",
@@ -410,6 +415,10 @@ fn ar(key: &str) -> Option<&'static str> {
         "setup.password" => "كلمة المرور",
         "setup.continue" => "متابعة",
         "setup.cancel" => "إلغاء",
+        "setup.choose_station" => "اختر محطة",
+        "setup.choose_station_desc" => "اختر محطة المطبخ التي يعرضها هذا الجهاز.",
+        "setup.no_stations" => "لا توجد محطات مطبخ لهذا الفرع بعد.",
+        "setup.station_default" => "افتراضي",
         "brand.headline" => "مرحبًا\nبعودتك.",
         "brand.tagline" => "سجّل الدخول لفتح الخزينة. يعمل بالاتصال وبدونه — مبيعاتك مستمرة في الحالتين.",
         "home.signed_in" => "تم تسجيل الدخول",

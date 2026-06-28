@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -84,7 +85,7 @@ fun main() {
 private fun renderScreens(out: File, colors: MadarColors, family: FontFamily) {
     val density = 2f
     val widthDp = 460
-    val heightDp = 1180
+    val heightDp = 1480
     val scene = ImageComposeScene(
         width = (widthDp * density).toInt(),
         height = (heightDp * density).toInt(),
@@ -127,6 +128,26 @@ private fun Screens() {
             onDismiss = {},
             onOpen = {},
         )
+
+        // ── Kitchen station picker (commissioning a KDS device) ──────────────
+        SectionHeader("Kitchen station picker")
+        listOf("Grill" to true, "Fryer" to false, "Cold / Salads" to false).forEach { (name, def) ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surface)
+                    .border(1.dp, c.borderLight, RoundedCornerShape(Radii.md)).padding(Space.lg),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.md),
+            ) {
+                Box(Modifier.size(40.dp).clip(RoundedCornerShape(Radii.sm)).background(c.accentBg), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    MadarIcon("flame.fill", tint = c.accent, size = IconSize.lg)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(name, style = Type.h3(), color = c.textPrimary)
+                    if (def) Text("Default", style = Type.labelSm(), color = c.textMuted)
+                }
+                MadarIcon("chevron.forward", tint = c.textMuted, size = IconSize.md)
+            }
+        }
 
         // ── Settle ticket sheet ──────────────────────────────────────────────
         SectionHeader("Settle ticket")

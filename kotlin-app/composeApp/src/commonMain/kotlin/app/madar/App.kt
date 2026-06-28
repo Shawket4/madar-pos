@@ -55,7 +55,14 @@ fun App(model: AppModel) {
                 Box(Modifier.fillMaxSize().background(madarColors().bg)) {
                     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)) {
                         when (val r = model.route) {
-                            is AppRoute.DeviceSetup, is AppRoute.Login -> LoginScreen(model)
+                            // A kitchen-role device bound to a branch but with no
+                            // station yet lands on DeviceSetup → show the station
+                            // picker (not the manager binding, which is for an
+                            // unconfigured device / a fresh teller login).
+                            is AppRoute.DeviceSetup ->
+                                if (model.session != null && model.isKitchenDevice) StationPickerScreen(model)
+                                else LoginScreen(model)
+                            is AppRoute.Login -> LoginScreen(model)
                             is AppRoute.OpenShift -> OpenShiftScreen(model)
                             // The waiter uses the SAME order component as the teller —
                             // full menu/cart + app chrome — in "fire" mode. Its open-
