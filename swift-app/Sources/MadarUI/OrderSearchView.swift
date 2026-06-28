@@ -2,6 +2,11 @@
 // teller), paginated. Closes the "operators can't look up a past-shift order"
 // gap. Full-screen over the order screen; teller-only. Mirror of OrderSearchScreen.kt.
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 struct OrderSearchView: View {
     @ObservedObject var app: AppModel
@@ -25,8 +30,15 @@ struct OrderSearchView: View {
             theme.colors.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 ScreenHeader(t("search.title"), onBack: onClose) {
-                    if app.orderSearchTotal > 0 {
-                        Text("\(app.orderSearchTotal)").font(.ui(14, .bold)).foregroundStyle(theme.colors.textSecondary)
+                    HStack(spacing: Space.md) {
+                        if app.orderSearchTotal > 0 {
+                            Text("\(app.orderSearchTotal)").font(.ui(14, .bold)).foregroundStyle(theme.colors.textSecondary)
+                        }
+                        if !app.orderSearchResults.isEmpty {
+                            Button(action: exportCsv) {
+                                Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold)).foregroundStyle(theme.colors.accent)
+                            }.buttonStyle(.plain)
+                        }
                     }
                 }.screenHeaderBar()
 
@@ -73,6 +85,27 @@ struct OrderSearchView: View {
                 }.padding(Space.lg)
             }
         }
+    }
+
+    // Spreadsheet-friendly export of the current result page → clipboard.
+    // RFC-4180 quoting so a comma in a label can't shift columns.
+    private func exportCsv() {
+        func esc(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
+        var out = "Order,Date,Total,Payment,Status\n"
+        for o in app.orderSearchResults {
+            out += "#\(o.orderNumber.map(String.init) ?? ""),"
+            out += esc(o.createdAt) + ","
+            out += esc(Money.format(o.totalMinor, currency)) + ","
+            out += esc(o.paymentLabel) + ","
+            out += esc(o.status) + "\n"
+        }
+        #if canImport(UIKit)
+        UIPasteboard.general.string = out
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(out, forType: .string)
+        #endif
+        app.showToast(t("search.exported"), icon: "checkmark.circle.fill", tone: .success)
     }
 
     private func resultRow(_ o: OrderSummaryView) -> some View {

@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,7 +60,9 @@ import kotlinx.coroutines.launch
 fun OrderSearchScreen(model: AppModel) {
     val c = madarColors()
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
     val currency = model.session?.currencyCode ?: ""
+    val exportedLabel = t("search.exported")
     var status by remember { mutableStateOf<String?>(null) }   // null = all
     var teller by remember { mutableStateOf("") }
     var days by remember { mutableStateOf(7L) }                // 0 = all time
@@ -80,6 +84,15 @@ fun OrderSearchScreen(model: AppModel) {
                 Box(Modifier.weight(1f))
                 if (model.orderSearchTotal > 0) {
                     Text("${model.orderSearchTotal}", color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                if (model.orderSearchResults.isNotEmpty()) {
+                    MadarIcon(
+                        "square.and.arrow.up", tint = c.accent, size = 18.dp,
+                        modifier = Modifier.clickable {
+                            clipboard.setText(AnnotatedString(ordersToCsv(model.orderSearchResults, currency)))
+                            model.showToast(exportedLabel, ChipTone.SUCCESS, icon = "checkmark.circle.fill")
+                        },
+                    )
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
@@ -124,6 +137,21 @@ fun OrderSearchScreen(model: AppModel) {
             }
         }
     }
+}
+
+// Spreadsheet-friendly export of the current result page. RFC-4180 quoting so a
+// payment label or status containing a comma can't shift columns.
+private fun ordersToCsv(orders: List<OrderSummaryView>, currency: String): String {
+    fun esc(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
+    val sb = StringBuilder("Order,Date,Total,Payment,Status\n")
+    for (o in orders) {
+        sb.append("#${o.orderNumber ?: ""},")
+        sb.append(esc(o.createdAt)).append(",")
+        sb.append(esc(Money.format(o.totalMinor, currency))).append(",")
+        sb.append(esc(o.paymentLabel)).append(",")
+        sb.append(esc(o.status)).append("\n")
+    }
+    return sb.toString()
 }
 
 @Composable
