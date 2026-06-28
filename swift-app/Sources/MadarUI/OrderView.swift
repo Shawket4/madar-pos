@@ -48,14 +48,14 @@ struct OrderView: View {
     }
 
     private var visibleItems: [MenuItemView] {
-        app.menuItems
-            .filter { $0.isActive }
-            .filter { selectedCategory == nil || $0.categoryId == selectedCategory }
-            .filter {
-                search.isEmpty
-                    || $0.name.localizedCaseInsensitiveContains(search)
-                    || ($0.description?.localizedCaseInsensitiveContains(search) ?? false)
-            }
+        // Single pass — no intermediate arrays per body eval.
+        app.menuItems.filter { item in
+            item.isActive
+                && (selectedCategory == nil || item.categoryId == selectedCategory)
+                && (search.isEmpty
+                    || item.name.localizedCaseInsensitiveContains(search)
+                    || (item.description?.localizedCaseInsensitiveContains(search) ?? false))
+        }
     }
 
     var body: some View {

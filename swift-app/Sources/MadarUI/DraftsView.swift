@@ -24,7 +24,7 @@ struct DraftsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(spacing: Space.md) {
+                    LazyVStack(spacing: Space.md) {
                         ForEach(app.drafts, id: \.id) { draftRow($0) }
                     }
                     .frame(maxWidth: 560).frame(maxWidth: .infinity).padding(Space.lg)

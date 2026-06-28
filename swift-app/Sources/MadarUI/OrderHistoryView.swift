@@ -388,7 +388,9 @@ struct OrderHistoryView: View {
     // MARK: Narrow CARD list
 
     private var cardList: some View {
-        VStack(spacing: Space.md) {
+        // Lazy — only on-screen cards build their bodies, and the list grows via
+        // load-more, so eager VStack would inflate every row up front.
+        LazyVStack(spacing: Space.md) {
             ForEach(visible, id: \.id) { item in
                 OrderCard(
                     app: app, item: item, currency: currency,

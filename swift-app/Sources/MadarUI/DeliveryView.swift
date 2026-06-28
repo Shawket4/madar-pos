@@ -102,7 +102,7 @@ struct DeliveryBody: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                VStack(spacing: Space.sm) {
+                LazyVStack(spacing: Space.sm) {
                     ForEach(app.deliveryOrders, id: \.id) { order in
                         DeliveryOrderCard(
                             app: app, order: order,
