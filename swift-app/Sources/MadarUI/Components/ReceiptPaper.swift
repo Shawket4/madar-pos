@@ -104,6 +104,13 @@ struct ReceiptPaper: View {
                 Text("Addr: \(v)").frame(maxWidth: .infinity, alignment: .leading)
             }
             if let v = receipt.deliveryZone { row("Zone", v) }
+            // Courier ref + COD/payment hint + customer instructions (matches the
+            // printed raster receipt; were dropped from the preview).
+            if let v = receipt.deliveryRef { row("Delivery Ref", v) }
+            if let v = receipt.paymentHint { row("Payment", v) }
+            if let v = receipt.deliveryNotes, !v.isEmpty {
+                Text("Notes: \(v)").frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

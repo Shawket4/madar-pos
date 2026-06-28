@@ -107,6 +107,11 @@ fun ReceiptPaper(
             receipt.customerPhone?.let { moneyRow("Phone", it) }
             receipt.deliveryAddress?.let { mono("Addr: $it", 12, FontWeight.Normal, Ink) }
             receipt.deliveryZone?.let { moneyRow("Zone", it) }
+            // Courier ref + COD/payment hint + customer instructions (matches the
+            // printed raster receipt; were dropped from the preview).
+            receipt.deliveryRef?.let { moneyRow("Delivery Ref", it) }
+            receipt.paymentHint?.let { moneyRow("Payment", it) }
+            receipt.deliveryNotes?.takeIf { it.isNotBlank() }?.let { mono("Notes: $it", 12, FontWeight.Normal, Ink) }
             rule()
         }
         receipt.lines.forEach { line -> lineBlock(line, ::money) }

@@ -311,6 +311,18 @@ impl Renderer {
             if let Some(v) = &r.delivery_zone {
                 self.row(&lab.zone, v, SZ_SMALL, Weight::NORMAL);
             }
+            // Courier ref + COD/payment hint + customer instructions — the ESC/POS
+            // text path printed these but the raster path (this) dropped them, so a
+            // courier ticket lacked the ref/hint/notes the dispatcher needs.
+            if let Some(v) = &r.delivery_ref {
+                self.row(&lab.delivery_ref, v, SZ_SMALL, Weight::NORMAL);
+            }
+            if let Some(v) = &r.payment_hint {
+                self.row(&lab.payment_hint, v, SZ_SMALL, Weight::NORMAL);
+            }
+            if let Some(v) = &r.delivery_notes {
+                self.indented(&format!("{}: {}", lab.notes, v), SZ_SMALL, 0);
+            }
             self.rule();
         }
 
