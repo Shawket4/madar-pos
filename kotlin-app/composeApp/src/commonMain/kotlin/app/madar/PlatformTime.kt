@@ -6,3 +6,7 @@ package app.madar
 // (not core) so it matches the Swift host exactly; both targets are JVM (minSdk
 // 26 → java.time is available), so the two actuals are identical.
 expect fun minutesSince(rfc: String): Int
+
+/** RFC3339 timestamp for (now − [days]) — for the all-orders search date presets.
+ *  days=0 → now. The server treats the search `from` as an inclusive lower bound. */
+expect fun isoDaysAgo(days: Long): String

@@ -301,6 +301,11 @@ fun OrderScreen(model: AppModel) {
             OrderHistoryScreen(model)
         }
 
+        // All-orders search (across shifts) — full-screen over the order screen.
+        if (model.showOrderSearch) {
+            OrderSearchScreen(model)
+        }
+
         // Cash In/Out — full-screen over the order screen.
         if (model.showCashMovements) {
             CashMovementsScreen(model)
@@ -422,6 +427,9 @@ private fun MoreDrawer(model: AppModel, wide: Boolean, modifier: Modifier = Modi
                     MoreRow("arrow.clockwise", t("chrome.sync_data"), c.textPrimary) {
                         model.showMore = false; scope.launch { model.refreshServerData() }
                     }
+                }
+                MoreRow("magnifyingglass", t("search.title"), c.textPrimary) {
+                    model.showMore = false; model.showOrderSearch = true
                 }
                 MoreRow("banknote", t("cash.title"), c.textPrimary) {
                     model.showMore = false; model.error = null; model.showCashMovements = true

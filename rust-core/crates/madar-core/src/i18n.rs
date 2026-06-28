@@ -337,6 +337,13 @@ fn en(key: &str) -> Option<&'static str> {
         // order-history table (Flutter-style columns / filters / stats)
         "history.current_shift" => "Current shift",
         "history.no_match" => "No matching orders",
+        // all-orders search (history lookup across shifts)
+        "search.title" => "Find orders",
+        "search.teller_hint" => "Teller name",
+        "search.date_24h" => "24h",
+        "search.date_7d" => "7 days",
+        "search.date_30d" => "30 days",
+        "search.load_more" => "Load more",
         "history.synced" => "Synced",
         "history.stat.orders" => "Orders",
         "history.show_more" => "Show {count} more",
@@ -701,6 +708,12 @@ fn ar(key: &str) -> Option<&'static str> {
         // order-history table (Flutter-style columns / filters / stats)
         "history.current_shift" => "الوردية الحالية",
         "history.no_match" => "لا توجد طلبات مطابقة",
+        "search.title" => "ابحث عن الطلبات",
+        "search.teller_hint" => "اسم الكاشير",
+        "search.date_24h" => "٢٤ ساعة",
+        "search.date_7d" => "٧ أيام",
+        "search.date_30d" => "٣٠ يوم",
+        "search.load_more" => "تحميل المزيد",
         "history.synced" => "متزامن",
         "history.stat.orders" => "الطلبات",
         "history.show_more" => "عرض {count} إضافية",

@@ -9,3 +9,5 @@ actual fun minutesSince(rfc: String): Int = try {
 } catch (_: Exception) {
     0
 }
+
+actual fun isoDaysAgo(days: Long): String = Instant.now().minusSeconds(days * 86_400L).toString()

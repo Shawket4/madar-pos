@@ -34,6 +34,18 @@ pub(crate) fn pending_void_ids(store: &Store) -> CoreResult<HashSet<String>> {
     Ok(ids)
 }
 
+/// A page of all-orders search results (history lookup across shifts).
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct OrderSearchPage {
+    pub orders: Vec<OrderSummaryView>,
+    /// 1-based page just returned.
+    pub page: u32,
+    /// Total matching orders on the server.
+    pub total: u32,
+    /// Whether a further page exists.
+    pub has_more: bool,
+}
+
 /// One order row for the history list (+ a totals detail).
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OrderSummaryView {

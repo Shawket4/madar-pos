@@ -1070,6 +1070,8 @@ internal open class UniffiVTableCallbackInterfaceTokenStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1291,6 +1293,8 @@ internal interface UniffiLib : Library {
     fun uniffi_madar_core_fn_method_madarcore_restore_session(`ptr`: Pointer,`blob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_madar_core_fn_method_madarcore_retry_outbox(`ptr`: Pointer,
+    ): Long
+    fun uniffi_madar_core_fn_method_madarcore_search_orders(`ptr`: Pointer,`status`: RustBuffer.ByValue,`tellerName`: RustBuffer.ByValue,`paymentMethod`: RustBuffer.ByValue,`from`: RustBuffer.ByValue,`to`: RustBuffer.ByValue,`page`: Int,
     ): Long
     fun uniffi_madar_core_fn_method_madarcore_send_to_printer(`ptr`: Pointer,`host`: RustBuffer.ByValue,`port`: Short,`bytes`: RustBuffer.ByValue,
     ): Long
@@ -1673,6 +1677,8 @@ internal interface UniffiLib : Library {
     fun uniffi_madar_core_checksum_method_madarcore_restore_session(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_retry_outbox(
+    ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_search_orders(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_send_to_printer(
     ): Short
@@ -2062,6 +2068,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_madar_core_checksum_method_madarcore_retry_outbox() != 30457.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_search_orders() != 31136.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_madar_core_checksum_method_madarcore_send_to_printer() != 57191.toShort()) {
@@ -3234,6 +3243,14 @@ public interface MadarCoreInterface {
      * Best-effort — offline just leaves them pending again.
      */
     suspend fun `retryOutbox`()
+    
+    /**
+     * Search the branch's orders ACROSS shifts (history lookup) with optional
+     * filters (status / teller / payment method / from-to dates) + pagination
+     * (50/page, 1-based). Online-only — the shift-scoped list is the offline path,
+     * so a Server/Network error surfaces rather than returning a stale snapshot.
+     */
+    suspend fun `searchOrders`(`status`: kotlin.String?, `tellerName`: kotlin.String?, `paymentMethod`: kotlin.String?, `from`: kotlin.String?, `to`: kotlin.String?, `page`: kotlin.UInt): OrderSearchPage
     
     /**
      * Best-effort raw-TCP send of pre-rendered ESC/POS bytes to a network
@@ -5437,6 +5454,33 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
         // lift function
         { Unit },
         
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Search the branch's orders ACROSS shifts (history lookup) with optional
+     * filters (status / teller / payment method / from-to dates) + pagination
+     * (50/page, 1-based). Online-only — the shift-scoped list is the offline path,
+     * so a Server/Network error surfaces rather than returning a stale snapshot.
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `searchOrders`(`status`: kotlin.String?, `tellerName`: kotlin.String?, `paymentMethod`: kotlin.String?, `from`: kotlin.String?, `to`: kotlin.String?, `page`: kotlin.UInt) : OrderSearchPage {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_search_orders(
+                thisPtr,
+                FfiConverterOptionalString.lower(`status`),FfiConverterOptionalString.lower(`tellerName`),FfiConverterOptionalString.lower(`paymentMethod`),FfiConverterOptionalString.lower(`from`),FfiConverterOptionalString.lower(`to`),FfiConverterUInt.lower(`page`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeOrderSearchPage.lift(it) },
         // Error FFI converter
         CoreException.ErrorHandler,
     )
@@ -8208,6 +8252,58 @@ public object FfiConverterTypeOrderDetailView: FfiConverterRustBuffer<OrderDetai
             FfiConverterLong.write(value.`totalMinor`, buf)
             FfiConverterString.write(value.`createdAt`, buf)
             FfiConverterSequenceTypeOrderDetailLineView.write(value.`lines`, buf)
+    }
+}
+
+
+
+/**
+ * A page of all-orders search results (history lookup across shifts).
+ */
+data class OrderSearchPage (
+    var `orders`: List<OrderSummaryView>, 
+    /**
+     * 1-based page just returned.
+     */
+    var `page`: kotlin.UInt, 
+    /**
+     * Total matching orders on the server.
+     */
+    var `total`: kotlin.UInt, 
+    /**
+     * Whether a further page exists.
+     */
+    var `hasMore`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeOrderSearchPage: FfiConverterRustBuffer<OrderSearchPage> {
+    override fun read(buf: ByteBuffer): OrderSearchPage {
+        return OrderSearchPage(
+            FfiConverterSequenceTypeOrderSummaryView.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: OrderSearchPage) = (
+            FfiConverterSequenceTypeOrderSummaryView.allocationSize(value.`orders`) +
+            FfiConverterUInt.allocationSize(value.`page`) +
+            FfiConverterUInt.allocationSize(value.`total`) +
+            FfiConverterBoolean.allocationSize(value.`hasMore`)
+    )
+
+    override fun write(value: OrderSearchPage, buf: ByteBuffer) {
+            FfiConverterSequenceTypeOrderSummaryView.write(value.`orders`, buf)
+            FfiConverterUInt.write(value.`page`, buf)
+            FfiConverterUInt.write(value.`total`, buf)
+            FfiConverterBoolean.write(value.`hasMore`, buf)
     }
 }
 

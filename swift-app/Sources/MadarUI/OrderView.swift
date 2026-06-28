@@ -474,6 +474,9 @@ private struct MoreDrawer: View {
                         row(icon: "list.bullet.rectangle", label: t("history.title"), tone: theme.colors.textPrimary) {
                             app.showMore = false; app.showHistory = true
                         }
+                        row(icon: "magnifyingglass", label: t("search.title"), tone: theme.colors.textPrimary) {
+                            app.showMore = false; app.showOrderSearch = true
+                        }
                         row(icon: "arrow.triangle.2.circlepath", label: t("sync.title"), tone: theme.colors.textPrimary) {
                             app.showMore = false; app.loadOutbox(); app.showSync = true
                         }
@@ -1226,12 +1229,13 @@ private struct OrderScreenRouter: ViewModifier {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
 
-    private enum Route: Equatable { case closeShift, sync, history, settings, cash, shiftHistory, incoming, tickets }
+    private enum Route: Equatable { case closeShift, sync, history, search, settings, cash, shiftHistory, incoming, tickets }
 
     private var active: Route? {
         if app.showCloseShift { return .closeShift }
         if app.showSync { return .sync }
         if app.showHistory { return .history }
+        if app.showOrderSearch { return .search }
         if app.showSettings { return .settings }
         if app.showCashMovements { return .cash }
         if app.showShiftHistory { return .shiftHistory }
@@ -1242,6 +1246,7 @@ private struct OrderScreenRouter: ViewModifier {
 
     private func dismiss() {
         app.showCloseShift = false; app.showSync = false; app.showHistory = false
+        app.showOrderSearch = false
         app.showSettings = false; app.showCashMovements = false
         app.showShiftHistory = false; app.showIncoming = false
         app.showTickets = false
@@ -1267,6 +1272,7 @@ private struct OrderScreenRouter: ViewModifier {
         case .closeShift:   CloseShiftView(app: app)
         case .sync:         SyncView(app: app, onClose: dismiss)
         case .history:      OrderHistoryView(app: app, onClose: dismiss)
+        case .search:       OrderSearchView(app: app, onClose: dismiss)
         case .settings:     SettingsView(app: app, onClose: dismiss)
         case .cash:         CashMovementsView(app: app, onClose: dismiss)
         case .shiftHistory: ShiftHistoryView(app: app, onClose: dismiss)

@@ -2958,6 +2958,55 @@ impl MadarCore {
         Ok(all)
     }
 
+    /// Search the branch's orders ACROSS shifts (history lookup) with optional
+    /// filters (status / teller / payment method / from-to dates) + pagination
+    /// (50/page, 1-based). Online-only — the shift-scoped list is the offline path,
+    /// so a Server/Network error surfaces rather than returning a stale snapshot.
+    pub async fn search_orders(
+        &self,
+        status: Option<String>,
+        teller_name: Option<String>,
+        payment_method: Option<String>,
+        from: Option<String>,
+        to: Option<String>,
+        page: u32,
+    ) -> Result<orders::OrderSearchPage, CoreError> {
+        use madar_api::apis::orders_api;
+        let branch_id = {
+            let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+            let s = g.as_ref().ok_or_else(|| CoreError::Unauthenticated { detail: "not signed in".into() })?;
+            s.snapshot.branch_id.clone().ok_or_else(|| CoreError::Validation {
+                field: "branch_id".into(),
+                detail: "session has no branch".into(),
+            })?
+        };
+        let blank = |s: Option<String>| s.filter(|x| !x.is_empty());
+        let date = |s: Option<String>| {
+            s.filter(|x| !x.is_empty()).and_then(|x| chrono::DateTime::parse_from_rfc3339(&x).ok())
+        };
+        let per_page = 50i64;
+        let params = orders_api::ListOrdersParams {
+            branch_id: Some(branch_id),
+            shift_id: None,
+            updated_after: None,
+            page: Some(page.max(1) as i64),
+            per_page: Some(per_page),
+            teller_name: blank(teller_name),
+            payment_method: blank(payment_method),
+            status: blank(status),
+            from: date(from),
+            to: date(to),
+            order_type: None,
+            channel: None,
+            include_items: Some(false),
+        };
+        let resp = orders_api::list_orders(&self.api.config(), params).await.map_err(net::map_api_error)?;
+        let orders: Vec<_> = resp.data.iter().map(orders::from_server).collect();
+        let total = resp.total.max(0) as u32;
+        let has_more = resp.page * resp.per_page < resp.total;
+        Ok(orders::OrderSearchPage { orders, page: page.max(1), total, has_more })
+    }
+
     /// A PAST shift's Z-report (history-screen reprint). Live when online (cached
     /// write-through), else the cached report; and for a shift opened+closed
     /// entirely OFFLINE — which never had a server report — reconstructed from the

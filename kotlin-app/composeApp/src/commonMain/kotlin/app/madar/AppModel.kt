@@ -1204,6 +1204,30 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     /** The branch's tills (drawers) — for the Settings till picker. */
     var tills by mutableStateOf<List<TillView>>(emptyList()); private set
     suspend fun loadTills() { tills = runCatching { core.listTills() }.getOrDefault(emptyList()) }
+
+    // ── all-orders search (history lookup ACROSS shifts, online) ──────────────────
+    var showOrderSearch by mutableStateOf(false)
+    var orderSearchResults by mutableStateOf<List<OrderSummaryView>>(emptyList()); private set
+    var orderSearchTotal by mutableStateOf(0); private set
+    var orderSearchHasMore by mutableStateOf(false); private set
+    var isSearchingOrders by mutableStateOf(false); private set
+    private var orderSearchPage = 1u
+    /** Run / page the all-orders search. [reset] starts a fresh query at page 1;
+     *  otherwise it appends the next page (load-more). */
+    suspend fun searchOrders(status: String?, teller: String?, payment: String?, fromIso: String?, reset: Boolean) {
+        if (reset) { orderSearchPage = 1u; orderSearchResults = emptyList() }
+        isSearchingOrders = true; error = null
+        try {
+            val pg = core.searchOrders(
+                status?.ifBlank { null }, teller?.ifBlank { null }, payment?.ifBlank { null }, fromIso, null, orderSearchPage,
+            )
+            orderSearchResults = if (reset) pg.orders else orderSearchResults + pg.orders
+            orderSearchTotal = pg.total.toInt()
+            orderSearchHasMore = pg.hasMore
+            orderSearchPage += 1u
+        } catch (e: CoreException) { error = humanMessage(e) }
+        finally { isSearchingOrders = false }
+    }
     suspend fun bumpKdsItem(itemId: String) {
         runCatching { core.kdsBump(itemId); loadKds() }
             .onFailure { if (it is CoreException) showToast(humanMessage(it), tone = ChipTone.DANGER) }
@@ -1290,7 +1314,7 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
         get() = showMore || showReauth || detailBundle != null || detailItem != null ||
             previewReceipt != null || showReportPreview || showSettings || showTickets ||
             showIncoming || showDrafts || showShiftHistory ||
-            showCashMovements || showHistory || showSync || showCloseShift
+            showCashMovements || showHistory || showOrderSearch || showSync || showCloseShift
 
     /** Close the topmost open overlay (in visual z-order). Returns true if it consumed
      *  the back. The host's BackHandler delegates here so back navigates WITHIN the app
@@ -1310,6 +1334,7 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
             showShiftHistory -> showShiftHistory = false
             showCashMovements -> showCashMovements = false
             showHistory -> showHistory = false
+            showOrderSearch -> showOrderSearch = false
             showSync -> showSync = false
             showCloseShift -> showCloseShift = false
             else -> return false

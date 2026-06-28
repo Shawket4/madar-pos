@@ -1102,6 +1102,31 @@ final class AppModel: ObservableObject {
     /// The branch's tills (drawers) — for the Settings till picker.
     @Published private(set) var tills: [TillView] = []
     func loadTills() async { tills = (try? await core.listTills()) ?? [] }
+
+    // ── all-orders search (history lookup ACROSS shifts, online) ──────────────────
+    @Published var showOrderSearch = false
+    @Published private(set) var orderSearchResults: [OrderSummaryView] = []
+    @Published private(set) var orderSearchTotal = 0
+    @Published private(set) var orderSearchHasMore = false
+    @Published private(set) var isSearchingOrders = false
+    private var orderSearchPage: UInt32 = 1
+    /// Run / page the all-orders search. `reset` starts fresh at page 1; otherwise
+    /// it appends the next page (load-more).
+    func searchOrders(status: String?, teller: String?, payment: String?, fromIso: String?, reset: Bool) async {
+        if reset { orderSearchPage = 1; orderSearchResults = [] }
+        isSearchingOrders = true; errorMessage = nil; defer { isSearchingOrders = false }
+        do {
+            let pg = try await core.searchOrders(
+                status: (status?.isEmpty == false) ? status : nil,
+                tellerName: (teller?.isEmpty == false) ? teller : nil,
+                paymentMethod: (payment?.isEmpty == false) ? payment : nil,
+                from: fromIso, to: nil, page: orderSearchPage)
+            orderSearchResults = reset ? pg.orders : orderSearchResults + pg.orders
+            orderSearchTotal = Int(pg.total)
+            orderSearchHasMore = pg.hasMore
+            orderSearchPage += 1
+        } catch { errorMessage = humanMessage(error) }
+    }
     /// Bump a kitchen line (mark done at its station); a ticket goes ready when all
     /// its lines are bumped. Reloads the feed on success.
     func bumpKdsItem(_ itemId: String) async {
