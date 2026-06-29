@@ -37,6 +37,25 @@ fun App(model: AppModel) {
                 .enqueue(coil3.request.ImageRequest.Builder(coilCtx).data(url).build())
         }
     }
+    // App-level connectivity heartbeat — runs on EVERY route (not just Order /
+    // OpenShift), so a KDS / waiter / settings device still drains its outbox on a
+    // timer, and a cold start flushes a restored backlog on the first tick. Keyed
+    // on the signed-in user so it starts/stops with the session; the core's
+    // single-flight drain makes overlap with any screen-level refresh harmless.
+    LaunchedEffect(model.session?.userId) {
+        if (model.session == null) return@LaunchedEffect
+        while (true) {
+            model.refreshConnectivity()
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
+    // Drain the outbox when the realtime stream connects / reconnects — a regained
+    // stream is strong proof connectivity is back. Covers every screen/role (incl.
+    // KDS/waiter, which lack a per-screen heartbeat) and closes the prior on-reconnect
+    // parity gap with the Swift app. Single-flight in the core de-dups any overlap.
+    LaunchedEffect(model.realtimeConnected) {
+        if (model.realtimeConnected && model.session != null) model.refreshConnectivity()
+    }
     MadarTheme(mode = model.themeMode) {
         // Re-key on the active locale so a runtime language switch recomposes the
         // whole subtree — re-resolving every t() string and the RTL direction.

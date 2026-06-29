@@ -102,6 +102,24 @@ struct OrderView: View {
                         CartBar(app: app, currency: currency) { showCart = true }
                     }
                 }
+                // More — secondary nav hub as a leading side drawer (scrim +
+                // full-height panel). Replaces the old bottom sheet; .leading is
+                // layout-direction aware, so it's RTL-correct.
+                if app.showMore {
+                    Color.black.opacity(Opacity.scrim)
+                        .ignoresSafeArea()
+                        .onTapGesture { withAnimation(Motion.standard) { app.showMore = false } }
+                        .transition(.opacity)
+                    HStack(spacing: 0) {
+                        MoreDrawer(app: app, wide: wide)
+                            .frame(width: 320)
+                            .frame(maxHeight: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous))
+                        Spacer(minLength: 0)
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                    .transition(.move(edge: .leading))
+                }
             }
             // ── Bottom-sheet modals: scrim + draggable card (tap-out / drag-down
             // to dismiss). Custom presenter — macOS .sheet can't do either and
@@ -146,11 +164,6 @@ struct OrderView: View {
             .madarSheet(item: $app.detailBundle, size: .hug, maxWidth: 600) { bundle, dismiss in
                 BundleDetailView(app: app, bundle: bundle, onClose: dismiss)
             }
-            // More — overflow nav hub (close shift, sign out, …). Capped at the
-            // Flutter ResponsiveSheet width (600) so it isn't an over-wide slab.
-            .madarSheet(isPresented: $app.showMore, maxWidth: 600) { _ in
-                MoreDrawer(app: app, wide: wide)
-            }
             // Held orders (drafts).
             .madarSheet(isPresented: $app.showDrafts, maxWidth: 600) { dismiss in
                 DraftsView(app: app, onClose: dismiss)
@@ -194,19 +207,12 @@ struct OrderView: View {
     }
 
     @ViewBuilder private func catalogColumn(wide: Bool) -> some View {
-        if wide {
-            // Tablet/desktop: a vertical category rail beside the search + grid.
-            HStack(spacing: 0) {
-                CategoryRail(app: app, categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
-                Rectangle().fill(theme.colors.borderLight).frame(width: 1)
-                VStack(spacing: 0) { searchAndGrid }
-            }
-        } else {
-            // Phone: a horizontal underline-tab strip above the search + grid.
-            VStack(spacing: 0) {
-                CategoryTabs(app: app, categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
-                searchAndGrid
-            }
+        // Categories sit on TOP of the menu (a horizontal tab strip) at every width —
+        // the old vertical side rail is gone. On wide, the cart panel lives in the
+        // parent HStack; here we only lay out the catalog.
+        VStack(spacing: 0) {
+            CategoryTabs(app: app, categories: app.categories, selected: $selectedCategory, showCombos: !app.bundles.isEmpty)
+            searchAndGrid
         }
     }
 
@@ -288,7 +294,7 @@ private struct OrderTopBar: View {
                 barButton(icon: "list.bullet.rectangle") { app.showHistory = true }
                 barButton(icon: "gearshape") { app.refreshPending(); app.showSettings = true }
             }
-            barButton(icon: "ellipsis") { app.refreshPending(); app.showMore = true }
+            barButton(icon: "ellipsis") { app.refreshPending(); withAnimation(Motion.standard) { app.showMore = true } }
         }
     }
 
@@ -436,8 +442,7 @@ private struct MoreDrawer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Capsule().fill(theme.colors.border).frame(width: 36, height: 4)
-                .padding(.top, Space.sm).padding(.bottom, Space.md)
+            Color.clear.frame(height: Space.lg)
             if let s = app.shift {
                 HStack(spacing: Space.sm) {
                     Circle().fill(app.isOnline ? theme.colors.success : theme.colors.warning)

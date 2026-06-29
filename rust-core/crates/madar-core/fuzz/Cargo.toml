@@ -1,0 +1,33 @@
+[package]
+name = "madar-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+madar-core = { path = ".." }
+
+# Detach from the parent workspace so cargo doesn't fold fuzz/ into madar-core.
+[workspace]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "price_cart"
+path = "fuzz_targets/price_cart.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify_pin"
+path = "fuzz_targets/verify_pin.rs"
+test = false
+doc = false
+bench = false

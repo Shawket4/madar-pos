@@ -949,3 +949,26 @@ mod tests {
         assert_ne!(LoginMode::Pin, LoginMode::Email);
     }
 }
+
+// Robustness of the offline PIN verifier — it gatekeeps offline login against an
+// org bundle that a corrupt store or an attacker could feed it. It must FAIL
+// CLOSED (reject), never panic, on any input.
+#[cfg(test)]
+mod pin_proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Never panics, whatever the PIN/PHC strings are.
+        #[test]
+        fn verify_offline_pin_never_panics(pin in ".*", phc in ".*") {
+            let _ = verify_offline_pin(&pin, &phc);
+        }
+
+        /// Anything that isn't a valid argon2 PHC (no leading `$…`) rejects.
+        #[test]
+        fn non_phc_always_rejects(pin in ".*", junk in "[^$]{0,64}") {
+            prop_assert!(!verify_offline_pin(&pin, &junk));
+        }
+    }
+}

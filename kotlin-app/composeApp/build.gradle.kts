@@ -54,7 +54,23 @@ kotlin {
             implementation(libs.jna)
             implementation(libs.coil.network.okhttp)
         }
+        // Pure FFI unit tests on the desktop JVM (no Android device needed):
+        // kotlin.test for assertions, JNA at runtime to load libmadar_core.
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(libs.jna)
+            }
+        }
     }
+}
+
+// `./gradlew :composeApp:desktopTest` loads the Rust core via JNA — point it at
+// the built dylib (rust-core/tool/build-bindings.sh / build-android.sh make it).
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("jna.library.path", "${rootProject.projectDir}/../rust-core/target/debug")
 }
 
 // Mark the UniFFI-generated core records as stable (see compose_stability.conf)

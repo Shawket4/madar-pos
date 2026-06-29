@@ -359,11 +359,12 @@ fun OrderScreen(model: AppModel) {
         // Self-gating on model.showReauth (defined in a sibling file).
         ReauthScreen(model)
 
-        // "More" overflow drawer — scrim (tap to dismiss) + bottom-sheet panel.
+        // "More" overflow drawer — scrim (tap to dismiss) + a full-height side
+        // panel anchored to the leading edge (RTL-aware).
         if (model.showMore) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { model.showMore = false })
-            MoreDrawer(model, wide, Modifier.align(Alignment.BottomCenter))
+            MoreDrawer(model, wide, Modifier.align(Alignment.CenterStart))
         }
     }
 }
@@ -376,16 +377,16 @@ private fun MoreDrawer(model: AppModel, wide: Boolean, modifier: Modifier = Modi
     val scope = rememberCoroutineScope()
     val currency = model.session?.currencyCode ?: ""
     Column(
-        // Fixed sheet height (~60% of the screen) with the row list scrolling inside,
-        // so the drawer is a consistent size regardless of how many rows the role has.
-        modifier.widthIn(max = 600.dp).fillMaxWidth().fillMaxHeight(0.6f)
-            .clip(RoundedCornerShape(topStart = Radii.lg, topEnd = Radii.lg)).background(c.bg)
+        // Full-height side panel anchored to the leading edge; the row list scrolls
+        // inside. Rounded on the trailing corners only (it meets the screen edge on
+        // the leading side). start/end corners keep it RTL-aware.
+        modifier.width(320.dp).fillMaxHeight()
+            .clip(RoundedCornerShape(topEnd = Radii.lg, bottomEnd = Radii.lg)).background(c.bg)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
             .padding(bottom = Space.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.padding(top = Space.sm, bottom = Space.md).size(width = 36.dp, height = 4.dp)
-            .clip(CircleShape).background(c.border))
+        Box(Modifier.height(Space.lg))
         model.shift?.let { s ->
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = Space.lg).clip(RoundedCornerShape(Radii.md))
@@ -493,8 +494,10 @@ private fun MoreRow(glyph: String, label: String, tone: Color, onClick: () -> Un
  *  call-to-action pill (text + chevron). Mirrors Swift's Button-wrapped
  *  NoticeBanner(tone: .danger, actionLabel:). Built inline because the shared
  *  NoticeBanner has no actionLabel param. */
+// `internal` (not file-private) so the OpenShift screen reuses the SAME banner —
+// a teller waiting there sees + recovers a genuine session expiry too.
 @Composable
-private fun AuthPausedBanner(onClick: () -> Unit) {
+internal fun AuthPausedBanner(onClick: () -> Unit) {
     val c = madarColors()
     val haptic = LocalHapticFeedback.current
     val fg = c.danger
@@ -680,36 +683,19 @@ private fun CatalogColumn(
     onBundleTap: (BundleView) -> Unit,
     catStyle: (String) -> CatStyleView,
 ) {
-    val c = madarColors()
     val showCombos = bundles.isNotEmpty()
     val combos = selectedCategory == kCombosCategory
-    if (wide) {
-        // Tablet/desktop: a vertical category rail beside the search + grid.
-        Row(Modifier.fillMaxSize()) {
-            CategoryRail(categories, selectedCategory, onSelect, catStyle, showCombos)
-            Box(Modifier.width(1.dp).fillMaxHeight().background(c.borderLight))
-            Column(Modifier.weight(1f).fillMaxHeight()) {
-                if (combos) {
-                    Box(Modifier.weight(1f).fillMaxWidth()) { BundleGrid(bundles, currency, onBundleTap) }
-                } else {
-                    SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
-                    }
-                }
-            }
-        }
-    } else {
-        // Phone: a horizontal underline-tab strip above the search + grid.
-        Column(Modifier.fillMaxSize()) {
-            CategoryTabs(categories, selectedCategory, onSelect, catStyle, showCombos)
-            if (combos) {
-                Box(Modifier.weight(1f).fillMaxWidth()) { BundleGrid(bundles, currency, onBundleTap) }
-            } else {
-                SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
-                }
+    // Categories sit on TOP of the menu (a horizontal tab strip) at every width —
+    // the old vertical side rail is gone. On wide, the cart panel lives in the
+    // parent Row; here we only lay out the catalog.
+    Column(Modifier.fillMaxSize()) {
+        CategoryTabs(categories, selectedCategory, onSelect, catStyle, showCombos)
+        if (combos) {
+            Box(Modifier.weight(1f).fillMaxWidth()) { BundleGrid(bundles, currency, onBundleTap) }
+        } else {
+            SearchField(search, onSearch, t("order.search"), Modifier.padding(Space.lg))
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                ItemGridOrEmpty(items, currency, search.isNotBlank(), categoryName, cartQty, selectedCategory, onAdd)
             }
         }
     }

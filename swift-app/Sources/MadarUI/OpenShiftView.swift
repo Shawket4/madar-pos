@@ -8,13 +8,14 @@ import SwiftUI
 struct OpenShiftView: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
 
     @State private var openingMinor: Int64 = 0
 
     var body: some View {
         GeometryReader { geo in
             let wide = geo.size.width >= Responsive.wide
-            ZStack {
+            ZStack(alignment: .top) {
                 theme.colors.bg.ignoresSafeArea()
                 if wide {
                     HStack(spacing: 0) {
@@ -24,6 +25,30 @@ struct OpenShiftView: View {
                 } else {
                     formColumn(showLogo: true)
                 }
+                // Top-pinned chrome so a teller WAITING on the open-shift screen
+                // still sees + recovers connectivity / a genuine session expiry —
+                // not only on the order screen. The auth-paused banner only appears
+                // when the cached JWT has actually expired (the core gates it now).
+                VStack(spacing: Space.sm) {
+                    if !app.isOnline {
+                        NoticeBanner(icon: "wifi.slash", text: t("chrome.offline_banner"), tone: .warning)
+                    }
+                    if app.syncAuthPaused {
+                        Button { app.clearError(); app.showReauth = true } label: {
+                            NoticeBanner(icon: "lock.circle", text: t("chrome.auth_paused"),
+                                         tone: .danger, actionLabel: t("chrome.auth_paused_action"))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, Space.lg)
+                .padding(.top, Space.sm)
+            }
+            // Re-auth the SAME teller to resume sync (mirrors the order screen). The
+            // two hosts never coexist — Order and OpenShift are exclusive routes — so
+            // there's no double-presentation.
+            .madarSheet(isPresented: $app.showReauth, size: .hug, maxWidth: 440) { dismiss in
+                ReauthView(app: app, onClose: dismiss)
             }
         }
     }

@@ -1,0 +1,142 @@
+name: rust-core CI
+
+# Test gate + cross-platform build matrix for the madar-core POS engine.
+# Modelled on the MadarRust backend CI. Deployment/release stays in release.yml.
+on:
+  pull_request:
+    paths: ["rust-core/**", ".github/workflows/rust-core-ci.yml"]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *" # nightly: longer fuzz + full mutation sweep
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: rust-core
+
+jobs:
+  # ── The gate: pure lib tests (money/order/pin engines + proptests). No backend.
+  test:
+    name: test + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-core
+      # fmt + clippy advisory for now (tree predates them); promote by removing
+      # continue-on-error once clean.
+      - name: rustfmt
+        run: cargo fmt --all --check
+        continue-on-error: true
+      - name: clippy
+        run: cargo clippy --all-targets
+        continue-on-error: true
+      - name: test (blocking gate)
+        run: cargo test --lib
+
+  # ── The core MUST build for every client platform (iOS/macOS/Android). ───────
+  build:
+    name: "build: ${{ matrix.target }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-ios }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: ubuntu-latest, target: aarch64-linux-android }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-core
+      # Android needs the NDK + cargo-ndk (bare cargo check fails on the cc-rs C
+      # deps — that's the NDK clang wiring, not a broken crate).
+      - name: Set up Android NDK
+        if: matrix.target == 'aarch64-linux-android'
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+      - name: cargo-ndk
+        if: matrix.target == 'aarch64-linux-android'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+      - name: Build (Android)
+        if: matrix.target == 'aarch64-linux-android'
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: cargo ndk -t arm64-v8a build -p madar-core
+      - name: Build (Apple)
+        if: matrix.target != 'aarch64-linux-android'
+        run: cargo build -p madar-core --target ${{ matrix.target }}
+
+  # ── Coverage-guided fuzzing of the pure money/pin engines (no backend). ──────
+  fuzz:
+    name: "fuzz: ${{ matrix.target }}"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust-core/crates/madar-core
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [price_cart, verify_pin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-core/crates/madar-core/fuzz -> target
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # Quick smoke on PRs; a longer budget on the nightly schedule.
+      - name: Fuzz ${{ matrix.target }}
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'schedule' && 120 || 30 }}
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: rust-core/crates/madar-core/fuzz/artifacts/
+          if-no-files-found: ignore
+
+  # ── Mutation testing (nightly / manual): a logic flip in the money/order/pin ─
+  #    engines must be caught by a test, or it's a coverage gap.
+  mutants:
+    name: mutants
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-core
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants,cargo-nextest
+      - name: Mutants (money/order/pin engines)
+        run: cargo mutants --package madar-core --jobs 2
+        continue-on-error: true # advisory until the team opts into gating
+      - name: Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-out
+          path: rust-core/mutants.out/
+          if-no-files-found: ignore

@@ -258,6 +258,12 @@ final class AppModel: ObservableObject {
                 mode: .pin, name: name, pin: pin, branchId: branchId,
                 email: nil, password: nil, orgId: nil))
             await reconcileShift()
+            // Tear down any prior subscription FIRST. On a mid-shift re-auth (the
+            // token expired and the SSE supervisor stopped on its 401), the core
+            // still holds a stale handle, so a bare startRealtime() would no-op and
+            // leave the stream dead. unsubscribe clears that handle so the stream
+            // genuinely revives. No-op on a fresh login (nothing was subscribed).
+            unsubscribeRealtime()
             startRealtime(); startLanRelay()
         } catch {
             errorMessage = humanMessage(error)
@@ -583,6 +589,25 @@ final class AppModel: ObservableObject {
     /// Requeue every failed command and try to send now.
     func retryOutbox() async {
         try? await core.retryOutbox()
+        loadOutbox()
+    }
+    /// Spins the "Sync now" button while a manual push is in flight.
+    @Published private(set) var isPushing = false
+    /// Manual PUSH of the durable outbox — force-drains every QUEUED (not just
+    /// failed) command. Unlike "Sync data" (a catalog re-pull) this flushes the
+    /// write queue, and unlike "Retry" it doesn't need a dead row to exist. The
+    /// core's `syncNow` clears the connectivity backoff and un-parks a spuriously
+    /// parked queue (still-valid token) before draining. Concurrent taps ignored.
+    func syncNow() async {
+        if isPushing { return }
+        isPushing = true
+        defer { isPushing = false }
+        // Ping first so a queue parked offline (cached `online` gone stale) re-probes
+        // connectivity and the auth-park before the drain; refreshConnectivity also
+        // drains. Then an explicit drain guarantees a push attempt even if the ping
+        // path short-circuited.
+        await refreshConnectivity()
+        try? await core.syncNow()
         loadOutbox()
     }
     /// Discard a single failed command.
@@ -1084,7 +1109,15 @@ final class AppModel: ObservableObject {
         else if type.hasPrefix("ticket.") { Task { await loadOpenTickets() } }
         else if type.hasPrefix("delivery.") { Task { await loadDeliveryOrders() } }
     }
-    func onRealtimeConnection(_ connected: Bool) { realtimeConnected = connected }
+    func onRealtimeConnection(_ connected: Bool) {
+        // A regained stream (disconnected → connected) is strong proof connectivity
+        // is back — flush the outbox. This covers every screen/role, including a KDS
+        // or waiter device that has no per-screen heartbeat. Best-effort; the core's
+        // single-flight drain de-dups any overlap with the timer/foreground drains.
+        let regained = connected && !realtimeConnected
+        realtimeConnected = connected
+        if regained { Task { await refreshConnectivity() } }
+    }
 
     // ── Kitchen Display (KDS) ─────────────────────────────────────────────────────
     @Published private(set) var kdsTickets: [KdsTicketView] = []

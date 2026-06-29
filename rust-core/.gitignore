@@ -6,3 +6,9 @@
 /crates/madar-api
 # UniFFI binding output.
 /bindings
+
+# Robustness tooling artifacts
+/mutants.out*/
+crates/madar-core/fuzz/target/
+crates/madar-core/fuzz/corpus/
+crates/madar-core/fuzz/artifacts/

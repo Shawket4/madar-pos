@@ -101,3 +101,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 # into the dev Postgres (true isolation — no shared fixture state, no cross-test
 # contamination from the global "one open shift per teller" constraint).
 tokio-postgres = { version = "0.7", features = ["with-uuid-1"] }
+# Property-based testing of the pure money/order engines (mirrors the backend's
+# proptest/fuzz harness). Pure Rust, cross-compiles clean.
+proptest = "1"

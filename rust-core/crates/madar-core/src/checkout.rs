@@ -558,6 +558,13 @@ pub(crate) fn queued_cash_total(store: &Store) -> CoreResult<i64> {
         raw.iter().filter(|p| p.is_cash).map(|p| p.name.clone()).collect();
     let mut total = 0i64;
     for item in store.list_active()? {
+        // `inflight` = already sent to the server, so a freshly-fetched shift report
+        // already reflects it. Counting it here too would DOUBLE it in the drawer
+        // during the lost-response window. `pending`/`dead` cash is in the drawer
+        // but NOT on the server, so it's still added.
+        if item.status == "inflight" {
+            continue;
+        }
         match item.op_type.as_str() {
             // A still-queued cash sale: its cash is physically in the drawer.
             "create_order" => {
@@ -592,6 +599,11 @@ pub(crate) fn queued_cash_total_for(store: &Store, shift_id: &str) -> CoreResult
     let mut total = 0i64;
     for item in store.list_active()? {
         if item.shift_id.as_deref() != Some(shift_id) {
+            continue;
+        }
+        // Inflight = already sent → the synced report counts it; skip to avoid a
+        // double in the lost-response window (see queued_cash_total).
+        if item.status == "inflight" {
             continue;
         }
         match item.op_type.as_str() {
@@ -1096,6 +1108,81 @@ mod tests {
     }
 
     #[test]
+    fn queued_cash_total_for_is_scoped_to_one_shift() {
+        // The OFFLINE Z-report drawer figure for a PAST shift: sum only THAT shift's
+        // still-queued cash sales + cash movements (scoped by the outbox row's
+        // shift_id), never another shift's or non-cash sales.
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        const A: &str = "00000000-0000-0000-0000-0000000000aa";
+        const B: &str = "00000000-0000-0000-0000-0000000000bb";
+        let order = |id: &str, shift: &str, method: &str, total: i32| {
+            let mut req = models::CreateOrderRequest::new(
+                uuid::Uuid::new_v4(), vec![], method.into(), uuid::Uuid::new_v4());
+            req.total_amount = Some(Some(total));
+            store
+                .enqueue(&crate::store::NewOutboxOp {
+                    id: id.into(),
+                    op_type: "create_order".into(),
+                    idempotency_key: id.into(),
+                    payload: serde_json::to_string(&CheckoutCommand { request: req }).unwrap(),
+                    event_at: "2026-06-20T12:00:00+00:00".into(),
+                    shift_id: Some(shift.into()),
+                    ..Default::default()
+                })
+                .unwrap();
+        };
+        let movement = |id: &str, shift: &str, amount: i32| {
+            let mut r = models::CashMovementRequest::new(amount, "drawer".into());
+            r.client_ref = Some(Some(uuid::Uuid::new_v4()));
+            let cmd = crate::shift::CashMovementCommand { shift_id: shift.into(), request: r };
+            store
+                .enqueue(&crate::store::NewOutboxOp {
+                    id: id.into(),
+                    op_type: "cash_movement".into(),
+                    idempotency_key: id.into(),
+                    payload: serde_json::to_string(&cmd).unwrap(),
+                    event_at: "2026-06-20T12:00:00+00:00".into(),
+                    shift_id: Some(shift.into()),
+                    ..Default::default()
+                })
+                .unwrap();
+        };
+        order("a1", A, "Cash", 2000);
+        order("a2", A, "Card", 999); // not cash → excluded
+        order("b1", B, "Cash", 5000); // other shift → excluded
+        movement("ma", A, 300); // A pay-in
+        movement("mb", B, 100); // other shift → excluded
+        assert_eq!(queued_cash_total_for(&store, A).unwrap(), 2300, "A: cash 2000 + movement 300");
+        assert_eq!(queued_cash_total_for(&store, B).unwrap(), 5100, "B: cash 5000 + its own movement 100");
+    }
+
+    #[test]
+    fn queued_cash_total_excludes_inflight_orders() {
+        // An inflight order has been SENT → a freshly-fetched shift report already
+        // counts it, so queued_cash must NOT add it again (the lost-response
+        // double-count the report layer was hitting). pending → still counted.
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        let mut req = models::CreateOrderRequest::new(
+            uuid::Uuid::new_v4(), vec![], "Cash".into(), uuid::Uuid::new_v4());
+        req.total_amount = Some(Some(2000));
+        let seq = store
+            .enqueue(&crate::store::NewOutboxOp {
+                id: "o1".into(),
+                op_type: "create_order".into(),
+                idempotency_key: "o1".into(),
+                payload: serde_json::to_string(&CheckoutCommand { request: req }).unwrap(),
+                event_at: "2026-06-20T12:00:00+00:00".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(queued_cash_total(&store).unwrap(), 2000, "pending cash counts");
+        store.mark_inflight(seq).unwrap();
+        assert_eq!(queued_cash_total(&store).unwrap(), 0, "inflight excluded (the synced report has it)");
+    }
+
+    #[test]
     fn queued_cash_total_ignores_unrelated_op_types() {
         let store = Store::open("").unwrap();
         seed_methods(&store);
@@ -1321,5 +1408,73 @@ mod tests {
         assert_eq!(item.size_label, Some(Some("Large".into())));
         assert_eq!(item.unit_price, Some(Some(6000))); // Large size price recorded verbatim
         assert_eq!(item.bundle_id, None);
+    }
+
+    // ── Receipt projection edge cases (closed test gaps found by cargo-mutants) ──
+
+    /// A whitespace-only customer name must be filtered to None on the receipt, not
+    /// printed as blank. (Kills the `!` deletion in the prepare receipt filter.)
+    #[test]
+    fn receipt_filters_blank_customer_name() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store);
+        cart::add(&store, ITEM, "Latte", 1000).unwrap();
+        let mut input = mk_input(CASH, 2000);
+        input.customer_name = Some("   ".into()); // whitespace only
+        let p = prepare(&store, "en", BRANCH, SHIFT, &input, 0.14, "2026-06-20T12:00:00+00:00".into())
+            .unwrap();
+        assert_eq!(p.receipt.customer_name, None, "blank name must not reach the receipt");
+
+        // A real name survives the filter.
+        let mut named = mk_input(CASH, 2000);
+        named.customer_name = Some("Mona".into());
+        let p2 = prepare(&store, "en", BRANCH, SHIFT, &named, 0.14, "2026-06-20T12:00:00+00:00".into())
+            .unwrap();
+        assert_eq!(p2.receipt.customer_name, Some("Mona".into()));
+    }
+
+    /// A BUNDLE-COMPONENT addon with qty>1 must render "name ×qty" on the receipt
+    /// (the top-level addon path was tested; the nested bundle one was not — this
+    /// kills the `>`→`<` mutant in receipt_line_from_cart's component branch).
+    #[test]
+    fn receipt_bundle_component_addon_shows_multiplier() {
+        let line = cart::CartLineView {
+            key: "k".into(),
+            item_id: "i".into(),
+            name: "Combo".into(),
+            size_label: None,
+            addons: vec![],
+            optionals: vec![],
+            notes: None,
+            unit_price_minor: 0,
+            qty: 1,
+            line_total_minor: 0,
+            bundle_id: Some("b".into()),
+            bundle_components: vec![cart::CartBundleComponentView {
+                item_id: "c".into(),
+                name: "Espresso".into(),
+                qty: 1,
+                size_label: None,
+                addons: vec![
+                    cart::CartAddonView {
+                        addon_item_id: "a1".into(),
+                        name: "Extra Shot".into(),
+                        qty: 2, // >1 → must show "×2"
+                        price_modifier_minor: 500,
+                    },
+                    cart::CartAddonView {
+                        addon_item_id: "a2".into(),
+                        name: "Oat Milk".into(),
+                        qty: 1, // ==1 → no multiplier
+                        price_modifier_minor: 300,
+                    },
+                ],
+                optionals: vec![],
+            }],
+        };
+        let r = receipt_line_from_cart(&line);
+        let comp_addons = &r.components[0].addons;
+        assert_eq!(comp_addons[0].name, "Extra Shot ×2", "qty>1 must show the multiplier");
+        assert_eq!(comp_addons[1].name, "Oat Milk", "qty==1 must NOT show a multiplier");
     }
 }

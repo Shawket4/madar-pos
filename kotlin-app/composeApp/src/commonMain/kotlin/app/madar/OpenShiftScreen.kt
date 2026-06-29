@@ -74,6 +74,26 @@ fun OpenShiftScreen(model: AppModel) {
                 FormColumn(model, showLogo = true)
             }
         }
+
+        // Top-pinned chrome so a teller WAITING on the open-shift screen still sees +
+        // recovers connectivity / a genuine session expiry — not only on the order
+        // screen. The auth-paused banner shows only when the cached JWT actually
+        // expired (the core gates it now). Mirror of the SwiftUI OpenShiftView overlay.
+        Column(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .padding(horizontal = Space.lg, vertical = Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            if (!model.isOnline) {
+                NoticeBanner(t("chrome.offline_banner"), ChipTone.WARNING, icon = "wifi.slash")
+            }
+            if (model.syncAuthPaused) {
+                AuthPausedBanner { model.error = null; model.showReauth = true }
+            }
+        }
+        // Self-gating re-auth sheet (renders only when model.showReauth). Order and
+        // OpenShift are exclusive routes, so this never coexists with OrderScreen's.
+        ReauthScreen(model)
     }
 }
 

@@ -326,14 +326,20 @@ impl Store {
             [], |r| r.get::<_, Option<i64>>(0))?)
     }
 
-    /// True while any order/void/cash for `shift_id` is still pending or inflight
-    /// (excluding `exclude_seq`, the close itself). A shift close must be the
-    /// LAST thing that syncs for its shift — shift-scoped so a later shift's
-    /// orders never block an earlier shift's close.
+    /// True while any order/void/cash for `shift_id` is still un-acked — pending,
+    /// inflight, OR **dead** — (excluding `exclude_seq`, the close itself). A shift
+    /// close must be the LAST thing that syncs for its shift; counting `dead` too
+    /// means a close NEVER overtakes a failed order (which would land the close with
+    /// an undercounted Z-report and strand the order). The dead write surfaces in
+    /// the stuck list and the close waits until it's retried-and-acked or discarded
+    /// — mirroring how the dependency gate (`drain_outbox`) and
+    /// `latest_unsynced_close_seq` already treat `dead` as still-blocking. Waiting
+    /// burns no retry budget, so this never deadlocks; the dead ROOT surfaces the
+    /// jam. Shift-scoped, so a later shift's orders never block an earlier close.
     pub fn has_live_shift_writes(&self, shift_id: &str, exclude_seq: i64) -> CoreResult<bool> {
         let n: i64 = self.lock().query_row(
             "SELECT COUNT(*) FROM outbox \
-             WHERE status IN ('pending','inflight') AND shift_id=?1 AND seq<>?2 \
+             WHERE status IN ('pending','inflight','dead') AND shift_id=?1 AND seq<>?2 \
                AND op_type IN ('create_order','void_order','cash_movement')",
             params![shift_id, exclude_seq], |r| r.get(0))?;
         Ok(n > 0)
@@ -372,6 +378,37 @@ impl Store {
             .query_map(params![teller_id, keep], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Shift ids whose `open_shift` op has DEAD-lettered for this teller — the roots
+    /// that strand their dependent orders. Narrower than [`orphan_open_shift_ids`]
+    /// (DEAD only, not pending): the drain auto-heal re-points just these onto the
+    /// live shift, so a legitimately-pending sequential shift is never merged.
+    pub fn dead_open_shift_ids(&self, teller_id: &str) -> CoreResult<Vec<String>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT shift_id FROM outbox \
+             WHERE op_type='open_shift' AND status='dead' AND user_id=?1 AND shift_id IS NOT NULL",
+        )?;
+        let rows: Vec<String> = stmt
+            .query_map([teller_id], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Count create_order ops blocked because their `open_shift` dependency
+    /// DEAD-lettered — the "stuck sales" the sync center surfaces (and the auto-heal
+    /// clears). They are neither sent (dependency dead) nor lost (still queued).
+    pub fn count_orders_blocked_by_dead_dep(&self) -> CoreResult<u32> {
+        let n: i64 = self.lock().query_row(
+            "SELECT COUNT(*) FROM outbox o \
+             WHERE o.op_type='create_order' AND o.status IN ('pending','inflight') \
+               AND o.depends_on_seq IS NOT NULL \
+               AND EXISTS (SELECT 1 FROM outbox d WHERE d.seq=o.depends_on_seq AND d.status='dead')",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(n as u32)
     }
 
     /// Re-point every non-acked (pending/inflight/dead) op tied to shift `old` onto
@@ -1217,16 +1254,21 @@ mod tests {
     }
 
     #[test]
-    fn has_live_shift_writes_ignores_acked_and_dead_writes() {
+    fn has_live_shift_writes_gates_on_unacked_writes_including_dead() {
         let s = Store::open("").unwrap();
         let o = s.enqueue(&op_with("o1", "create_order", Some("sh1"), None)).unwrap();
         assert!(s.has_live_shift_writes("sh1", -1).unwrap());
-        // Acked write no longer gates.
+        // An ACKED write no longer gates (the close may proceed past a landed order).
         s.mark_acked(o, Some("srv")).unwrap();
         assert!(!s.has_live_shift_writes("sh1", -1).unwrap());
-        // A dead write also doesn't count as "live" (only pending/inflight do).
+        // A DEAD write STILL gates — the close must not overtake a failed order
+        // (that would land an undercounted Z-report and strand the sale). It clears
+        // only when the dead write is retried-and-acked or explicitly discarded.
         let o2 = s.enqueue(&op_with("o2", "create_order", Some("sh1"), None)).unwrap();
         s.mark_dead(o2, "boom").unwrap();
+        assert!(s.has_live_shift_writes("sh1", -1).unwrap());
+        // Discarding the dead row releases the gate.
+        assert!(s.discard_dead("o2").unwrap());
         assert!(!s.has_live_shift_writes("sh1", -1).unwrap());
         // Inflight write DOES gate.
         let o3 = s.enqueue(&op_with("o3", "create_order", Some("sh1"), None)).unwrap();
@@ -1409,5 +1451,252 @@ mod tests {
         let row = s.pending().unwrap().into_iter().find(|i| i.id == "dup").unwrap();
         assert_eq!(row.user_id.as_deref(), Some("alice"), "first enqueue wins (DO NOTHING)");
         assert_eq!(s.pending_count().unwrap(), 1);
+    }
+
+    /// The durable outbox must survive a process restart — a queued order rung up
+    /// offline cannot evaporate when the app is killed and reopened.
+    #[test]
+    fn outbox_survives_reopen() {
+        let path = std::env::temp_dir().join(format!("madar_outbox_{}.db", std::process::id()));
+        let p = path.to_str().unwrap();
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{p}{ext}"));
+        }
+        {
+            let s = Store::open(p).unwrap();
+            s.enqueue(&op("a")).unwrap();
+            s.enqueue(&op("b")).unwrap();
+            assert_eq!(s.pending_count().unwrap(), 2);
+        } // dropped → connection closed
+        let s2 = Store::open(p).unwrap();
+        assert_eq!(s2.pending_count().unwrap(), 2, "queue must persist across reopen");
+        assert_eq!(
+            s2.pending().unwrap().iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
+            vec!["a", "b"],
+            "FIFO order must persist too"
+        );
+        drop(s2);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{p}{ext}"));
+        }
+    }
+
+    /// `due_for_sync` only surfaces ops past their backoff gate, scoped to the
+    /// teller whose token will send them (a 503 backoff must hide an op until its
+    /// gate; a different teller's ops must not ride the current holder's drain).
+    #[test]
+    fn due_for_sync_respects_backoff_and_user() {
+        let s = Store::open("").unwrap();
+        let mut a = op("a");
+        a.user_id = Some("alice".into());
+        let mut b = op("b");
+        b.user_id = Some("bob".into());
+        let sa = s.enqueue(&a).unwrap();
+        s.enqueue(&b).unwrap();
+
+        // Both ready now (next_attempt_at defaults to 0); alice-scoped → only a.
+        let due_alice: Vec<String> =
+            s.due_for_sync(1, Some("alice")).unwrap().iter().map(|i| i.id.clone()).collect();
+        assert_eq!(due_alice, vec!["a"]);
+
+        // Back a off into the future → not due before its gate, due after.
+        s.mark_retry(sa, "503", 10_000).unwrap();
+        assert!(s.due_for_sync(5_000, Some("alice")).unwrap().is_empty(), "backed-off op leaks");
+        assert_eq!(s.due_for_sync(20_000, Some("alice")).unwrap().len(), 1);
+        // An unscoped drain sees both tellers' due ops.
+        assert_eq!(s.due_for_sync(20_000, None).unwrap().len(), 2);
+    }
+
+    /// A crash mid-send leaves ops `inflight`; recovery must return them to
+    /// `pending` so the next drain re-sends (the server dedups on idempotency_key).
+    #[test]
+    fn recover_inflight_returns_ops_to_pending() {
+        let s = Store::open("").unwrap();
+        let a = s.enqueue(&op("a")).unwrap();
+        s.mark_inflight(a).unwrap();
+        assert_eq!(s.pending_count().unwrap(), 1, "inflight still counts as un-synced work");
+        assert_eq!(s.recover_inflight().unwrap(), 1);
+        assert_eq!(s.pending().unwrap()[0].status, "pending");
+    }
+
+    /// An order stranded by a DEAD open_shift is surfaced (blocked count) and HEALS
+    /// when its ops are re-pointed onto a live shift and the dead open is revived —
+    /// the auto-heal / recover_orphaned_orders path. No sale is ever lost.
+    #[test]
+    fn dead_open_shift_blocks_order_then_heals_on_remap() {
+        let s = Store::open("").unwrap();
+        const A: &str = "00000000-0000-0000-0000-0000000000aa"; // failed offline shift
+        const B: &str = "00000000-0000-0000-0000-0000000000bb"; // the teller's new shift
+        const T: &str = "00000000-0000-0000-0000-0000000000a1"; // the teller
+
+        // Teller opened A offline, rang an order on it, then A's open DIED.
+        let mut open = op("open-A");
+        open.op_type = "open_shift".into();
+        open.shift_id = Some(A.into());
+        open.user_id = Some(T.into());
+        let open_seq = s.enqueue(&open).unwrap();
+        let mut order = op("order-1");
+        order.op_type = "create_order".into();
+        order.shift_id = Some(A.into());
+        order.depends_on_seq = Some(open_seq);
+        s.enqueue(&order).unwrap();
+        s.mark_dead(open_seq, "open rejected").unwrap();
+
+        // The order is now BLOCKED by the dead open (surfaced to the sync center),
+        // and the dead-open lookup is teller-scoped.
+        assert_eq!(s.count_orders_blocked_by_dead_dep().unwrap(), 1);
+        assert_eq!(s.dead_open_shift_ids(T).unwrap(), vec![A.to_string()]);
+        assert!(s.dead_open_shift_ids("00000000-0000-0000-0000-0000000000a2").unwrap().is_empty());
+
+        // Heal: re-point A's ops onto the live shift B and revive the dead open.
+        assert!(s.remap_shift(A, B).unwrap() >= 2, "open + order re-pointed");
+        s.requeue_dead_for_shift(B).unwrap();
+
+        // No longer blocked — the order rides B, whose open is pending again.
+        assert_eq!(s.count_orders_blocked_by_dead_dep().unwrap(), 0);
+        assert!(s.dead_open_shift_ids(T).unwrap().is_empty());
+    }
+
+    // ── Model-based stateful testing of the durable outbox ──────────────────────
+    // The offline sync engine's correctness lives here: as queued work moves
+    // pending→inflight→{acked,dead}→pending, nothing may be lost, double-counted,
+    // or reordered. We drive RANDOM transition sequences against the real store and
+    // an independent reference model, asserting counts, FIFO and conservation after
+    // EVERY step — coverage no fixed example sequence can match.
+    mod outbox_model {
+        use super::*;
+        use proptest::prelude::*;
+        use std::collections::BTreeMap;
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum St {
+            Pending,
+            Inflight,
+            Dead,
+        }
+
+        #[derive(Clone, Debug)]
+        enum Cmd {
+            Enqueue,
+            Inflight(usize),
+            Ack(usize),
+            Dead(usize),
+            Retry(usize),
+            RequeueDead,
+            DiscardDead(usize),
+            RecoverInflight,
+        }
+
+        fn arb_cmd() -> impl Strategy<Value = Cmd> {
+            prop_oneof![
+                3 => Just(Cmd::Enqueue),
+                2 => (0usize..100).prop_map(Cmd::Ack),
+                1 => (0usize..100).prop_map(Cmd::Inflight),
+                1 => (0usize..100).prop_map(Cmd::Dead),
+                1 => (0usize..100).prop_map(Cmd::Retry),
+                1 => Just(Cmd::RequeueDead),
+                1 => (0usize..100).prop_map(Cmd::DiscardDead),
+                1 => Just(Cmd::RecoverInflight),
+            ]
+        }
+
+        // The k-th seq (mod count) whose state is in `want`.
+        fn pick(model: &BTreeMap<i64, (String, St)>, k: usize, want: &[St]) -> Option<i64> {
+            let v: Vec<i64> = model
+                .iter()
+                .filter(|(_, (_, st))| want.contains(st))
+                .map(|(&seq, _)| seq)
+                .collect();
+            (!v.is_empty()).then(|| v[k % v.len()])
+        }
+
+        proptest! {
+            #[test]
+            fn outbox_invariants(cmds in prop::collection::vec(arb_cmd(), 0..80)) {
+                let s = Store::open("").unwrap();
+                let mut model: BTreeMap<i64, (String, St)> = BTreeMap::new();
+                let mut n = 0u32;
+
+                for cmd in cmds {
+                    match cmd {
+                        Cmd::Enqueue => {
+                            let id = format!("op{n}");
+                            n += 1;
+                            let seq = s.enqueue(&op(&id)).unwrap();
+                            model.insert(seq, (id, St::Pending));
+                        }
+                        Cmd::Inflight(k) => {
+                            if let Some(seq) = pick(&model, k, &[St::Pending]) {
+                                s.mark_inflight(seq).unwrap();
+                                model.get_mut(&seq).unwrap().1 = St::Inflight;
+                            }
+                        }
+                        Cmd::Ack(k) => {
+                            if let Some(seq) = pick(&model, k, &[St::Pending, St::Inflight]) {
+                                s.mark_acked(seq, Some("srv")).unwrap();
+                                model.remove(&seq);
+                            }
+                        }
+                        Cmd::Dead(k) => {
+                            if let Some(seq) = pick(&model, k, &[St::Pending, St::Inflight]) {
+                                s.mark_dead(seq, "err").unwrap();
+                                model.get_mut(&seq).unwrap().1 = St::Dead;
+                            }
+                        }
+                        Cmd::Retry(k) => {
+                            if let Some(seq) = pick(&model, k, &[St::Pending, St::Inflight]) {
+                                s.mark_retry(seq, "err", 0).unwrap();
+                                model.get_mut(&seq).unwrap().1 = St::Pending;
+                            }
+                        }
+                        Cmd::RequeueDead => {
+                            s.requeue_dead().unwrap();
+                            for (_, st) in model.values_mut() {
+                                if *st == St::Dead {
+                                    *st = St::Pending;
+                                }
+                            }
+                        }
+                        Cmd::DiscardDead(k) => {
+                            if let Some(seq) = pick(&model, k, &[St::Dead]) {
+                                let id = model[&seq].0.clone();
+                                prop_assert!(s.discard_dead(&id).unwrap(), "dead op should discard");
+                                model.remove(&seq);
+                            }
+                        }
+                        Cmd::RecoverInflight => {
+                            s.recover_inflight().unwrap();
+                            for (_, st) in model.values_mut() {
+                                if *st == St::Inflight {
+                                    *st = St::Pending;
+                                }
+                            }
+                        }
+                    }
+
+                    // ── invariants after EVERY command ──
+                    let exp_pending = model
+                        .values()
+                        .filter(|(_, st)| *st == St::Pending || *st == St::Inflight)
+                        .count();
+                    let exp_dead = model.values().filter(|(_, st)| *st == St::Dead).count();
+                    prop_assert_eq!(s.pending_count().unwrap() as usize, exp_pending, "pending count");
+                    prop_assert_eq!(s.dead_count().unwrap() as usize, exp_dead, "dead count");
+                    prop_assert_eq!(s.list_active().unwrap().len(), exp_pending + exp_dead, "active count");
+
+                    // FIFO: pending() seqs strictly ascending.
+                    let pseqs: Vec<i64> = s.pending().unwrap().iter().map(|i| i.seq).collect();
+                    prop_assert!(pseqs.windows(2).all(|w| w[0] < w[1]), "pending not FIFO");
+
+                    // Conservation: the store's active seq-set equals the model's.
+                    let mut store_seqs: Vec<i64> =
+                        s.list_active().unwrap().iter().map(|i| i.seq).collect();
+                    store_seqs.sort_unstable();
+                    let mut model_seqs: Vec<i64> = model.keys().copied().collect();
+                    model_seqs.sort_unstable();
+                    prop_assert_eq!(store_seqs, model_seqs, "store/model seq-sets diverged");
+                }
+            }
+        }
     }
 }

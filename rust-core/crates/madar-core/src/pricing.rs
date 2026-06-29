@@ -557,3 +557,141 @@ mod tests {
         assert_eq!(b.change_given_minor, 848); // 3000 - 2052 - 100
     }
 }
+
+// Property-based invariants for the cart money engine — the offline source of
+// truth for what a customer pays. Mirrors the MadarRust backend's money proptests:
+// over thousands of generated carts the safety invariants must always hold (a
+// discount can never drive the total negative; change stays bounded). Values are
+// bounded to realistic ranges so we test the LOGIC, not i64 overflow on absurd
+// inputs (carts are bounded in practice).
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_addon() -> impl Strategy<Value = AddonSel> {
+        (0i64..100_000, 0i64..20)
+            .prop_map(|(price_modifier, quantity)| AddonSel { price_modifier, quantity })
+    }
+    fn arb_optional() -> impl Strategy<Value = OptionalSel> {
+        (0i64..100_000).prop_map(|price| OptionalSel { price })
+    }
+    fn arb_line() -> impl Strategy<Value = CartLine> {
+        (
+            1i64..1_000,
+            0i64..1_000_000,
+            prop::collection::vec(arb_addon(), 0..5),
+            prop::collection::vec(arb_optional(), 0..5),
+        )
+            .prop_map(|(quantity, unit_price, addons, optionals)| CartLine {
+                quantity,
+                unit_price,
+                is_bundle: false,
+                addons,
+                optionals,
+                bundle_components: vec![],
+            })
+    }
+    fn arb_input() -> impl Strategy<Value = PriceCartInput> {
+        (
+            prop::collection::vec(arb_line(), 0..10),
+            prop_oneof![
+                Just(DiscountKind::None),
+                Just(DiscountKind::Percentage),
+                Just(DiscountKind::Fixed)
+            ],
+            0i64..200, // discount_value: a % up to 200 exercises the >100% clamp
+            0.0f64..0.5,
+            prop::option::of(0i64..1_000_000_000),
+            0i64..100_000,
+        )
+            .prop_map(
+                |(lines, discount_kind, discount_value, tax_rate, amount_tendered, cash_tip)| {
+                    PriceCartInput {
+                        lines,
+                        discount_kind,
+                        discount_value,
+                        tax_rate,
+                        amount_tendered,
+                        cash_tip,
+                    }
+                },
+            )
+    }
+
+    proptest! {
+        /// The safety invariants hold for EVERY cart (doc 05 F8: a discount must
+        /// never make the total negative; change is clamped to [0, CHANGE_CAP]).
+        #[test]
+        fn price_cart_invariants(input in arb_input()) {
+            let out = price_cart(input.clone());
+            prop_assert!(out.subtotal_minor >= 0);
+            prop_assert!(out.discount_minor >= 0, "discount negative");
+            prop_assert!(out.discount_minor <= out.subtotal_minor, "discount > subtotal");
+            prop_assert_eq!(out.taxable_minor, out.subtotal_minor - out.discount_minor);
+            prop_assert!(out.taxable_minor >= 0, "taxable negative");
+            prop_assert!(out.tax_minor >= 0, "tax negative");
+            prop_assert!(out.total_minor >= 0, "total negative");
+            prop_assert!(out.total_minor >= out.taxable_minor, "tax made total < taxable");
+            prop_assert!(out.change_given_minor >= 0, "change negative");
+            prop_assert!(out.change_given_minor <= CHANGE_CAP, "change over cap");
+            if matches!(input.discount_kind, DiscountKind::None) {
+                prop_assert_eq!(out.discount_minor, 0);
+            }
+        }
+
+        /// price_cart is pure: identical input → byte-identical output. This is the
+        /// contract that lets the offline receipt match the synced reprint.
+        #[test]
+        fn price_cart_deterministic(input in arb_input()) {
+            prop_assert_eq!(price_cart(input.clone()), price_cart(input));
+        }
+
+        /// price_cart matches an INDEPENDENT reference statement of the spec, byte
+        /// for byte. Invariant checks alone can't catch an arithmetic mutant (a
+        /// `*`→`/` keeps the total ≥ 0) — this pins every operation, so any such
+        /// mutant in the engine diverges from the reference and dies.
+        #[test]
+        fn price_cart_matches_reference(input in arb_input()) {
+            prop_assert_eq!(price_cart(input.clone()), reference_price(&input));
+        }
+    }
+
+    /// Hand-written re-statement of the pricing spec (doc 05). NOT a call into the
+    /// engine — cargo-mutants mutates the engine, not this, so it is a stable
+    /// oracle. Covers the non-bundle line path that `arb_input` generates.
+    fn reference_price(input: &PriceCartInput) -> PricedBreakdown {
+        let subtotal: i64 = input
+            .lines
+            .iter()
+            .map(|l| {
+                let extras: i64 = l.addons.iter().map(|a| a.price_modifier * a.quantity).sum::<i64>()
+                    + l.optionals.iter().map(|o| o.price).sum::<i64>();
+                (l.unit_price + extras) * l.quantity
+            })
+            .sum();
+        let discount = match input.discount_kind {
+            DiscountKind::None => 0,
+            DiscountKind::Percentage => {
+                let raw = ((subtotal * input.discount_value) as f64 / 100.0).round() as i64;
+                raw.clamp(0, subtotal)
+            }
+            DiscountKind::Fixed => input.discount_value.clamp(0, subtotal),
+        };
+        let taxable = subtotal - discount;
+        let tax = (taxable as f64 * input.tax_rate).round() as i64;
+        let total = taxable + tax;
+        let change_given = match input.amount_tendered {
+            None => 0,
+            Some(t) => (t - total - input.cash_tip).clamp(0, CHANGE_CAP),
+        };
+        PricedBreakdown {
+            subtotal_minor: subtotal,
+            discount_minor: discount,
+            taxable_minor: taxable,
+            tax_minor: tax,
+            total_minor: total,
+            change_given_minor: change_given,
+        }
+    }
+}

@@ -58,18 +58,47 @@ struct SyncView: View {
             .buttonStyle(.pressable)
             Text(t("sync.title")).font(.ui(17, .heavy)).foregroundStyle(theme.colors.textPrimary)
             Spacer(minLength: 0)
-            if hasFailed {
-                Button {
-                    Haptics.selection()
-                    Task { await app.retryOutbox() }
-                } label: {
-                    HStack(spacing: 6) {
-                        MadarIcon("arrow.clockwise", size: IconSize.sm)
-                        Text(t("sync.retry"))
+            HStack(spacing: Space.lg) {
+                // Retry requeues only the FAILED (dead) rows, so it only appears
+                // when there's something dead to resurrect.
+                if hasFailed {
+                    Button {
+                        Haptics.selection()
+                        Task { await app.retryOutbox() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            MadarIcon("arrow.clockwise", size: IconSize.sm)
+                            Text(t("sync.retry"))
+                        }
+                        .font(.ui(13, .semibold)).foregroundStyle(theme.colors.accent)
                     }
-                    .font(.ui(13, .semibold)).foregroundStyle(theme.colors.accent)
+                    .buttonStyle(.pressable)
                 }
-                .buttonStyle(.pressable)
+                // "Sync now" force-pushes every QUEUED command (not just dead ones) —
+                // the manual escape hatch when the queue isn't draining on its own.
+                // Visible whenever anything is waiting to sync.
+                if !app.outbox.isEmpty {
+                    Button {
+                        Haptics.selection()
+                        Task { await app.syncNow() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if app.isPushing {
+                                ProgressView().controlSize(.small).tint(theme.colors.textOnAccent)
+                            } else {
+                                MadarIcon("icloud.and.arrow.up", size: IconSize.sm)
+                            }
+                            Text(app.isPushing ? t("sync.pushing") : t("sync.push"))
+                        }
+                        .font(.ui(13, .heavy)).foregroundStyle(theme.colors.textOnAccent)
+                        .padding(.horizontal, Space.md)
+                        .padding(.vertical, 7)
+                        .background(theme.colors.accent)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.pressable)
+                    .disabled(app.isPushing)
+                }
             }
         }
         .padding(.horizontal, Space.lg)

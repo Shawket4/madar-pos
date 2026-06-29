@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,14 +67,45 @@ fun SyncScreen(model: AppModel) {
                 MadarIcon("chevron.backward", tint = c.textPrimary, size = 17.dp, modifier = Modifier.clickable { model.showSync = false })
                 Text(t("sync.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 17.sp)
                 Box(Modifier.weight(1f))
-                if (hasFailed) {
-                    Row(
-                        Modifier.clickable { scope.launch { model.retryOutbox() } },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        MadarIcon("arrow.clockwise", tint = c.accent, size = IconSize.sm)
-                        Text(t("sync.retry"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.lg),
+                ) {
+                    // Retry requeues only the FAILED (dead) rows, so it only appears
+                    // when there's something dead to resurrect.
+                    if (hasFailed) {
+                        Row(
+                            Modifier.clickable { scope.launch { model.retryOutbox() } },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            MadarIcon("arrow.clockwise", tint = c.accent, size = IconSize.sm)
+                            Text(t("sync.retry"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+                    }
+                    // "Sync now" force-pushes every QUEUED command (not just dead ones)
+                    // — the manual escape hatch when the queue isn't draining on its
+                    // own. Visible whenever anything is waiting to sync.
+                    if (model.outbox.isNotEmpty()) {
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(Radii.pill))
+                                .background(c.accent)
+                                .clickable(enabled = !model.isPushing) { scope.launch { model.syncNow() } }
+                                .padding(horizontal = Space.md, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (model.isPushing) {
+                                CircularProgressIndicator(color = c.textOnAccent, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+                            } else {
+                                MadarIcon("icloud.and.arrow.up", tint = c.textOnAccent, size = IconSize.sm)
+                            }
+                            Text(
+                                if (model.isPushing) t("sync.pushing") else t("sync.push"),
+                                color = c.textOnAccent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 13.sp,
+                            )
+                        }
                     }
                 }
             }

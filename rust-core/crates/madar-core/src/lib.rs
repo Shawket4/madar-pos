@@ -69,6 +69,18 @@ pub mod store;
 /// Branch-timezone-aware timestamp formatting for display (mirrors Flutter AppTz).
 pub mod timefmt;
 
+/// Pure internal functions exposed ONLY to the cargo-fuzz harness. Gated on
+/// `cfg(fuzzing)` (set automatically by `cargo +nightly fuzz`), so it never
+/// exists in a normal build and adds nothing to the shipped library.
+#[cfg(fuzzing)]
+pub mod __fuzz {
+    /// Thin `pub` wrapper so the fuzz crate can reach the `pub(crate)` verifier
+    /// (a `pub use` of a `pub(crate)` item is illegal — this calls it instead).
+    pub fn verify_offline_pin(pin: &str, phc: &str) -> bool {
+        crate::session::verify_offline_pin(pin, phc)
+    }
+}
+
 use std::sync::{Arc, Mutex, RwLock};
 
 use error::CoreError;
@@ -166,6 +178,12 @@ pub struct MadarCore {
     /// `true` after a drain hit a 401: the outbox is parked (no retry budget
     /// burned, no heartbeat hammering) until the next successful login clears it.
     auth_paused: std::sync::atomic::AtomicBool,
+    /// `true` when the live bearer is a still-valid token owned by a DIFFERENT
+    /// teller, kept ONLY to flush the backlog after this teller's offline unlock.
+    /// The drain invalidates it once the queue is caught up and then requires this
+    /// teller to relogin under their own account (a teller must never operate
+    /// indefinitely under someone else's identity). See `unlock_offline`.
+    borrowed_token: std::sync::atomic::AtomicBool,
     /// A small in-memory ring buffer of diagnostic warnings (sync dead-letters,
     /// cascade failures, auth parks) — surfaced in Settings → Diagnostics so a
     /// teller/manager can see WHY something is stuck without a debugger.
@@ -236,6 +254,7 @@ impl MadarCore {
             token_store: Mutex::new(None),
             clock_skew_secs,
             auth_paused: std::sync::atomic::AtomicBool::new(false),
+            borrowed_token: std::sync::atomic::AtomicBool::new(false),
             diag: Mutex::new(std::collections::VecDeque::new()),
             drain_lock: tokio::sync::Mutex::new(()),
             realtime: Mutex::new(None),
@@ -332,9 +351,48 @@ impl MadarCore {
         pin: String,
         branch_id: String,
     ) -> Result<session::SessionSnapshot, CoreError> {
-        let state = session::unlock_from_bundle(&self.store, &name, &pin, &branch_id)?;
+        use std::sync::atomic::Ordering::Relaxed;
+        let mut state = session::unlock_from_bundle(&self.store, &name, &pin, &branch_id)?;
+        let teller_id = state.snapshot.user_id.clone();
+        let now = self.corrected_now().timestamp();
+        // What to do with the prior session's cached JWT depends on WHO owns it.
+        // `/sync/replay` attributes each op to its EMBEDDED teller (the bearer only
+        // has to be an active in-org token), so a foreign-but-valid token CAN flush
+        // the backlog — but a teller must never operate indefinitely under someone
+        // else's identity, so a foreign token is used once then invalidated.
+        let prior = self
+            .session
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|p| p.token.clone());
+        let valid = prior.as_deref().map(|t| !token_is_expired(t, now)).unwrap_or(false);
+        let owned = prior.as_deref().and_then(jwt_sub).as_deref() == Some(teller_id.as_str());
+
+        // `bearer` is the live (in-memory) token; `persist_token` is what's written
+        // to the host vault. They DIFFER for a foreign token: it flushes the backlog
+        // in memory but is NEVER persisted — a restart must not resurrect it and let
+        // this teller keep operating under someone else's identity.
+        let (bearer, persist_token, borrowed, paused) = match (prior, valid, owned) {
+            // Valid token OWNED by THIS teller → keep AND persist: work + sync
+            // normally, no banner. The "brief blip, don't make me sign in again" path.
+            (Some(t), true, true) => (Some(t.clone()), Some(t), false, false),
+            // Valid token owned by a DIFFERENT teller → use it in memory ONLY to flush
+            // the backlog (not persisted); the drain invalidates it once caught up and
+            // then requires THIS teller to relogin. No banner yet (let the flush run).
+            (Some(t), true, false) => (Some(t), None, true, false),
+            // A prior token existed but EXPIRED → drop it and surface the re-login
+            // banner (the cached JWT genuinely lapsed).
+            (Some(_), false, _) => (None, None, false, true),
+            // No prior token at all (a genuine first offline unlock) → no bearer, no
+            // banner; the queue holds until an online login installs one.
+            (None, _, _) => (None, None, false, false),
+        };
+        state.token = persist_token;
+        self.api.set_bearer(bearer);
+        self.borrowed_token.store(borrowed, Relaxed);
+        self.auth_paused.store(paused, Relaxed);
         let snapshot = state.snapshot.clone();
-        self.api.set_bearer(None);
         self.persist_and_set(state);
         Ok(snapshot)
     }
@@ -348,6 +406,7 @@ impl MadarCore {
     /// Preserves the outbox unless `wipe_outbox`.
     pub fn logout(&self, wipe_outbox: bool) -> Result<(), CoreError> {
         self.api.set_bearer(None);
+        self.borrowed_token.store(false, std::sync::atomic::Ordering::Relaxed);
         *self.session.write().unwrap_or_else(|e| e.into_inner()) = None;
         if let Some(ts) = self.token_store.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             ts.clear_blob();
@@ -485,7 +544,7 @@ impl MadarCore {
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .map(|s| s.snapshot.user_id.clone());
-        let skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed) * 1000;
+        let skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed).saturating_mul(1000);
         (user_id, Some(skew_ms))
     }
 
@@ -507,11 +566,24 @@ impl MadarCore {
     ///   • dependency gating that WAITS on an unsynced/dead prerequisite (never
     ///     cascades the dependent dead — that would strand its sale; the dead ROOT
     ///     surfaces the jam, and resolving it flows the whole chain);
-    ///   • close-shift-must-be-LAST (shift-scoped);
-    ///   • exactly-once via in-body idempotency keys (a lost-response retry dedups);
-    ///   • precise per-status handling — 401 parks the queue, network blips
-    ///     reschedule without burning retry budget, genuine 4xx dead-letter,
-    ///     idempotent 409/404 ack, 5xx exponential-backoff up to 8 tries.
+    /// Re-point any orders STRANDED by a DEAD `open_shift` (this teller's) onto
+    /// `target` and revive them so they sync onto it. Only DEAD opens move (a
+    /// pending one is a legitimate not-yet-synced shift, never merged). This is the
+    /// auto-heal the drain runs every pass so the orphan state never persists;
+    /// `recover_orphaned_orders` is the manual fallback over the same primitive.
+    fn heal_orphaned_orders(&self, target: &str, teller_id: &str) -> Result<u32, CoreError> {
+        let mut remapped = 0u32;
+        for orphan in self.store.dead_open_shift_ids(teller_id)? {
+            if orphan != target {
+                remapped += self.store.remap_shift(&orphan, target)?;
+            }
+        }
+        if remapped > 0 {
+            self.store.requeue_dead_for_shift(target)?;
+        }
+        Ok(remapped)
+    }
+
     async fn drain_outbox(&self) -> Result<(), CoreError> {
         use std::sync::atomic::Ordering::Relaxed;
         // Single-flight: only one drain iterates the backlog at a time. A second
@@ -524,8 +596,26 @@ impl MadarCore {
         // are genuinely crash-stranded, never a live sibling's in-flight op.
         let _ = self.store.recover_inflight();
         let _ = self.store.purge_acked_older_than(now_ms() - K_ACKED_RETENTION_MS);
+        // Auto-heal: re-point any orders stranded by a DEAD open_shift onto the
+        // teller's current open shift so the orphan state never persists. Best-effort
+        // — when no shift is open to heal onto, the surfaced sync_status.blocked count
+        // + recover_orphaned_orders() are the fallback.
+        if let Ok(Some(cur)) = shift::current(&self.store) {
+            if let (Some(teller), _) = self.outbox_meta() {
+                let _ = self.heal_orphaned_orders(&cur.id, &teller);
+            }
+        }
         // A 401-parked queue burns nothing until the next successful login.
         if self.auth_paused.load(Relaxed) {
+            return Ok(());
+        }
+        // No bearer (an offline-unlocked session with no cached JWT, or signed out)
+        // → there is no credential to authenticate /sync/replay, so every op would
+        // 401 and falsely latch `auth_paused`, stranding the backlog forever. Hold
+        // it instead: the durable outbox drains the moment an online login — or a
+        // still-valid cached token preserved across an offline unlock — installs a
+        // bearer. The crash-recovery + retention housekeeping above still runs.
+        if !self.api.has_bearer() {
             return Ok(());
         }
 
@@ -583,7 +673,13 @@ impl MadarCore {
                 // the next successful login re-drains.
                 SendOutcome::AuthExpired => {
                     self.store.mark_retry_no_count(item.seq, now_ms() + K_NETWORK_RETRY_MS)?;
-                    self.auth_paused.store(true, Relaxed);
+                    // A rejected BORROWED (foreign) token is no good — drop it and
+                    // require this teller's own relogin; otherwise just park.
+                    if self.borrowed_token.load(Relaxed) {
+                        self.invalidate_borrowed_token();
+                    } else {
+                        self.auth_paused.store(true, Relaxed);
+                    }
                     self.push_diag("warn", "sync paused — session expired; sign in again to resume");
                     return Ok(());
                 }
@@ -605,6 +701,16 @@ impl MadarCore {
                     }
                 }
             }
+        }
+        // A BORROWED bearer (a different teller's still-valid token, kept only to
+        // flush this device's backlog after an offline unlock) is invalidated once
+        // the queue is caught up — the current teller must then relogin under their
+        // OWN account to keep syncing. Done AFTER the drain so the flush completes;
+        // `pending_count` excludes `dead`, so a permanently-stuck op can't pin the
+        // borrowed token forever (the dead row surfaces in the stuck list instead).
+        if self.borrowed_token.load(Relaxed) && self.store.pending_count()? == 0 {
+            self.invalidate_borrowed_token();
+            self.push_diag("warn", "offline backlog flushed under a previous teller's session — sign in again to continue");
         }
         Ok(())
     }
@@ -711,7 +817,16 @@ impl MadarCore {
                     Ok(c) => c,
                     Err(e) => return SendOutcome::Dead(format!("payload: {e}")),
                 };
+                // Re-base created_at for clock skew — but NEVER across the business
+                // day baked into order_ref at ring-up. If the skew shift would change
+                // the branch-local day, keep the original so the stored created_at,
+                // the stored order_ref, and the PRINTED receipt all agree on the day
+                // (else the receipt's order_ref reports under a different day).
+                let original = cmd.request.created_at;
                 rebase_dopt(&mut cmd.request.created_at, delta);
+                if self.crosses_branch_day(&original, &cmd.request.created_at) {
+                    cmd.request.created_at = original;
+                }
                 (
                     serde_json::json!({ "op": "create_order", "teller_id": teller_id, "request": cmd.request }),
                     Idem::No,
@@ -869,6 +984,10 @@ impl MadarCore {
                     // which the old `order.id` lookup never found post-flatten.)
                     "create_order" => match obj.get("id").and_then(|x| x.as_str()) {
                         Some(id) => {
+                            // Bridge the client-minted order id → the server id so a
+                            // later lookup (e.g. void-by-client-id) can resolve it.
+                            // (The id_map row was never populated before — latent.)
+                            let _ = self.store.id_map_put("order", &item.id, id);
                             // Advance this shift's synced base to the number the
                             // server actually assigned, so the NEXT ring-up predicts
                             // the right `#N` online too (where the order leaves the
@@ -902,10 +1021,28 @@ impl MadarCore {
     /// device had at enqueue to the fresh skew we hold now (correct-at-sync). 0
     /// when either offset is unknown (legacy rows) — never makes things worse.
     fn rebase_delta_ms(&self, item: &store::OutboxItem) -> i64 {
-        let now_skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed) * 1000;
+        let now_skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed).saturating_mul(1000);
         match item.clock_offset_ms {
-            Some(then) => now_skew_ms - then,
+            Some(then) => now_skew_ms.saturating_sub(then),
             None => 0,
+        }
+    }
+
+    /// True if two timestamps fall on DIFFERENT branch-local calendar days — used
+    /// to stop a clock-skew re-base from moving an order's created_at off the day
+    /// its (already-printed) order_ref encodes.
+    fn crosses_branch_day(
+        &self,
+        a: &Option<Option<chrono::DateTime<chrono::FixedOffset>>>,
+        b: &Option<Option<chrono::DateTime<chrono::FixedOffset>>>,
+    ) -> bool {
+        let tz = timefmt::branch_tz(&self.store);
+        let day = |f: &Option<Option<chrono::DateTime<chrono::FixedOffset>>>| {
+            f.as_ref().and_then(|o| o.as_ref()).map(|dt| dt.with_timezone(&tz).date_naive())
+        };
+        match (day(a), day(b)) {
+            (Some(da), Some(db)) => da != db,
+            _ => false,
         }
     }
 
@@ -918,8 +1055,64 @@ impl MadarCore {
     /// enqueue and send. The stamped offset is recorded per row in
     /// `clock_offset_ms` (via `outbox_meta`), keeping the two halves consistent.
     fn corrected_now(&self) -> chrono::DateTime<chrono::Utc> {
-        let skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed) * 1000;
+        // `saturating_mul` + the ±48h skew clamp (net.rs) keep this from overflowing
+        // even if a bogus `Date` header or a corrupt persisted skew slipped through.
+        let skew_ms = self.clock_skew_secs.load(std::sync::atomic::Ordering::Relaxed).saturating_mul(1000);
         chrono::Utc::now() + chrono::Duration::milliseconds(skew_ms)
+    }
+
+    /// Whether the live session's cached JWT has passed its `exp` (skew-corrected),
+    /// the truthful "needs re-auth" signal. Drives the reauth banner (`sync_status`
+    /// gates the sticky `auth_paused` on this) and the spurious-park recovery in
+    /// `refresh_connectivity`/`sync_now`/`retry_outbox`. True when there is no token
+    /// (can't sync without a credential) or its `exp` is unreadable (conservative).
+    fn session_token_expired(&self) -> bool {
+        let token = self
+            .session
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|s| s.token.clone());
+        match token {
+            Some(t) => token_is_expired(&t, self.corrected_now().timestamp()),
+            None => true,
+        }
+    }
+
+    /// Clear a SPURIOUS auth-park: if the outbox is parked on a 401 but we still
+    /// hold a bearer whose `exp` is in the future, the 401 wasn't a real expiry
+    /// (captive portal / transient server hiccup), so un-park to let the drain
+    /// re-probe. A genuinely expired (or missing) token is left parked — only a
+    /// fresh login clears that, and the reauth banner stays up to prompt it. Burns
+    /// no retry budget either way (a real re-park uses `mark_retry_no_count`).
+    fn unpark_if_token_valid(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        if self.auth_paused.load(Relaxed) && self.api.has_bearer() && !self.session_token_expired() {
+            self.auth_paused.store(false, Relaxed);
+        }
+    }
+
+    /// Drop a BORROWED (foreign) bearer + its persisted token and require this teller
+    /// to relogin under their OWN account: clears the borrow flag, nulls the bearer,
+    /// and sets `auth_paused` → with no token `session_token_expired()` is now true,
+    /// so the reauth banner shows (a same-teller online relogin clears it).
+    fn invalidate_borrowed_token(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.borrowed_token.store(false, Relaxed);
+        self.api.set_bearer(None);
+        self.auth_paused.store(true, Relaxed);
+        let updated = {
+            let mut g = self.session.write().unwrap_or_else(|e| e.into_inner());
+            if let Some(s) = g.as_mut() {
+                s.token = None;
+            }
+            g.clone()
+        };
+        if let Some(s) = updated {
+            if let Some(ts) = self.token_store.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                ts.save_blob(s.to_blob());
+            }
+        }
     }
 }
 
@@ -1059,6 +1252,69 @@ fn rebase_dopt(field: &mut Option<Option<chrono::DateTime<chrono::FixedOffset>>>
         if let Some(Some(dt)) = field.as_mut().map(|o| o.as_mut()) {
             *dt += chrono::Duration::milliseconds(delta_ms);
         }
+    }
+}
+
+// ── JWT expiry (a LOCAL hint, never a trust boundary) ─────────────────────────
+// The client reads the cached token's `exp` only to decide whether the reauth
+// banner is warranted and whether a 401-park is spurious. The signature is NEVER
+// verified here — the server stays the sole authority; a forged/garbage token at
+// worst keeps the banner up (conservative). This is why no jsonwebtoken/base64
+// dependency is pulled: we decode just the middle (payload) segment by hand.
+
+/// Minimal dependency-free base64url decoder (RFC 4648 §5, padding optional) for
+/// the JWT payload segment. `None` on any invalid character.
+fn base64url_decode(s: &str) -> Option<Vec<u8>> {
+    fn sextet(c: u8) -> Option<u8> {
+        match c {
+            b'A'..=b'Z' => Some(c - b'A'),
+            b'a'..=b'z' => Some(c - b'a' + 26),
+            b'0'..=b'9' => Some(c - b'0' + 52),
+            b'-' => Some(62),
+            b'_' => Some(63),
+            _ => None,
+        }
+    }
+    let s = s.trim_end_matches('=');
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let mut buf: u32 = 0;
+    let mut bits: u32 = 0;
+    for &c in s.as_bytes() {
+        buf = (buf << 6) | sextet(c)? as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// The decoded JWT payload (middle segment) as JSON, or `None` if not a
+/// well-formed three-segment token. No signature check (see above).
+fn jwt_payload(token: &str) -> Option<serde_json::Value> {
+    let payload = token.split('.').nth(1)?;
+    let json = base64url_decode(payload)?;
+    serde_json::from_slice(&json).ok()
+}
+
+/// The `exp` (epoch seconds) of a JWT, or `None` if absent/non-numeric/malformed.
+fn jwt_exp_secs(token: &str) -> Option<i64> {
+    jwt_payload(token)?.get("exp").and_then(|e| e.as_i64())
+}
+
+/// The `sub` (subject = the user/teller id this token was minted for), or `None`.
+/// Used to confirm a cached token is owned by the teller now unlocking offline.
+fn jwt_sub(token: &str) -> Option<String> {
+    jwt_payload(token)?.get("sub").and_then(|s| s.as_str()).map(str::to_string)
+}
+
+/// Whether `token`'s `exp` is at/past `now_secs`. Treats an unreadable token as
+/// expired (conservative — a token we can't parse can't be trusted to still work).
+fn token_is_expired(token: &str, now_secs: i64) -> bool {
+    match jwt_exp_secs(token) {
+        Some(exp) => now_secs >= exp,
+        None => true,
     }
 }
 
@@ -1891,6 +2147,11 @@ pub struct OutboxItemView {
 pub struct SyncStatusView {
     pub pending: u32,
     pub failed: u32,
+    /// Orders STRANDED by a dead `open_shift` (waiting on a dependency that will
+    /// never ack). The drain auto-heals these onto the current shift; this count is
+    /// the fallback signal — when >0 with no open shift, the host can offer
+    /// `recover_orphaned_orders()` ("open a shift to recover N stranded sales").
+    pub blocked: u32,
     pub online: bool,
     /// `true` when the outbox is parked on a 401 — the host prompts a re-login
     /// to resume syncing (nothing drains until then).
@@ -1927,12 +2188,38 @@ impl MadarCore {
     /// Sync health for the action-bar chip + offline banner (counts + online),
     /// in one cheap local read. Always succeeds offline.
     pub fn sync_status(&self) -> Result<SyncStatusView, CoreError> {
+        // The host renders the re-login banner on `auth_paused`. Gate it on the
+        // cached JWT actually being EXPIRED so a spurious 401 (captive portal /
+        // transient server hiccup) with a still-valid token never forces a needless
+        // re-sign-in — the teller only re-authenticates once the token has genuinely
+        // lapsed. The internal sticky flag still pauses the drain meanwhile; the
+        // heartbeat / "Sync now" un-park it the moment connectivity is confirmed
+        // with a valid token (see `refresh_connectivity` / `sync_now`).
+        let auth_paused =
+            self.auth_paused.load(std::sync::atomic::Ordering::Relaxed) && self.session_token_expired();
         Ok(SyncStatusView {
             pending: self.store.pending_count()?,
             failed: self.store.dead_count()?,
+            blocked: self.store.count_orders_blocked_by_dead_dep()?,
             online: self.current_session().map(|s| s.online).unwrap_or(false),
-            auth_paused: self.auth_paused.load(std::sync::atomic::Ordering::Relaxed),
+            auth_paused,
         })
+    }
+
+    /// FALLBACK recovery for the sync center: re-point every order STRANDED by a
+    /// dead `open_shift` onto the CURRENT open shift and sync. The drain already
+    /// heals this automatically each pass; this is the manual escape hatch (e.g. the
+    /// teller had no shift open when the drain ran, then opens one and taps
+    /// "recover N stranded sales"). Returns the number of outbox rows recovered.
+    pub async fn recover_orphaned_orders(&self) -> Result<u32, CoreError> {
+        let cur = shift::current(&self.store)?.ok_or_else(|| CoreError::Validation {
+            field: "shift".into(),
+            detail: "open a shift first so the stranded orders can move onto it".into(),
+        })?;
+        let teller = self.outbox_meta().0.unwrap_or_default();
+        let n = self.heal_orphaned_orders(&cur.id, &teller)?;
+        let _ = self.drain_outbox().await;
+        Ok(n)
     }
 
     /// Recent diagnostic warnings (newest first) — the Settings → Diagnostics
@@ -2007,6 +2294,9 @@ impl MadarCore {
         // outbox so a re-login resumes syncing immediately.
         self.api.set_bearer(Some(resp.token.clone()));
         self.auth_paused.store(false, std::sync::atomic::Ordering::Relaxed);
+        // A fresh online login installs THIS teller's own token, so any borrowed
+        // (foreign) token state is moot.
+        self.borrowed_token.store(false, std::sync::atomic::Ordering::Relaxed);
 
         // PIN login carries the device branch; email login has none.
         let branch_id = req.branch_id.clone();
@@ -2602,7 +2892,7 @@ impl MadarCore {
         // last-synced snapshot. So the drawer shows ALL movements offline — both the
         // ones synced before the outage and the ones rung during it — not just queued.
         let key = format!("cache:cash:{}", shift.id);
-        let mut server: Vec<shift::CashMovementView> =
+        let server: Vec<shift::CashMovementView> =
             if self.current_session().map(|s| s.online).unwrap_or(false) {
                 match shifts_api::list_cash_movements(
                     &self.api.config(),
@@ -2620,11 +2910,10 @@ impl MadarCore {
             } else {
                 cached_views(&self.store, &key)
             };
-        // Server first (chronological), then the still-queued tail. Dedup by id
-        // so a movement that synced between enqueue and this read isn't doubled.
-        let seen: std::collections::HashSet<String> = server.iter().map(|m| m.id.clone()).collect();
-        server.extend(queued.into_iter().filter(|q| !seen.contains(&q.id)));
-        Ok(server)
+        // Server first (chronological), then the still-queued tail, deduped on the
+        // client_ref-based view id so a movement that synced between enqueue and this
+        // read isn't doubled in the drawer total.
+        Ok(shift::merge_cash_for_view(server, queued))
     }
 
     /// Past shifts for this branch, newest first (the history screen). Live when
@@ -2758,6 +3047,11 @@ impl MadarCore {
 
     /// Force a sync now — drains the outbox. Cancellable/idempotent.
     pub async fn sync_now(&self) -> Result<(), CoreError> {
+        // An explicit push should recover a SPURIOUSLY parked queue (a captive-portal
+        // / transient 401 while the cached token is still valid). A genuinely expired
+        // token stays parked — only a re-login can fix that, and the reauth banner
+        // remains up to prompt it.
+        self.unpark_if_token_valid();
         // An explicit sync clears the offline (no-count) backoff so a backlog built
         // during an outage flushes NOW, not after the ~15s network-retry window.
         let _ = self.store.clear_network_backoff();
@@ -2767,6 +3061,7 @@ impl MadarCore {
     /// Requeue every dead command (clearing its error) and try to send now.
     /// Best-effort — offline just leaves them pending again.
     pub async fn retry_outbox(&self) -> Result<(), CoreError> {
+        self.unpark_if_token_valid();
         self.store.requeue_dead()?;
         self.drain_outbox().await
     }
@@ -2787,6 +3082,12 @@ impl MadarCore {
                 if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
                     sess.snapshot.online = true;
                 }
+                // Connectivity is CONFIRMED. If the queue is parked on a 401 but we
+                // still hold a non-expired token, the park was spurious (a portal /
+                // proxy blip or a transient server auth hiccup) — un-park so this pass
+                // re-probes. A genuinely expired token stays parked (the next replay
+                // 401s and re-parks), keeping the reauth banner up for a real re-login.
+                self.unpark_if_token_valid();
                 // Connectivity is CONFIRMED — un-gate the offline backlog so it
                 // drains on this pass instead of waiting out the network window.
                 let _ = self.store.clear_network_backoff();
@@ -2865,8 +3166,10 @@ impl MadarCore {
                 v.status = "voided".into();
             }
         }
-        all.extend(server);
-        Ok(all)
+        // Dedup: drop any queued order that has already synced (its client-minted
+        // order_ref now appears on a server row), else it double-shows + the stats
+        // pill double-counts during the inflight/lost-response window.
+        Ok(orders::merge_for_view(all, server))
     }
 
     /// Fetch a synced order's full detail (lines + modifiers) — the expanded
@@ -2958,8 +3261,10 @@ impl MadarCore {
                 v.status = "voided".into();
             }
         }
-        all.extend(server);
-        Ok(all)
+        // Dedup: drop any queued order that has already synced (its client-minted
+        // order_ref now appears on a server row), else it double-shows + the stats
+        // pill double-counts during the inflight/lost-response window.
+        Ok(orders::merge_for_view(all, server))
     }
 
     /// Search the branch's orders ACROSS shifts (history lookup) with optional
@@ -2988,6 +3293,11 @@ impl MadarCore {
         let date = |s: Option<String>| {
             s.filter(|x| !x.is_empty()).and_then(|x| chrono::DateTime::parse_from_rfc3339(&x).ok())
         };
+        let f_status = blank(status);
+        let f_teller = blank(teller_name);
+        let f_payment = blank(payment_method);
+        let f_from = date(from);
+        let f_to = date(to);
         let per_page = 50i64;
         let params = orders_api::ListOrdersParams {
             branch_id: Some(branch_id),
@@ -2995,19 +3305,40 @@ impl MadarCore {
             updated_after: None,
             page: Some(page.max(1) as i64),
             per_page: Some(per_page),
-            teller_name: blank(teller_name),
-            payment_method: blank(payment_method),
-            status: blank(status),
-            from: date(from),
-            to: date(to),
+            teller_name: f_teller.clone(),
+            payment_method: f_payment.clone(),
+            status: f_status.clone(),
+            from: f_from,
+            to: f_to,
             order_type: None,
             channel: None,
             include_items: Some(false),
         };
         let resp = orders_api::list_orders(&self.api.config(), params).await.map_err(net::map_api_error)?;
-        let orders: Vec<_> = resp.data.iter().map(orders::from_server).collect();
-        let total = resp.total.max(0) as u32;
+        let mut orders: Vec<_> = resp.data.iter().map(orders::from_server).collect();
+        let mut total = resp.total.max(0) as u32;
         let has_more = resp.page * resp.per_page < resp.total;
+        // Surface still-queued OFFLINE orders on page 1, else search history is
+        // silently missing them. Apply the data-driven filters (status / payment /
+        // date); a teller filter excludes them (no echoed teller name yet). Dedup
+        // by order_ref against the server page (an order that just synced is there).
+        if page.max(1) == 1 && f_teller.is_none() {
+            let q: Vec<orders::OrderSummaryView> = orders::queued_all(&self.store)?
+                .into_iter()
+                .filter(|o| {
+                    f_status.as_deref().map_or(true, |s| o.status == s)
+                        && f_payment.as_deref().map_or(true, |p| o.payment_label == p)
+                        && {
+                            let c = chrono::DateTime::parse_from_rfc3339(&o.created_at).ok();
+                            f_from.map_or(true, |f| c.is_some_and(|c| c >= f))
+                                && f_to.map_or(true, |t| c.is_some_and(|c| c <= t))
+                        }
+                })
+                .collect();
+            let server_len = orders.len();
+            orders = orders::merge_for_view(q, orders);
+            total += (orders.len() - server_len) as u32; // count the queued ones we added
+        }
         Ok(orders::OrderSearchPage { orders, page: page.max(1), total, has_more })
     }
 
@@ -3026,7 +3357,13 @@ impl MadarCore {
             .await
             {
                 cache_views(&self.store, &key, std::slice::from_ref(&report));
-                return Ok(shift::report_view(&report, 0));
+                // A partially-synced past shift may still hold queued cash not in
+                // the (cached) server report — add it, else expected_cash is
+                // understated and the drawer reads a false "over".
+                return Ok(shift::report_view(
+                    &report,
+                    checkout::queued_cash_total_for(&self.store, &shift_id)?,
+                ));
             }
         }
         // Offline / fetch failed: the last-synced report if we have one…
@@ -3546,9 +3883,32 @@ impl MadarCore {
             .filter(|v| v.status != "settled" && v.status != "voided")
             .map(|v| tickets::to_view(v, false))
             .collect();
-        // Overlay still-queued fires (a pending fire is never in the server list).
+        // Ticket ids the waiter has already settled or voided OFFLINE (still queued).
+        // Their not-yet-synced fire must NOT show as open — else a phantom ticket
+        // lingers (and a cashier could settle a ticket already voided).
+        let cleared: std::collections::HashSet<String> = self
+            .store
+            .pending()?
+            .iter()
+            .filter(|i| {
+                matches!(
+                    i.op_type.as_str(),
+                    "settle_open_ticket" | "void_ticket" | "void_open_ticket"
+                )
+            })
+            .filter_map(|i| {
+                serde_json::from_str::<serde_json::Value>(&i.payload)
+                    .ok()
+                    .and_then(|v| v.get("ticket_id").and_then(|t| t.as_str()).map(String::from))
+            })
+            .collect();
+        // Overlay still-queued fires (a pending fire is never in the server list),
+        // unless that ticket was already settled/voided offline.
         for item in self.store.pending()?.iter().filter(|i| i.op_type == "open_ticket") {
             if let Ok(cmd) = serde_json::from_str::<tickets::FireTicketCommand>(&item.payload) {
+                if cleared.contains(&cmd.ticket_id) {
+                    continue;
+                }
                 out.push(queued_ticket_view(&cmd, &item.event_at));
             }
         }
@@ -3922,7 +4282,7 @@ mod tests {
         // Signed out, empty outbox → all zero, offline, not auth-paused.
         let core = MadarCore::from_env().unwrap();
         let s = core.sync_status().unwrap();
-        assert_eq!(s, SyncStatusView { pending: 0, failed: 0, online: false, auth_paused: false });
+        assert_eq!(s, SyncStatusView { pending: 0, failed: 0, blocked: 0, online: false, auth_paused: false });
     }
 
     #[test]
@@ -4648,5 +5008,259 @@ mod lifecycle_tests {
         let t = core.cart_totals().unwrap();
         assert_eq!(t.tax_minor, 0);
         assert_eq!(t.total_minor, 1000);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // OFFLINE ROBUSTNESS — JWT expiry, truthful reauth banner, auth-park recovery,
+    // and the no-bearer drain guard (the fixes for "queued but nothing pushes" +
+    // "forced re-login on a brief blip").
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Unpadded base64url-encode (test-only) to mint JWT payloads for the decoder.
+    fn b64url(bytes: &[u8]) -> String {
+        const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut out = String::new();
+        for chunk in bytes.chunks(3) {
+            let n = ((chunk[0] as u32) << 16)
+                | ((*chunk.get(1).unwrap_or(&0) as u32) << 8)
+                | (*chunk.get(2).unwrap_or(&0) as u32);
+            out.push(A[((n >> 18) & 63) as usize] as char);
+            out.push(A[((n >> 12) & 63) as usize] as char);
+            if chunk.len() > 1 { out.push(A[((n >> 6) & 63) as usize] as char); }
+            if chunk.len() > 2 { out.push(A[(n & 63) as usize] as char); }
+        }
+        out
+    }
+
+    /// A fake three-segment JWT carrying `{sub, exp}` (the client never verifies the
+    /// signature — these are only local hints).
+    fn fake_jwt_sub(sub: &str, exp_secs: i64) -> String {
+        let payload = serde_json::json!({ "sub": sub, "exp": exp_secs }).to_string();
+        format!("hdr.{}.sig", b64url(payload.as_bytes()))
+    }
+    fn fake_jwt(exp_secs: i64) -> String { fake_jwt_sub("u", exp_secs) }
+
+    const TELLER_BB: &str = "00000000-0000-0000-0000-0000000000bb";
+    const BRANCH_1: &str = "00000000-0000-0000-0000-000000000001";
+
+    /// A dead-url core with Sara's (id `bb`) offline bundle cached but NOT signed in.
+    fn offline_core_with_bundle() -> Arc<MadarCore> {
+        use argon2::password_hash::SaltString;
+        use argon2::{Argon2, PasswordHasher};
+        let core = MadarCore::new(MadarConfig {
+            base_url: "http://127.0.0.1:1".into(),
+            environment: "dev".into(),
+            db_path: String::new(),
+            locale: "en".into(),
+        })
+        .unwrap();
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
+        let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
+        core.store
+            .kv_put(
+                session::BUNDLE_KEY,
+                &serde_json::json!({
+                    "org_id": "00000000-0000-0000-0000-0000000000aa",
+                    "generated_at": "2026-06-19T10:00:00Z",
+                    "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+                    "tellers": [{ "user_id": TELLER_BB, "name": "Sara", "role": "teller",
+                                  "is_active": true, "offline_pin_hash": phc }]
+                })
+                .to_string(),
+            )
+            .unwrap();
+        core.store
+            .kv_put(session::ORG_CONFIG_KEY, r#"{"org_id":"00000000-0000-0000-0000-0000000000aa","currency_code":"EGP","tax_rate":0.14}"#)
+            .unwrap();
+        core
+    }
+
+    /// Seed a prior in-memory session whose token is minted for `token_sub`.
+    fn install_prior_token(core: &MadarCore, token_sub: &str, exp_secs: i64) {
+        let token = fake_jwt_sub(token_sub, exp_secs);
+        let state = session::SessionState {
+            snapshot: session::SessionSnapshot {
+                user_id: token_sub.into(),
+                display_name: "prev".into(),
+                role: "teller".into(),
+                org_id: Some("00000000-0000-0000-0000-0000000000aa".into()),
+                branch_id: Some(BRANCH_1.into()),
+                currency_code: "EGP".into(),
+                tax_rate: 0.14,
+                online: false,
+                permissions_loaded: true,
+            },
+            permissions: Vec::new(),
+            token: Some(token.clone()),
+        };
+        core.api.set_bearer(Some(token));
+        core.persist_and_set(state);
+    }
+
+    /// Install a live online-style session holding `token` with the given exp.
+    fn signed_in_with_token(core: &MadarCore, exp_secs: i64) {
+        let token = fake_jwt(exp_secs);
+        let state = session::SessionState {
+            snapshot: session::SessionSnapshot {
+                user_id: "00000000-0000-0000-0000-0000000000bb".into(),
+                display_name: "Sara".into(),
+                role: "teller".into(),
+                org_id: Some("00000000-0000-0000-0000-0000000000aa".into()),
+                branch_id: Some("00000000-0000-0000-0000-000000000001".into()),
+                currency_code: "EGP".into(),
+                tax_rate: 0.14,
+                online: false,
+                permissions_loaded: true,
+            },
+            permissions: Vec::new(),
+            token: Some(token.clone()),
+        };
+        core.api.set_bearer(Some(token));
+        core.persist_and_set(state);
+    }
+
+    #[test]
+    fn jwt_exp_decode_and_expiry_check() {
+        assert_eq!(jwt_exp_secs(&fake_jwt(1_900_000_000)), Some(1_900_000_000));
+        assert_eq!(jwt_exp_secs("not-a-jwt"), None);
+        assert_eq!(jwt_exp_secs("a..c"), None); // empty payload segment
+        assert_eq!(jwt_exp_secs("hdr.bm90anNvbg.sig"), None); // payload not JSON
+        // past exp → expired; future exp → not; unreadable → expired (conservative).
+        assert!(token_is_expired(&fake_jwt(1_000), 2_000));
+        assert!(!token_is_expired(&fake_jwt(9_000), 2_000));
+        assert!(token_is_expired("garbage", 2_000));
+    }
+
+    #[test]
+    fn reauth_banner_only_shows_when_cached_jwt_expired() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let core = MadarCore::from_env().unwrap();
+        let now = core.corrected_now().timestamp();
+
+        // A still-VALID cached token + a parked queue (spurious 401) → banner hidden.
+        signed_in_with_token(&core, now + 3600);
+        core.auth_paused.store(true, Relaxed);
+        assert!(
+            !core.sync_status().unwrap().auth_paused,
+            "a still-valid JWT must NOT surface the re-login banner on a spurious 401"
+        );
+
+        // An EXPIRED cached token + a parked queue → banner shows (real re-auth).
+        signed_in_with_token(&core, now - 3600);
+        core.auth_paused.store(true, Relaxed);
+        assert!(
+            core.sync_status().unwrap().auth_paused,
+            "an expired JWT must surface the re-login banner"
+        );
+    }
+
+    #[test]
+    fn unpark_clears_a_spurious_park_for_a_valid_token_only() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let core = MadarCore::from_env().unwrap();
+        let now = core.corrected_now().timestamp();
+
+        // Valid token → un-park clears the flag (the queue resumes).
+        signed_in_with_token(&core, now + 3600);
+        core.auth_paused.store(true, Relaxed);
+        core.unpark_if_token_valid();
+        assert!(!core.auth_paused.load(Relaxed), "valid token → spurious park cleared");
+
+        // Expired token → stays parked (only a fresh login clears it).
+        signed_in_with_token(&core, now - 3600);
+        core.auth_paused.store(true, Relaxed);
+        core.unpark_if_token_valid();
+        assert!(core.auth_paused.load(Relaxed), "expired token → park retained for re-login");
+    }
+
+    #[tokio::test]
+    async fn drain_holds_and_never_parks_without_a_bearer() {
+        // An offline-unlocked session has no token → the drain must HOLD the backlog
+        // (never POST /sync/replay, never latch auth_paused). Otherwise a token-less
+        // device strands its queue forever behind a self-inflicted 401 park — the
+        // deterministic root of "5-6 actions queued but nothing pushes".
+        use std::sync::atomic::Ordering::Relaxed;
+        let core = signed_in_offline_core().await;
+        assert!(!core.api.has_bearer(), "offline unlock holds no bearer");
+        core.store
+            .enqueue(&store::NewOutboxOp {
+                id: "o1".into(),
+                op_type: "create_order".into(),
+                idempotency_key: "o1".into(),
+                payload: "{}".into(),
+                event_at: "2026-06-19T10:00:00Z".into(),
+                user_id: Some("00000000-0000-0000-0000-0000000000bb".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        let before = core.store.pending_count().unwrap();
+        core.drain_outbox().await.unwrap();
+        assert_eq!(core.store.pending_count().unwrap(), before, "no-bearer drain leaves the queue intact");
+        assert!(!core.auth_paused.load(Relaxed), "a no-bearer drain must NOT park the queue");
+    }
+
+    // ── offline unlock: the cached JWT must be OWNED by the unlocking teller ──────
+
+    #[test]
+    fn unlock_offline_keeps_own_valid_token() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let core = offline_core_with_bundle();
+        let now = core.corrected_now().timestamp();
+        // Prior session holds SARA's OWN, still-valid token.
+        install_prior_token(&core, TELLER_BB, now + 3600);
+        let snap = core.unlock_offline("Sara".into(), "1234".into(), BRANCH_1.into()).unwrap();
+        assert_eq!(snap.user_id, TELLER_BB);
+        assert!(core.api.has_bearer(), "own valid token is kept as the bearer");
+        assert!(!core.borrowed_token.load(Relaxed), "own token is not 'borrowed'");
+        assert!(!core.sync_status().unwrap().auth_paused, "no re-login banner with an own valid token");
+        // The own token IS persisted (survives a restart).
+        let persisted = core.session.read().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|s| s.token.clone());
+        assert!(persisted.is_some(), "own token persisted");
+    }
+
+    #[tokio::test]
+    async fn unlock_offline_borrows_foreign_token_then_invalidates_after_flush() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let core = offline_core_with_bundle();
+        let now = core.corrected_now().timestamp();
+        // Prior session holds a DIFFERENT teller's still-valid token (shared till).
+        install_prior_token(&core, "00000000-0000-0000-0000-0000000000cc", now + 3600);
+
+        let snap = core.unlock_offline("Sara".into(), "1234".into(), BRANCH_1.into()).unwrap();
+        assert_eq!(snap.user_id, TELLER_BB);
+        // It's used IN MEMORY to flush, flagged borrowed, NOT persisted, no banner yet.
+        assert!(core.api.has_bearer(), "foreign token kept in-memory to flush the backlog");
+        assert!(core.borrowed_token.load(Relaxed), "foreign token is flagged borrowed");
+        assert!(!core.sync_status().unwrap().auth_paused, "no banner while flushing");
+        let persisted = core.session.read().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|s| s.token.clone());
+        assert!(persisted.is_none(), "a FOREIGN token must never be persisted (no restart resurrection)");
+
+        // Queue is caught up (empty) → the drain invalidates the borrowed token and
+        // requires Sara to relogin under her own account.
+        core.drain_outbox().await.unwrap();
+        assert!(!core.api.has_bearer(), "borrowed token invalidated once the backlog is flushed");
+        assert!(!core.borrowed_token.load(Relaxed));
+        assert!(core.sync_status().unwrap().auth_paused, "re-login required after a borrowed flush");
+    }
+
+    #[test]
+    fn unlock_offline_expired_prior_token_requires_relogin() {
+        let core = offline_core_with_bundle();
+        let now = core.corrected_now().timestamp();
+        // Prior token is Sara's OWN but EXPIRED.
+        install_prior_token(&core, TELLER_BB, now - 3600);
+        core.unlock_offline("Sara".into(), "1234".into(), BRANCH_1.into()).unwrap();
+        assert!(!core.api.has_bearer(), "an expired token is dropped");
+        assert!(core.sync_status().unwrap().auth_paused, "an expired cached JWT surfaces the re-login banner");
+    }
+
+    #[test]
+    fn unlock_offline_no_prior_token_holds_quietly() {
+        let core = offline_core_with_bundle();
+        // No prior session/token at all (a genuine first offline unlock).
+        core.unlock_offline("Sara".into(), "1234".into(), BRANCH_1.into()).unwrap();
+        assert!(!core.api.has_bearer(), "no token to use");
+        assert!(!core.borrowed_token.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(!core.sync_status().unwrap().auth_paused, "no banner on a fresh offline unlock (nothing expired)");
     }
 }

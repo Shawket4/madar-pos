@@ -1,0 +1,28 @@
+# cargo-mutants config for madar-core (the UniFFI POS core), modelled on the
+# MadarRust backend's .cargo/mutants.toml.
+#
+# Only the LIB tests are run per mutant — the tests/ integration suite drives a
+# live backend and can't run in a mutation sweep. The sweep is focused on the
+# pure, correctness-critical engines (money/order/pin/recipe/shift): a surviving
+# mutant there means a test gap in logic that decides what a customer pays or
+# whether an offline order is valid.
+additional_cargo_test_args = ["--lib"]
+
+examine_globs = [
+    "src/pricing.rs",
+    "src/cart.rs",
+    "src/orders.rs",
+    "src/checkout.rs",
+    "src/recipe.rs",
+    "src/shift.rs",
+    "src/session.rs",
+]
+
+exclude_globs = [
+    "src/bin/**",
+    "tests/**",
+    "src/net.rs",
+    "src/realtime.rs",
+    "src/lan.rs",
+    "src/render.rs",
+]

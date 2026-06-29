@@ -338,17 +338,77 @@ pub(crate) fn queued(store: &Store, shift_id: &str) -> CoreResult<Vec<OrderSumma
             created_at: flat(&r.created_at).map(|d| d.to_rfc3339()).unwrap_or_default(),
             queued: true,
             // Queued orders are the current teller's; the server hasn't echoed a
-            // name/number/ref yet. They're rung in the default dine-in flow
-            // (delivery has its own path), so the type filter treats them as such.
+            // name/number yet. They're rung in the default dine-in flow (delivery
+            // has its own path), so the type filter treats them as such.
             teller_name: None,
             order_type: "dine_in".into(),
             customer_name: flat(&r.customer_name).filter(|s| !s.is_empty()),
-            order_ref: None,
+            // order_ref is CLIENT-minted (mint_order_ref, SENT on the request), so
+            // it's known the moment the order is queued — NOT something we wait for
+            // the server to echo. Carrying it here is what lets `merge_for_view`
+            // dedup this row against its synced server twin (same ref) during the
+            // lost-response window; without it the order double-shows + double-counts.
+            order_ref: flat(&r.order_ref).filter(|s| !s.is_empty()),
         });
     }
     // Outbox is oldest-first; show the latest-rung sale on top.
     out.reverse();
     Ok(out)
+}
+
+/// Every still-queued offline order ACROSS shifts (newest first) — the search /
+/// history path, where without this an offline order is silently absent from
+/// results. Mirrors `queued` but unscoped to a shift.
+pub(crate) fn queued_all(store: &Store) -> CoreResult<Vec<OrderSummaryView>> {
+    let mut out = Vec::new();
+    for item in store.list_active()? {
+        if item.op_type != "create_order" {
+            continue;
+        }
+        let cmd: crate::checkout::CheckoutCommand = match serde_json::from_str(&item.payload) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let r = &cmd.request;
+        out.push(OrderSummaryView {
+            id: item.id.clone(),
+            order_number: None,
+            subtotal_minor: flat_i32(&r.subtotal),
+            tax_minor: flat_i32(&r.tax_amount),
+            total_minor: flat_i32(&r.total_amount),
+            payment_label: r.payment_method.clone(),
+            status: if item.status == "dead" { "failed".into() } else { "queued".into() },
+            created_at: flat(&r.created_at).map(|d| d.to_rfc3339()).unwrap_or_default(),
+            queued: true,
+            teller_name: None,
+            order_type: "dine_in".into(),
+            customer_name: flat(&r.customer_name).filter(|s| !s.is_empty()),
+            order_ref: flat(&r.order_ref).filter(|s| !s.is_empty()),
+        });
+    }
+    out.reverse();
+    Ok(out)
+}
+
+/// Merge still-queued offline orders with the synced server rows for the history
+/// view. Drops any queued order whose client-minted `order_ref` ALREADY appears on
+/// a server row — the inflight / lost-response window where the local outbox copy
+/// and the server copy coexist. WITHOUT this dedup the order shows twice and
+/// `shift_stats` double-counts the shift's sales + order count (the offline/online
+/// merge bug). Queued-with-no-ref (pre-first-sync edge) can't be deduped, so it's
+/// kept — it isn't on the server yet anyway. Queued stay on top (newest), then server.
+pub fn merge_for_view(
+    queued: Vec<OrderSummaryView>,
+    server: Vec<OrderSummaryView>,
+) -> Vec<OrderSummaryView> {
+    let synced: std::collections::HashSet<&str> =
+        server.iter().filter_map(|o| o.order_ref.as_deref()).collect();
+    let mut out: Vec<OrderSummaryView> = queued
+        .into_iter()
+        .filter(|q| q.order_ref.as_deref().map_or(true, |r| !synced.contains(r)))
+        .collect();
+    out.extend(server);
+    out
 }
 
 fn flat<T: Clone>(o: &Option<Option<T>>) -> Option<T> {
@@ -397,6 +457,45 @@ mod tests {
         assert_eq!(s.sales_minor, 10000);
         // Empty list → zeros (no open-shift activity yet).
         assert_eq!(shift_stats(&[]), ShiftStatsView { sales_minor: 0, order_count: 0 });
+    }
+
+    fn summary_ref(total: i64, status: &str, order_ref: Option<&str>) -> OrderSummaryView {
+        OrderSummaryView { order_ref: order_ref.map(|s| s.into()), ..summary(total, status) }
+    }
+
+    #[test]
+    fn merge_for_view_dedups_a_synced_queued_order_by_ref() {
+        // THE offline/online merge bug: an order rung offline (queued) that has
+        // since synced — same client-minted order_ref now on a server row — must
+        // show ONCE, not twice, and must not double-count the shift stats pill.
+        let queued = vec![
+            summary_ref(2280, "queued", Some("LB1-260620-T1-0001")), // already synced
+            summary_ref(1500, "queued", Some("LB1-260620-T1-0002")), // still offline
+        ];
+        let server = vec![summary_ref(2280, "completed", Some("LB1-260620-T1-0001"))];
+        let merged = merge_for_view(queued, server);
+        assert_eq!(merged.len(), 2, "the synced order must not appear twice");
+        assert_eq!(
+            merged
+                .iter()
+                .filter(|o| o.order_ref.as_deref() == Some("LB1-260620-T1-0001"))
+                .count(),
+            1
+        );
+        // shift_stats over the merged list is therefore no longer double-counted.
+        let st = shift_stats(&merged);
+        assert_eq!(st.order_count, 2, "stats must count the synced order once");
+        assert_eq!(st.sales_minor, 2280 + 1500);
+    }
+
+    #[test]
+    fn merge_for_view_keeps_offline_only_and_refless_orders() {
+        let queued = vec![
+            summary_ref(1000, "queued", None),                       // no ref yet → keep
+            summary_ref(2000, "queued", Some("LB1-260620-T1-0009")), // offline-only → keep
+        ];
+        let server = vec![summary_ref(3000, "completed", Some("LB1-260620-T1-0001"))];
+        assert_eq!(merge_for_view(queued, server).len(), 3, "nothing on the server → keep all");
     }
 
     fn queue_order(store: &Store, id: &str, shift: &str, total: i32) {
@@ -1006,5 +1105,38 @@ mod tests {
         // a create_order op is ignored entirely
         queue_order(&store, "co1", SHIFT, 1000);
         assert!(pending_void_ids(&store).unwrap().is_empty());
+    }
+
+    // Property-based: shift_stats must equal an independent re-statement (sum the
+    // non-voided totals, count the non-voided orders) for ANY mix — pins the sum
+    // and the void-exclusion predicate so arithmetic/predicate mutants die.
+    mod stats_proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn shift_stats_matches_reference(
+                cases in prop::collection::vec((0i64..1_000_000, 0u8..4), 0..50)
+            ) {
+                let status = |k: u8| match k {
+                    0 => "completed", 1 => "queued", 2 => "voided", _ => "failed",
+                };
+                let views: Vec<OrderSummaryView> =
+                    cases.iter().map(|(t, k)| summary(*t, status(*k))).collect();
+                let got = shift_stats(&views);
+
+                let (mut exp_sales, mut exp_count) = (0i64, 0i64);
+                for (t, k) in &cases {
+                    if status(*k) != "voided" {
+                        exp_count += 1;
+                        exp_sales += *t;
+                    }
+                }
+                prop_assert_eq!(got.order_count, exp_count);
+                prop_assert_eq!(got.sales_minor, exp_sales);
+                prop_assert!(got.order_count <= cases.len() as i64);
+            }
+        }
     }
 }

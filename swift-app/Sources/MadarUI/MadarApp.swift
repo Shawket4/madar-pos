@@ -24,6 +24,7 @@ struct MadarApp: App {
 /// a side effect of connectivity.
 struct RootView: View {
     @ObservedObject var app: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ThemedRoot(mode: app.themeMode) {
@@ -56,6 +57,25 @@ struct RootView: View {
             .environment(\.layoutDirection, app.isRTL ? .rightToLeft : .leftToRight)
             .toastHost(app)
             .realtimeAlertHost(app)
+        }
+        // App-level connectivity heartbeat — runs on EVERY route (not just Order /
+        // OpenShift), so a KDS / waiter / settings device still drains its outbox on
+        // a timer, and a cold start flushes a restored backlog on the first tick.
+        // Tied to sign-in so it starts/stops with the session; the core's
+        // single-flight drain makes overlap with any screen-level refresh harmless.
+        .task(id: app.isSignedIn) {
+            guard app.isSignedIn else { return }
+            while !Task.isCancelled {
+                await app.refreshConnectivity()
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+            }
+        }
+        // Foreground / app-resume drain — independent of the timer so a backgrounded
+        // app flushes its backlog the instant it returns to the foreground.
+        .onChange(of: scenePhase) { phase in
+            if phase == .active, app.isSignedIn {
+                Task { await app.refreshConnectivity() }
+            }
         }
     }
 }

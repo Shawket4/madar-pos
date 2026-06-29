@@ -256,6 +256,13 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
         try {
             session = core.signIn(LoginRequest(LoginMode.PIN, name, pin, branchId, null, null, null))
             reconcileShift()
+            // Revive realtime after a mid-shift re-auth: the SSE supervisor stopped on
+            // its 401 but the core still holds a stale handle, so unsubscribe FIRST to
+            // clear it, then (re)start. The App-level LaunchedEffect is keyed on the
+            // signed-in userId, which is UNCHANGED on a same-teller re-auth, so it
+            // won't re-fire — we must revive here. No-op-safe on a fresh login.
+            unsubscribeRealtime()
+            startRealtime()
             startLanRelay()
         } catch (e: CoreException) {
             error = humanMessage(e)
@@ -632,6 +639,29 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     suspend fun retryOutbox() {
         runCatching { core.retryOutbox() }
         loadOutbox()
+    }
+    /** Spins the "Sync now" button while a manual push is in flight. */
+    var isPushing by mutableStateOf(false)
+        private set
+    /** Manual PUSH of the durable outbox — force-drains every QUEUED (not just
+     *  failed) command. Unlike "Sync data" (a catalog re-pull) this flushes the
+     *  write queue, and unlike "Retry" it needs no dead row to exist. The core's
+     *  `syncNow` clears the connectivity backoff and un-parks a spuriously parked
+     *  queue (still-valid token) before draining. Concurrent taps ignored.
+     *  Mirrors the Swift `syncNow`. */
+    suspend fun syncNow() {
+        if (isPushing) return
+        isPushing = true
+        try {
+            // Ping first so a queue parked offline re-probes connectivity + the
+            // auth-park (refreshConnectivity also drains); then an explicit drain
+            // guarantees a push attempt.
+            refreshConnectivity()
+            runCatching { core.syncNow() }
+            loadOutbox()
+        } finally {
+            isPushing = false
+        }
     }
     fun discardOutboxItem(id: String) {
         runCatching { core.discardOutboxItem(id) }

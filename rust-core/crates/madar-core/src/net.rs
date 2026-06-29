@@ -120,8 +120,10 @@ impl ApiClient {
             .and_then(|v| v.to_str().ok())
             .and_then(parse_http_date)
         {
-            let skew = server_epoch - chrono::Utc::now().timestamp();
-            self.clock_skew.store(skew, std::sync::atomic::Ordering::Relaxed);
+            let skew = server_epoch.saturating_sub(chrono::Utc::now().timestamp());
+            // Clamp so one bogus/proxy `Date` header can't poison the shared skew
+            // (or overflow the ×1000 ms math that re-bases queued timestamps).
+            self.clock_skew.store(clamp_skew(skew), std::sync::atomic::Ordering::Relaxed);
         }
     }
 
@@ -220,22 +222,28 @@ impl ApiClient {
         }
     }
 
-    /// Ping the backend to refresh reachability + read its clock. ANY HTTP
-    /// response (even 4xx) means we reached the server → online; only a transport
-    /// failure errs. Returns the server-vs-device skew in SECONDS when the
-    /// response carries a parseable `Date` header (for the clock-skew banner).
+    /// Ping the backend to refresh reachability + read its clock. Hits the
+    /// UNAUTHENTICATED `/health` endpoint with NO bearer, so liveness is decoupled
+    /// from token validity: an expired/rejected token must NOT make us report
+    /// "offline" (that would strand the outbox with the server fully reachable) —
+    /// token death is detected by the drain's real `/sync/replay` call instead.
+    /// ANY HTTP response (even 4xx, e.g. a captive portal) means we reached *a*
+    /// server → online; only a transport failure errs. Returns the server-vs-device
+    /// skew in SECONDS when the response carries a parseable `Date` header.
     pub async fn ping(&self) -> CoreResult<Option<i64>> {
-        let mut rb = self.http.request(reqwest::Method::GET, &self.base_url);
-        if let Some(token) = self.bearer.read().unwrap_or_else(|e| e.into_inner()).clone() {
-            rb = rb.bearer_auth(token);
-        }
-        let resp = rb.send().await.map_err(|e| classify_reqwest(&e))?;
+        let url = format!("{}/health", self.base_url);
+        let resp = self
+            .http
+            .request(reqwest::Method::GET, &url)
+            .send()
+            .await
+            .map_err(|e| classify_reqwest(&e))?;
         let skew = resp
             .headers()
             .get(reqwest::header::DATE)
             .and_then(|v| v.to_str().ok())
             .and_then(parse_http_date)
-            .map(|server_epoch| server_epoch - chrono::Utc::now().timestamp());
+            .map(|server_epoch| clamp_skew(server_epoch.saturating_sub(chrono::Utc::now().timestamp())));
         Ok(skew)
     }
 
@@ -346,10 +354,28 @@ pub(crate) fn is_connectivity_failure(e: &CoreError) -> bool {
 
 /// Map an HTTP status + raw body to a `CoreError` variant.
 pub(crate) fn status_to_error(status: u16, body: &str) -> CoreError {
-    let message = extract_error_message(body)
+    // Our backend ALWAYS answers an error with the `{ "error": "…" }` envelope
+    // (`errors.rs::ErrorBody`); a captive portal / transparent proxy answers with
+    // HTML, a redirect stub, or an empty body. `extract_error_message` is `Some`
+    // only for our envelope, so it doubles as a "this came from our backend" probe.
+    let backend_envelope = extract_error_message(body);
+    let message = backend_envelope
+        .clone()
         .unwrap_or_else(|| reason(status).to_string());
     match status {
-        401 => CoreError::Unauthenticated { detail: message },
+        // A genuine backend 401 carries our error envelope → the token really was
+        // rejected (expired/invalid) and the caller should surface re-auth. A 401
+        // WITHOUT it is a captive-portal / proxy interstitial answering in our
+        // backend's place — NOT our backend rejecting the token. Mapping THAT to
+        // `Unauthenticated` is what falsely parks the offline outbox and forces a
+        // needless re-login on a brief blip, so a non-envelope 401 is treated as
+        // `Offline` (the drain reschedules without burning retry budget; a PIN
+        // login falls through to the offline verifier). Symmetric with the
+        // 200-body guard (`replay_backend_object`) and the 511/407/408 handling.
+        401 if backend_envelope.is_some() => CoreError::Unauthenticated { detail: message },
+        401 => CoreError::Offline {
+            detail: format!("captive portal or proxy returned 401 without a backend error body: {message}"),
+        },
         // Network 403s carry no resource/action pair (that's `has_permission`'s
         // job); surface the server's message in `action` so the host can show it.
         403 => CoreError::Forbidden { resource: "api".into(), action: message },
@@ -370,6 +396,17 @@ fn extract_error_message(body: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Plausible bound for server-vs-device clock skew (seconds). A `Date` header
+/// implying more than ±48h of skew is almost certainly a bogus device clock or a
+/// proxy with a wrong clock; clamping keeps one bad header from poisoning the
+/// shared/persisted skew and from overflowing the downstream `×1000` ms math
+/// (`outbox_meta`, `corrected_now`, `rebase_delta_ms`).
+pub(crate) const MAX_PLAUSIBLE_SKEW_SECS: i64 = 48 * 60 * 60;
+
+pub(crate) fn clamp_skew(secs: i64) -> i64 {
+    secs.clamp(-MAX_PLAUSIBLE_SKEW_SECS, MAX_PLAUSIBLE_SKEW_SECS)
 }
 
 /// Parse an HTTP `Date` header (RFC 7231 IMF-fixdate, e.g.
@@ -408,6 +445,39 @@ mod tests {
         assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
         assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:01:00 GMT"), Some(60));
         assert_eq!(parse_http_date("not a date"), None);
+    }
+
+    #[test]
+    fn status_to_error_401_with_backend_envelope_is_unauthenticated() {
+        // A genuine backend 401 carries the `{ "error": … }` envelope → real
+        // token rejection → Unauthenticated (so the drain can park / re-auth).
+        assert!(matches!(
+            status_to_error(401, r#"{"error":"Invalid or expired token","code":"unauthorized"}"#),
+            CoreError::Unauthenticated { .. }
+        ));
+    }
+
+    #[test]
+    fn status_to_error_401_without_backend_envelope_is_offline() {
+        // A 401 carrying a captive-portal/proxy body (HTML, empty, or a JSON object
+        // with no error key) is NOT our backend rejecting the token — it must map to
+        // Offline so the outbox reschedules instead of parking + forcing a re-login.
+        assert!(matches!(status_to_error(401, "<html>Wi-Fi login</html>"), CoreError::Offline { .. }));
+        assert!(matches!(status_to_error(401, ""), CoreError::Offline { .. }));
+        assert!(matches!(status_to_error(401, "{}"), CoreError::Offline { .. }));
+        // And a non-envelope 401 is treated as a connectivity failure (→ offline
+        // unlock fallback on the login path), unlike a genuine credential rejection.
+        assert!(is_connectivity_failure(&status_to_error(401, "<html/>")));
+        assert!(!is_connectivity_failure(&status_to_error(401, r#"{"error":"wrong pin"}"#)));
+    }
+
+    #[test]
+    fn clamp_skew_bounds_to_plus_minus_48h() {
+        assert_eq!(clamp_skew(10), 10);
+        assert_eq!(clamp_skew(-10), -10);
+        assert_eq!(clamp_skew(i64::MAX), MAX_PLAUSIBLE_SKEW_SECS);
+        assert_eq!(clamp_skew(i64::MIN), -MAX_PLAUSIBLE_SKEW_SECS);
+        assert_eq!(clamp_skew(MAX_PLAUSIBLE_SKEW_SECS + 1), MAX_PLAUSIBLE_SKEW_SECS);
     }
 
     #[test]

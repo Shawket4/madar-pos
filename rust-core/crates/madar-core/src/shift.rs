@@ -65,12 +65,34 @@ pub struct CashMovementView {
 
 pub(crate) fn cash_movement_view(m: &models::CashMovement) -> CashMovementView {
     CashMovementView {
-        id: m.id.to_string(),
+        // `client_ref` is the cross-boundary identity: an offline-rung movement
+        // carries it as its outbox id AND sends it; the server echoes it back here.
+        // Use it (not the server id) so `merge_cash_for_view` dedups the still-queued
+        // copy against this synced row — otherwise the drawer double-counts a movement
+        // whose response was lost (the exact case client_ref/idempotency exists for).
+        id: m
+            .client_ref
+            .flatten()
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| m.id.to_string()),
         amount_minor: m.amount as i64,
         note: m.note.clone(),
         moved_by_name: m.moved_by_name.clone(),
         created_at: m.created_at.to_rfc3339(),
     }
+}
+
+/// Merge synced server cash movements with the still-queued offline ones, dropping
+/// a queued movement that has ALREADY synced (its `client_ref`, now the view `id`,
+/// identifies a server row). Server first (chronological), then the queued tail.
+pub fn merge_cash_for_view(
+    server: Vec<CashMovementView>,
+    queued: Vec<CashMovementView>,
+) -> Vec<CashMovementView> {
+    let seen: std::collections::HashSet<String> = server.iter().map(|m| m.id.clone()).collect();
+    let mut out = server;
+    out.extend(queued.into_iter().filter(|q| !seen.contains(&q.id)));
+    out
 }
 
 /// A past shift, projected for the history list.
@@ -860,6 +882,39 @@ mod tests {
         assert_eq!(v.amount_minor, 4200);
     }
 
+    #[test]
+    fn cash_movement_view_prefers_client_ref_as_identity() {
+        // A synced-from-offline movement: the server echoes the client_ref. The view
+        // must adopt it as `id` (the cross-boundary identity), NOT the server uuid, so
+        // the still-queued copy dedups against it (otherwise the drawer double-counts).
+        let cref = uuid::Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let server_id = uuid::Uuid::parse_str("99999999-9999-9999-9999-999999999999").unwrap();
+        let m = models::CashMovement { id: server_id, client_ref: Some(Some(cref)), ..Default::default() };
+        assert_eq!(cash_movement_view(&m).id, cref.to_string(), "must use client_ref, not server id");
+        // A live online-only movement (no client_ref) falls back to the server id.
+        let m2 = models::CashMovement { id: server_id, ..Default::default() };
+        assert_eq!(cash_movement_view(&m2).id, server_id.to_string());
+    }
+
+    #[test]
+    fn merge_cash_for_view_dedups_synced_movement() {
+        let view = |id: &str, amt: i64| CashMovementView {
+            id: id.into(),
+            amount_minor: amt,
+            note: String::new(),
+            moved_by_name: String::new(),
+            created_at: String::new(),
+        };
+        // 'ref-1' synced (server row id == client_ref) AND still queued → must dedup.
+        let server = vec![view("ref-1", 100)];
+        let queued = vec![view("ref-1", 100), view("ref-2", 50)]; // ref-2 is offline-only
+        let merged = merge_cash_for_view(server, queued);
+        assert_eq!(merged.len(), 2, "a synced movement must not double the drawer");
+        assert_eq!(merged.iter().filter(|m| m.id == "ref-1").count(), 1);
+        // Drawer net is correct (150), not double-counted (would be 250).
+        assert_eq!(merged.iter().map(|m| m.amount_minor).sum::<i64>(), 150);
+    }
+
     // ── shift_summary_view: Option<Option<T>> flatten ────────────────────────
 
     #[test]
@@ -1061,5 +1116,49 @@ mod tests {
         let mut pf = models::ShiftPreFill::new(true, 0);
         pf.open_shift = Some(Some(Box::new(open_shift_model())));
         assert!(matches!(reconcile(&pf, TELLER_A, true, true), ShiftReconcile::KeepLocal));
+    }
+
+    // Property-based: the OFFLINE Z-report cash math (expected = opening + queued
+    // cash; cash_in/out split by movement sign) must equal an independent
+    // re-statement for any movement mix — this is the drawer figure a teller
+    // reconciles against when the shift closed with no connectivity.
+    mod cash_proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn movement(amount_minor: i64) -> ShiftReportCashLine {
+            ShiftReportCashLine {
+                amount_minor,
+                note: String::new(),
+                moved_by_name: String::new(),
+                created_at: String::new(),
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn offline_report_cash_math(
+                opening in 0i64..10_000_000,
+                queued in 0i64..10_000_000,
+                amounts in prop::collection::vec(-1_000_000i64..1_000_000, 0..30),
+            ) {
+                let movements: Vec<ShiftReportCashLine> =
+                    amounts.iter().map(|&a| movement(a)).collect();
+                let r = offline_report_view(
+                    opening, queued, movements, "T".into(), "o".into(), "p".into());
+
+                // Expected drawer cash = opening float + still-queued cash sales.
+                prop_assert_eq!(r.expected_cash_minor, opening + queued);
+                // Movements split by sign; both legs non-negative; net is in − out.
+                let exp_in: i64 = amounts.iter().filter(|&&a| a > 0).sum();
+                let exp_out: i64 = amounts.iter().filter(|&&a| a < 0).map(|a| -a).sum();
+                prop_assert_eq!(r.cash_in_minor, exp_in);
+                prop_assert_eq!(r.cash_out_minor, exp_out);
+                prop_assert!(r.cash_in_minor >= 0 && r.cash_out_minor >= 0);
+                prop_assert_eq!(r.cash_movements_net_minor, exp_in - exp_out);
+                prop_assert!(r.is_open);
+                prop_assert!(!r.from_server);
+            }
+        }
     }
 }
