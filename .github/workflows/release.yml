@@ -78,15 +78,18 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ github.ref_name }}
         run: |
-          # Idempotent create (|| true swallows the concurrent-job race), then upload.
-          gh release create "${{ github.ref_name }}" --repo Shawket4/madar-pos-releases \
-            --title "Madar POS ${{ github.ref_name }}" \
+          gh release create "$TAG" --repo Shawket4/madar-pos-releases \
+            --title "Madar POS $TAG" \
             --notes "Automated multi-platform build of Madar POS — built from private madar-pos @ ${{ github.sha }}." \
             2>/dev/null || true
-          gh release upload "${{ github.ref_name }}" \
-            kotlin-app/composeApp/build/outputs/apk/release/*.apk \
-            --repo Shawket4/madar-pos-releases --clobber
+          apk=$(ls kotlin-app/composeApp/build/outputs/apk/release/*.apk | head -1)
+          for n in 1 2 3 4 5; do
+            gh release upload "$TAG" "$apk" --repo Shawket4/madar-pos-releases --clobber && exit 0
+            echo "APK upload attempt $n failed; retrying in 15s…"; sleep 15
+          done
+          echo "APK upload failed after retries"; exit 1
 
   # ── Desktop (Linux + macOS) — best-effort ────────────────────────────────────
   desktop:
@@ -131,21 +134,22 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" --repo Shawket4/madar-pos-releases \
-            --title "Madar POS ${{ github.ref_name }}" \
+          gh release create "$TAG" --repo Shawket4/madar-pos-releases \
+            --title "Madar POS $TAG" \
             --notes "Automated multi-platform build of Madar POS — built from private madar-pos @ ${{ github.sha }}." \
             2>/dev/null || true
           shopt -s nullglob globstar
           files=(kotlin-app/composeApp/build/compose/binaries/main-release/**/*.deb \
                  kotlin-app/composeApp/build/compose/binaries/main-release/**/*.dmg \
                  kotlin-app/composeApp/build/compose/binaries/main-release/**/*.msi)
-          if [ ${#files[@]} -gt 0 ]; then
-            gh release upload "${{ github.ref_name }}" "${files[@]}" \
-              --repo Shawket4/madar-pos-releases --clobber
-          else
-            echo "no desktop artifacts to upload"
-          fi
+          [ ${#files[@]} -eq 0 ] && { echo "no desktop artifacts to upload"; exit 0; }
+          for n in 1 2 3 4 5; do
+            gh release upload "$TAG" "${files[@]}" --repo Shawket4/madar-pos-releases --clobber && exit 0
+            echo "desktop upload attempt $n failed; retrying in 15s…"; sleep 15
+          done
+          echo "desktop upload failed after retries"; exit 1
 
   # ── iOS (build check; unsigned) — best-effort ────────────────────────────────
   ios:
