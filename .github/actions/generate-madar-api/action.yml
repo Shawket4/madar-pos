@@ -1,0 +1,26 @@
+name: "Generate madar-api"
+description: >
+  Generate the typed madar-api Rust client from the committed OpenAPI spec
+  (repo-root openapi.json). The crate is gitignored + generated, so every job
+  that builds madar-core regenerates it here rather than checking it in.
+  Requires the Rust toolchain to already be installed (the script cargo-checks
+  the generated client).
+runs:
+  using: composite
+  steps:
+    - name: Set up Java (openapi-generator runtime)
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "17"
+    - name: Set up Node (npx openapi-generator-cli)
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+    - name: Generate client from the pinned spec
+      shell: bash
+      # SKIP_EXPORT=1 → don't re-export from a backend checkout (there is none in
+      # CI); use the committed openapi.json at the repo root as the source of truth.
+      run: |
+        cd "$GITHUB_WORKSPACE/rust-core"
+        SKIP_EXPORT=1 MADAR_BACKEND_DIR="$GITHUB_WORKSPACE" bash tool/generate_api.sh

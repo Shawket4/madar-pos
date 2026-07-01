@@ -256,14 +256,20 @@ mod tests {
     fn settings() -> models::BranchDeliverySettings {
         models::BranchDeliverySettings::new(
             uid(9),
-            true,          // in_mall_enabled
-            500,           // in_mall_fee
-            "auto".into(), // in_mall_override
-            true,          // in_mall_require_location
-            true,          // otp_required
-            false,         // outside_enabled
-            "closed".into(),
-            25,            // prep_time_minutes
+            true,            // in_mall_enabled
+            500,             // in_mall_fee
+            "auto".into(),   // in_mall_override
+            true,            // in_mall_require_location
+            true,            // otp_required
+            false,           // outside_enabled
+            "closed".into(), // outside_override
+            false,           // pickup_enabled
+            0,               // pickup_fee
+            "closed".into(), // pickup_override
+            25,              // prep_time_minutes
+            false,           // umbrella_enabled
+            0,               // umbrella_fee
+            "closed".into(), // umbrella_override
         )
     }
 

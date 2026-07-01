@@ -3,8 +3,11 @@ name: rust-core CI
 # Test gate + cross-platform build matrix for the madar-core POS engine.
 # Modelled on the MadarRust backend CI. Deployment/release stays in release.yml.
 on:
+  push:
+    branches: [main]
+    paths: ["rust-core/**", "openapi.json", ".github/workflows/rust-core-ci.yml", ".github/actions/generate-madar-api/**"]
   pull_request:
-    paths: ["rust-core/**", ".github/workflows/rust-core-ci.yml"]
+    paths: ["rust-core/**", "openapi.json", ".github/workflows/rust-core-ci.yml", ".github/actions/generate-madar-api/**"]
   workflow_dispatch:
   schedule:
     - cron: "0 4 * * *" # nightly: longer fuzz + full mutation sweep
@@ -29,6 +32,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-core
+      # The typed API client is generated (gitignored), so regenerate it before
+      # any cargo step — else the workspace can't resolve `madar-api`.
+      - uses: ./.github/actions/generate-madar-api
       # fmt + clippy advisory for now (tree predates them); promote by removing
       # continue-on-error once clean.
       - name: rustfmt
@@ -59,6 +65,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-core
+      - uses: ./.github/actions/generate-madar-api
       # Android needs the NDK + cargo-ndk (bare cargo check fails on the cc-rs C
       # deps — that's the NDK clang wiring, not a broken crate).
       - name: Set up Android NDK
@@ -98,12 +105,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-core/crates/madar-core/fuzz -> target
+      - uses: ./.github/actions/generate-madar-api
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
+      # `cargo +nightly` forces the nightly toolchain (RUSTUP_TOOLCHAIN propagates
+      # to cargo-fuzz's inner sanitizer build) — the repo's rust-toolchain.toml pins
+      # a stable channel, which otherwise rejects the required `-Z` flags.
       # Quick smoke on PRs; a longer budget on the nightly schedule.
       - name: Fuzz ${{ matrix.target }}
-        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'schedule' && 120 || 30 }}
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'schedule' && 120 || 30 }}
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v4
@@ -127,6 +138,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-core
+      - uses: ./.github/actions/generate-madar-api
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants,cargo-nextest
