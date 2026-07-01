@@ -177,6 +177,12 @@ pub struct MadarCore {
     /// `corrected_now` stays server-aligned between heartbeats. Persisted to kv on
     /// ping for a corrected cold-offline boot. Also drives the clock-skew banner.
     clock_skew_secs: Arc<std::sync::atomic::AtomicI64>,
+    /// Consecutive failed `/health` probes that could NOT be confirmed by a real
+    /// outbox send (empty backlog / no bearer). We only drop the online banner once
+    /// this reaches [`K_OFFLINE_CONFIRM`] — a single failed probe (a waking radio /
+    /// DNS-TLS not-ready right after a resume or rotation) must not flap it. Reset
+    /// to 0 by any confirmed connectivity (a ping OK or an outbox ack).
+    offline_probe_fails: std::sync::atomic::AtomicU32,
     /// `true` after a drain hit a 401: the outbox is parked (no retry budget
     /// burned, no heartbeat hammering) until the next successful login clears it.
     auth_paused: std::sync::atomic::AtomicBool,
@@ -255,6 +261,7 @@ impl MadarCore {
             session: RwLock::new(None),
             token_store: Mutex::new(None),
             clock_skew_secs,
+            offline_probe_fails: std::sync::atomic::AtomicU32::new(0),
             auth_paused: std::sync::atomic::AtomicBool::new(false),
             borrowed_token: std::sync::atomic::AtomicBool::new(false),
             diag: Mutex::new(std::collections::VecDeque::new()),
@@ -662,7 +669,18 @@ impl MadarCore {
             }
 
             self.store.mark_inflight(item.seq)?;
-            match self.send_outbox_item(&item).await {
+            let outcome = self.send_outbox_item(&item).await;
+            // A REAL outbox send is the authority for the online banner: a clean ack
+            // proves we're online; a transport failure proves we're offline. (A
+            // 4xx/5xx/401 reached the server — those are handled by the arms below
+            // without touching `online`.) This is why a lone /health blip on resume
+            // no longer flaps the banner: only a genuine send failure flips it off.
+            match &outcome {
+                SendOutcome::Acked(_) => self.set_online(true),
+                SendOutcome::Offline => self.set_online(false),
+                _ => {}
+            }
+            match outcome {
                 // Applied server-side (or idempotently already-applied).
                 SendOutcome::Acked(server_id) => {
                     self.store.mark_acked(item.seq, server_id.as_deref())?;
@@ -1303,6 +1321,10 @@ const K_MAX_RETRIES: i64 = 8;
 const K_BASE_BACKOFF_MS: i64 = 2_000; // 2s
 const K_MAX_BACKOFF_MS: i64 = 300_000; // 5min
 const K_NETWORK_RETRY_MS: i64 = 15_000; // fixed reschedule for connectivity blips
+// Consecutive UNCONFIRMED failed /health probes before we drop the online banner.
+// A real outbox send failure flips offline immediately; this only gates the
+// empty-backlog case so a lone resume/rotation blip can't flap the banner.
+const K_OFFLINE_CONFIRM: u32 = 2;
 const K_ACKED_RETENTION_MS: i64 = 48 * 60 * 60 * 1000; // keep acked rows 48h
 
 /// Epoch milliseconds (matches the outbox's `next_attempt_at` / `synced_at`).
@@ -3219,6 +3241,18 @@ impl MadarCore {
         }
     }
 
+    /// Set the live `online` flag. A CONFIRMED connectivity (`true`) also resets the
+    /// unconfirmed-failure streak, so the next lone probe failure starts fresh.
+    fn set_online(&self, online: bool) {
+        if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            sess.snapshot.online = online;
+        }
+        if online {
+            self.offline_probe_fails
+                .store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     pub async fn refresh_connectivity(&self) -> bool {
         match self.api.ping().await {
             Ok(skew) => {
@@ -3227,9 +3261,9 @@ impl MadarCore {
                     // Persist so a later cold offline boot stamps corrected times.
                     let _ = self.store.kv_put("clock_skew_secs", &s.to_string());
                 }
-                if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
-                    sess.snapshot.online = true;
-                }
+                // /health reached a server → online (a fast recovery signal; also
+                // resets the unconfirmed-failure streak).
+                self.set_online(true);
                 // Connectivity is CONFIRMED. If the queue is parked on a 401 but we
                 // still hold a non-expired token, the park was spurious (a portal /
                 // proxy blip or a transient server auth hiccup) — un-park so this pass
@@ -3247,10 +3281,25 @@ impl MadarCore {
                 true
             }
             Err(_) => {
-                if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
-                    sess.snapshot.online = false;
+                use std::sync::atomic::Ordering::Relaxed;
+                // A lone failed /health probe is NOT proof we're offline: a waking
+                // radio / DNS-TLS-not-ready right after a resume or rotation errs the
+                // first request, then recovers. CONFIRM against a REAL network op
+                // before dropping the banner. If there's a flushable backlog, drain
+                // it — `drain_outbox` sets `online` from the actual send outcome (an
+                // ack ⇒ online, a transport failure ⇒ offline), so the OUTBOX is the
+                // authority. With nothing to flush (empty backlog / no bearer) we
+                // can't prove it that way, so require K_OFFLINE_CONFIRM consecutive
+                // failed probes — a single blip can't flap the banner.
+                let flushable = self.api.has_bearer()
+                    && !self.auth_paused.load(Relaxed)
+                    && self.store.pending_count().unwrap_or(0) > 0;
+                if flushable {
+                    let _ = self.drain_outbox().await;
+                } else if self.offline_probe_fails.fetch_add(1, Relaxed) + 1 >= K_OFFLINE_CONFIRM {
+                    self.set_online(false);
                 }
-                false
+                self.current_session().map(|s| s.online).unwrap_or(false)
             }
         }
     }
@@ -4675,6 +4724,73 @@ mod tests {
             }
         };
         assert!(core.sign_in(bad).await.is_err());
+    }
+
+    /// The offline banner must NOT flap on a transient probe failure (a waking radio
+    /// / DNS-TLS-not-ready right after a resume or rotation errs the first /health
+    /// ping, then recovers). A single failed probe holds the banner; only two
+    /// consecutive UNCONFIRMED failures (empty outbox → no real send can prove it)
+    /// drop it, and a confirmed reachability resets the streak.
+    #[tokio::test]
+    async fn refresh_connectivity_debounces_transient_probe_failures() {
+        use argon2::password_hash::SaltString;
+        use argon2::{Argon2, PasswordHasher};
+
+        let core = MadarCore::new(MadarConfig {
+            base_url: "http://127.0.0.1:1".into(), // nothing listening → every ping errs
+            environment: "dev".into(),
+            db_path: String::new(),
+            locale: "en".into(),
+        })
+        .unwrap();
+
+        // Establish a session via the offline unlock (no bearer, empty outbox).
+        let salt = SaltString::encode_b64(b"madar-test-salt").unwrap();
+        let phc = Argon2::default().hash_password(b"1234", &salt).unwrap().to_string();
+        let bundle = serde_json::json!({
+            "org_id": "00000000-0000-0000-0000-0000000000aa",
+            "generated_at": "2026-06-19T10:00:00Z",
+            "lan_secret": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+            "tellers": [{
+                "user_id": "00000000-0000-0000-0000-0000000000bb",
+                "name": "Sara", "role": "teller", "is_active": true,
+                "offline_pin_hash": phc,
+            }]
+        });
+        core.store.kv_put(session::BUNDLE_KEY, &bundle.to_string()).unwrap();
+        core.store
+            .kv_put(session::ORG_CONFIG_KEY, r#"{"org_id":"00000000-0000-0000-0000-0000000000aa","currency_code":"EGP","tax_rate":0.14}"#)
+            .unwrap();
+        core.sign_in(session::LoginRequest {
+            mode: session::LoginMode::Pin,
+            name: Some("Sara".into()),
+            pin: Some("1234".into()),
+            branch_id: Some("00000000-0000-0000-0000-000000000001".into()),
+            email: None,
+            password: None,
+            org_id: None,
+        })
+        .await
+        .expect("offline sign-in");
+
+        let online = || core.current_session().map(|s| s.online).unwrap_or(false);
+
+        // Simulate having been online before the transient blip.
+        core.set_online(true);
+        assert!(online());
+
+        // One failed probe (empty outbox, no bearer to flush) — banner HOLDS.
+        assert!(core.refresh_connectivity().await, "a single blip keeps us online");
+        assert!(online(), "still online after one failed probe");
+
+        // A second consecutive failed probe confirms we're genuinely offline.
+        assert!(!core.refresh_connectivity().await, "two consecutive blips → offline");
+        assert!(!online());
+
+        // A confirmed reachability resets the streak → it again tolerates one blip.
+        core.set_online(true);
+        assert!(core.refresh_connectivity().await, "streak reset → one blip tolerated again");
+        assert!(online());
     }
 }
 
