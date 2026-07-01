@@ -601,6 +601,20 @@ impl MadarCore {
         Ok(remapped)
     }
 
+    /// Set the live `online` flag. A CONFIRMED connectivity (`true`) also resets the
+    /// unconfirmed-failure streak, so the next lone probe failure starts fresh.
+    /// (Kept in this NON-`#[uniffi::export]` impl so it stays an internal helper and
+    /// doesn't leak into the FFI surface the hosts see.)
+    fn set_online(&self, online: bool) {
+        if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            sess.snapshot.online = online;
+        }
+        if online {
+            self.offline_probe_fails
+                .store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     async fn drain_outbox(&self) -> Result<(), CoreError> {
         use std::sync::atomic::Ordering::Relaxed;
         // Single-flight: only one drain iterates the backlog at a time. A second
@@ -3241,18 +3255,6 @@ impl MadarCore {
         }
     }
 
-    /// Set the live `online` flag. A CONFIRMED connectivity (`true`) also resets the
-    /// unconfirmed-failure streak, so the next lone probe failure starts fresh.
-    fn set_online(&self, online: bool) {
-        if let Some(sess) = self.session.write().unwrap_or_else(|e| e.into_inner()).as_mut() {
-            sess.snapshot.online = online;
-        }
-        if online {
-            self.offline_probe_fails
-                .store(0, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-
     pub async fn refresh_connectivity(&self) -> bool {
         match self.api.ping().await {
             Ok(skew) => {
@@ -3710,11 +3712,15 @@ impl MadarCore {
         .await
         .map_err(net::map_api_error)?;
 
-        // Refresh the carried-over opening-cash suggestion from the server's
-        // prefill (the last *synced* declared closing). Only overwrite with a
-        // positive value, so a stale server 0 can't clobber a fresher local
-        // close that hasn't synced yet.
-        if prefill.suggested_opening_cash > 0 {
+        // Adopt the SERVER's carried-over opening-cash suggestion (its last synced
+        // declared closing) only when we're FULLY SYNCED — internet reachable AND
+        // no queued ops. A still-queued close means the server's last-close figure
+        // is stale, so the locally-cached value (set when we closed) is the fresher
+        // truth; online-but-unsynced and fully-offline both keep the local
+        // suggestion. The `> 0` guard additionally stops a server 0 (no prior close
+        // it knows of) from clobbering a good local value.
+        let fully_synced = self.store.pending_count().map(|n| n == 0).unwrap_or(false);
+        if fully_synced && prefill.suggested_opening_cash > 0 {
             shift::cache_suggested_opening_cash(&self.store, prefill.suggested_opening_cash as i64)?;
         }
 
