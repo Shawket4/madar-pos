@@ -144,21 +144,26 @@ struct ShiftReportPreviewView: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
+    /// A specific PAST shift's report (from Past Shifts), or nil to show the current
+    /// shift's report (loaded on appear). The preview is fully on-screen → no printer
+    /// needed.
+    var report: ShiftReportView? = nil
     let onClose: () -> Void
 
     private var currency: String { app.session?.currencyCode ?? "" }
+    private var shown: ShiftReportView? { report ?? app.shiftReport }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(t("shift.report_title")).font(.ui(18, .bold)).foregroundStyle(theme.colors.textPrimary)
-                    if let s = app.shift {
-                        Text(s.tellerName).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
+                    if let teller = report?.tellerName ?? app.shift?.tellerName {
+                        Text(teller).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
                     }
                 }
                 Spacer()
-                if let r = app.shiftReport {
+                if let r = shown {
                     StatusChip(label: r.fromServer ? t("chrome.online") : t("chrome.offline"),
                                tone: r.fromServer ? .success : .warning)
                 }
@@ -169,7 +174,7 @@ struct ShiftReportPreviewView: View {
 
             ScrollView {
                 VStack(spacing: Space.lg) {
-                    if let r = app.shiftReport {
+                    if let r = shown {
                         ShiftReportBreakdown(report: r, currency: currency)
                     } else {
                         ProgressView().padding(Space.xl)
@@ -187,7 +192,7 @@ struct ShiftReportPreviewView: View {
             .background(theme.colors.surface)
             .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
         }
-        .task { await app.loadShiftReport() }
+        .task { if report == nil { await app.loadShiftReport() } }
     }
 
     @ViewBuilder private var printControl: some View {
@@ -202,7 +207,7 @@ struct ShiftReportPreviewView: View {
                 icon: "printer",
                 loading: app.printState == .printing
             ) {
-                Task { await app.printShiftReport() }
+                Task { if let r = shown { await app.printReportView(r) } }
             }
         }
     }

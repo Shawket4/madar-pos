@@ -34,6 +34,9 @@ pub struct DeliveryOrderView {
     pub delivery_fee_minor: i64,
     pub total_minor: i64,
     pub item_count: i64,
+    /// The order's actual priced lines, projected from the frozen `cart.lines`
+    /// snapshot into the SAME shape tickets use — so both render identically.
+    pub lines: Vec<crate::tickets::TicketLineView>,
     pub created_at: String,
     /// `true` once the order reached a terminal state (delivered/cancelled/rejected).
     pub is_terminal: bool,
@@ -62,12 +65,10 @@ pub struct DeliveryFinalizeView {
 /// Project a wire `DeliveryOrder` into the view. `locale` localizes the address
 /// "Unit"/"Floor" prefixes.
 pub(crate) fn order_view(o: &models::DeliveryOrder, locale: &str) -> DeliveryOrderView {
-    let item_count = o
-        .cart
-        .get("items")
-        .and_then(|v| v.as_array())
-        .map(|a| a.len() as i64)
-        .unwrap_or(0);
+    // The frozen snapshot stores its priced lines under `cart.lines` (a
+    // `CartSnapshot`), NOT `cart.items` — reading the wrong key left every delivery
+    // order showing "0 items" with no line detail.
+    let lines = cart_lines(&o.cart);
     DeliveryOrderView {
         id: o.id.to_string(),
         order_ref: o.delivery_ref.clone().flatten().filter(|s| !s.is_empty()),
@@ -82,9 +83,65 @@ pub(crate) fn order_view(o: &models::DeliveryOrder, locale: &str) -> DeliveryOrd
         discount_minor: o.discount_amount.unwrap_or(0) as i64,
         delivery_fee_minor: o.delivery_fee as i64,
         total_minor: o.total as i64,
-        item_count,
+        item_count: lines.len() as i64,
+        lines,
         created_at: o.created_at.to_rfc3339(),
         is_terminal: matches!(o.status.as_str(), "delivered" | "cancelled" | "rejected"),
+    }
+}
+
+/// Project the frozen cart's priced `lines` into display lines, reusing the ticket
+/// line shape so the tickets + delivery details render through one component.
+/// Tolerant of field-name variants so it works with the wire snapshot and tests.
+fn cart_lines(cart: &serde_json::Value) -> Vec<crate::tickets::TicketLineView> {
+    cart.get("lines")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(project_line).collect())
+        .unwrap_or_default()
+}
+
+fn project_line(l: &serde_json::Value) -> crate::tickets::TicketLineView {
+    let str_of = |k: &str| {
+        l.get(k)
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .filter(|s| !s.is_empty())
+    };
+    let name = str_of("item_name").or_else(|| str_of("name")).unwrap_or_default();
+    let qty = l
+        .get("quantity")
+        .or_else(|| l.get("qty"))
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(1) as i32;
+    let line_total = l
+        .get("line_total")
+        .or_else(|| l.get("line_total_minor"))
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    // Modifiers: addon names (× qty when > 1), then chosen optional/field names.
+    let mut modifiers: Vec<String> = Vec::new();
+    if let Some(addons) = l.get("addons").and_then(|v| v.as_array()) {
+        for a in addons {
+            if let Some(n) = a.get("addon_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                let q = a.get("quantity").and_then(serde_json::Value::as_i64).unwrap_or(1);
+                modifiers.push(if q > 1 { format!("{n} ×{q}") } else { n.to_string() });
+            }
+        }
+    }
+    if let Some(opts) = l.get("optionals").and_then(|v| v.as_array()) {
+        for opt in opts {
+            if let Some(n) = opt.get("field_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                modifiers.push(n.to_string());
+            }
+        }
+    }
+    crate::tickets::TicketLineView {
+        name,
+        qty,
+        size_label: str_of("size_label"),
+        modifiers,
+        line_total_minor: line_total,
+        voided: false,
     }
 }
 
@@ -127,15 +184,18 @@ pub(crate) fn settings_view(s: &models::BranchDeliverySettings) -> DeliverySetti
     }
 }
 
-/// The forward status step after `current` (Flutter's single-step advance).
-/// `None` at a terminal/last-workable state.
+/// The forward status step after `current` (single-step advance). `None` at a
+/// terminal/last-workable state. NOTE: `out_for_delivery` is the LAST step the
+/// `/status` endpoint accepts — it only validates the line steps received→
+/// out_for_delivery. `delivered` is reached ONLY by `finalize` (which records the
+/// sale), so advancing into it via `/status` 400s. The board therefore stops the
+/// Advance action at out_for_delivery and offers Finalize for the terminal step.
 pub fn next_status(current: &str) -> Option<&'static str> {
     match current {
         "received" => Some("confirmed"),
         "confirmed" => Some("preparing"),
         "preparing" => Some("ready"),
         "ready" => Some("out_for_delivery"),
-        "out_for_delivery" => Some("delivered"),
         _ => None,
     }
 }
@@ -148,7 +208,8 @@ mod tests {
     fn status_advances_through_the_lifecycle_then_stops() {
         assert_eq!(next_status("received"), Some("confirmed"));
         assert_eq!(next_status("preparing"), Some("ready"));
-        assert_eq!(next_status("out_for_delivery"), Some("delivered"));
+        // out_for_delivery is the last /status step — `delivered` is finalize-only.
+        assert_eq!(next_status("out_for_delivery"), None);
         assert_eq!(next_status("delivered"), None);
         assert_eq!(next_status("cancelled"), None);
     }
@@ -165,9 +226,11 @@ mod tests {
         chrono::DateTime::parse_from_rfc3339("2026-06-21T10:00:00+00:00").unwrap()
     }
 
-    fn cart_with_items(n: usize) -> serde_json::Value {
-        let items: Vec<serde_json::Value> = (0..n).map(|i| serde_json::json!({ "name": format!("Item {i}") })).collect();
-        serde_json::json!({ "items": items })
+    fn cart_with_lines(n: usize) -> serde_json::Value {
+        let lines: Vec<serde_json::Value> = (0..n)
+            .map(|i| serde_json::json!({ "item_name": format!("Item {i}"), "quantity": 1, "line_total": 1000 }))
+            .collect();
+        serde_json::json!({ "lines": lines })
     }
 
     fn order(status: &str, channel: &str, cart: serde_json::Value) -> models::DeliveryOrder {
@@ -208,7 +271,7 @@ mod tests {
 
     #[test]
     fn order_view_maps_core_fields() {
-        let o = order("received", "outside", cart_with_items(3));
+        let o = order("received", "outside", cart_with_lines(3));
         let v = order_view(&o, "en");
         assert_eq!(v.id, o.id.to_string());
         assert_eq!(v.channel, "outside");
@@ -227,28 +290,56 @@ mod tests {
 
     #[test]
     fn order_view_discount_amount_passed_through() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.discount_amount = Some(750);
         let v = order_view(&o, "en");
         assert_eq!(v.discount_minor, 750);
     }
 
     #[test]
-    fn order_view_item_count_zero_when_no_items_key() {
+    fn order_view_item_count_zero_when_no_lines_key() {
         let mut o = order("received", "in_mall", serde_json::json!({}));
         let v = order_view(&o, "en");
         assert_eq!(v.item_count, 0);
-        // also when items is not an array
-        o.cart = serde_json::json!({ "items": "nope" });
+        assert!(v.lines.is_empty());
+        // also when lines is not an array
+        o.cart = serde_json::json!({ "lines": "nope" });
         assert_eq!(order_view(&o, "en").item_count, 0);
-        // and an empty items array
-        o.cart = serde_json::json!({ "items": [] });
+        // and an empty lines array
+        o.cart = serde_json::json!({ "lines": [] });
         assert_eq!(order_view(&o, "en").item_count, 0);
     }
 
     #[test]
+    fn order_view_projects_cart_lines_from_snapshot() {
+        // The real frozen shape: cart.lines[] of SnapshotLine (item_name/quantity/
+        // line_total/size_label/addons/optionals).
+        let cart = serde_json::json!({ "lines": [
+            {
+                "item_name": "Burger", "size_label": "Large", "quantity": 2, "line_total": 4500,
+                "addons": [{ "addon_name": "Extra cheese", "quantity": 2 }],
+                "optionals": [{ "field_name": "No onion" }]
+            },
+            { "item_name": "Fries", "quantity": 1, "line_total": 1500 }
+        ]});
+        let o = order("received", "outside", cart);
+        let v = order_view(&o, "en");
+        assert_eq!(v.item_count, 2, "count is the number of priced lines");
+        assert_eq!(v.lines.len(), 2);
+        let l = &v.lines[0];
+        assert_eq!(l.name, "Burger");
+        assert_eq!(l.qty, 2);
+        assert_eq!(l.size_label.as_deref(), Some("Large"));
+        assert_eq!(l.line_total_minor, 4500);
+        assert_eq!(l.modifiers, vec!["Extra cheese ×2".to_string(), "No onion".to_string()]);
+        assert!(!l.voided);
+        assert_eq!(v.lines[1].name, "Fries");
+        assert!(v.lines[1].modifiers.is_empty());
+    }
+
+    #[test]
     fn order_view_order_ref_blank_filtered() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.delivery_ref = Some(Some(String::new()));
         assert_eq!(order_view(&o, "en").order_ref, None);
         o.delivery_ref = Some(Some("D-DT-0042".into()));
@@ -259,7 +350,7 @@ mod tests {
 
     #[test]
     fn order_view_delivery_notes_blank_filtered() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.delivery_notes = Some(Some(String::new()));
         assert_eq!(order_view(&o, "en").delivery_notes, None);
         o.delivery_notes = Some(Some("Leave at door".into()));
@@ -271,7 +362,7 @@ mod tests {
     #[test]
     fn order_view_terminal_states() {
         for s in ["delivered", "cancelled", "rejected"] {
-            let o = order(s, "outside", cart_with_items(1));
+            let o = order(s, "outside", cart_with_lines(1));
             assert!(order_view(&o, "en").is_terminal, "{s} should be terminal");
         }
     }
@@ -279,7 +370,7 @@ mod tests {
     #[test]
     fn order_view_non_terminal_states() {
         for s in ["received", "confirmed", "preparing", "ready", "out_for_delivery"] {
-            let o = order(s, "outside", cart_with_items(1));
+            let o = order(s, "outside", cart_with_lines(1));
             assert!(!order_view(&o, "en").is_terminal, "{s} should not be terminal");
         }
     }
@@ -288,7 +379,7 @@ mod tests {
 
     #[test]
     fn order_view_address_full_order_and_prefixes() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.place_name = Some(Some("Tower A".into()));
         o.address_line = Some(Some("12 Main St".into()));
         o.unit_number = Some(Some("4B".into()));
@@ -300,7 +391,7 @@ mod tests {
 
     #[test]
     fn order_view_address_arabic_prefixes() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.unit_number = Some(Some("4B".into()));
         o.floor = Some(Some("3".into()));
         let v = order_view(&o, "ar");
@@ -309,7 +400,7 @@ mod tests {
 
     #[test]
     fn order_view_address_skips_blanks_and_whitespace() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.place_name = Some(Some("Tower A".into()));
         o.address_line = Some(Some(String::new())); // blank skipped
         o.unit_number = Some(Some("   ".into()));    // whitespace skipped
@@ -321,13 +412,13 @@ mod tests {
 
     #[test]
     fn order_view_address_none_when_all_absent() {
-        let o = order("received", "outside", cart_with_items(1));
+        let o = order("received", "outside", cart_with_lines(1));
         assert_eq!(order_view(&o, "en").address, None);
     }
 
     #[test]
     fn order_view_address_none_when_all_blank() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.place_name = Some(Some("  ".into()));
         o.address_line = Some(Some(String::new()));
         o.floor = Some(Some(" ".into()));
@@ -336,7 +427,7 @@ mod tests {
 
     #[test]
     fn order_view_address_unit_only() {
-        let mut o = order("received", "outside", cart_with_items(1));
+        let mut o = order("received", "outside", cart_with_lines(1));
         o.unit_number = Some(Some("9".into()));
         let v = order_view(&o, "en");
         assert_eq!(v.address.as_deref(), Some("Unit 9"));
@@ -391,7 +482,8 @@ mod tests {
         }
         assert_eq!(
             seen,
-            vec!["received", "confirmed", "preparing", "ready", "out_for_delivery", "delivered"]
+            // Stops at out_for_delivery — `delivered` is reached via finalize, not /status.
+            vec!["received", "confirmed", "preparing", "ready", "out_for_delivery"]
         );
     }
 }

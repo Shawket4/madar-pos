@@ -64,6 +64,8 @@ pub mod lan;
 pub mod session;
 /// Shift lifecycle — open/current via the outbox (PLAN §7.4).
 pub mod shift;
+/// Reservations & floor-plan view types (host operations exported from `lib.rs`).
+pub mod reservations;
 /// Local store — SQLite mirror + durable outbox + id_map + sync cursors (PLAN §8).
 pub mod store;
 /// Branch-timezone-aware timestamp formatting for display (mirrors Flutter AppTz).
@@ -411,6 +413,13 @@ impl MadarCore {
         if let Some(ts) = self.token_store.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             ts.clear_blob();
         }
+        // Tear down any live realtime stream + listener so the next sign-in starts
+        // clean. start_realtime's "already subscribed" guard would otherwise see the
+        // stale handle and no-op, leaving the NEXT user with no events. Host signOut
+        // calls unsubscribe_realtime, but the error/timeout logout paths don't — so
+        // make logout itself bulletproof.
+        self.unsubscribe_realtime();
+        *self.unified_listener.lock().unwrap_or_else(|e| e.into_inner()) = None;
         // NB: the cached shift is intentionally KEPT (device drawer state) — see
         // the ownership gate in `sign_in`.
         let _ = cart::clear(&self.store);
@@ -424,9 +433,10 @@ impl MadarCore {
 impl MadarCore {
     /// Fetch a synced order's full record, CACHING it write-through so its detail +
     /// reprint work OFFLINE. Online: fetch + `cache:order:{id}`. Offline / on error:
-    /// the cached copy (populated here or by a prior list with items). Errors only
-    /// for a synced order this device has never seen online. Non-exported (returns a
-    /// raw `OrderFull`, not a uniffi type) — the public methods project it.
+    /// the cached `OrderFull` (populated here when the order was opened once online —
+    /// the list path can't, its element is the items-less `models::Order`). Errors
+    /// only for a synced order this device has never seen online. Non-exported
+    /// (returns a raw `OrderFull`, not a uniffi type) — the public methods project it.
     async fn get_order_or_cache(&self, order_id: &str) -> Result<madar_api::models::OrderFull, CoreError> {
         use madar_api::apis::orders_api;
         let key = format!("cache:order:{order_id}");
@@ -824,7 +834,17 @@ impl MadarCore {
                 // (else the receipt's order_ref reports under a different day).
                 let original = cmd.request.created_at;
                 rebase_dopt(&mut cmd.request.created_at, delta);
-                if self.crosses_branch_day(&original, &cmd.request.created_at) {
+                // Keep the original day-stamp when rebasing would cross the branch-day
+                // baked into order_ref — UNLESS the original sits in the SERVER's future
+                // beyond tolerance (the device clock ran ahead across midnight). The
+                // backend rejects a future created_at (reject_if_future, 5-min slack)
+                // and would DEAD-LETTER the sale, so there the server-aligned rebased
+                // value wins: a one-off order_ref day mismatch beats losing the sale.
+                let original_is_future = original
+                    .flatten()
+                    .map(|dt| dt.with_timezone(&chrono::Utc) > self.corrected_now() + chrono::Duration::minutes(4))
+                    .unwrap_or(false);
+                if !original_is_future && self.crosses_branch_day(&original, &cmd.request.created_at) {
                     cmd.request.created_at = original;
                 }
                 (
@@ -876,7 +896,12 @@ impl MadarCore {
                 };
                 (
                     serde_json::json!({ "op": "add_ticket_round", "teller_id": teller_id, "ticket_id": cmd.ticket_id, "request": cmd.request }),
-                    Idem::Yes,
+                    // A genuine round-retry dedups to 200 server-side (on the round
+                    // idempotency key, checked before the conflict gate). So a 409
+                    // ("round to a settled/voided ticket") or 404 (ticket never
+                    // landed) is a REAL conflict — dead-letter it (surface in the
+                    // stuck list) instead of silently acking the lost round.
+                    Idem::No,
                 )
             }
             "settle_open_ticket" => {
@@ -886,7 +911,12 @@ impl MadarCore {
                 };
                 (
                     serde_json::json!({ "op": "settle_open_ticket", "teller_id": teller_id, "ticket_id": cmd.ticket_id, "request": cmd.request }),
-                    Idem::Yes,
+                    // A genuine settle-retry of an already-settled ticket dedups to
+                    // 200 (the existing order, keyed on the ticket id). So the only
+                    // 409 ("settle a voided ticket") or 404 (the fire never landed)
+                    // is a REAL conflict — the cashier took cash but no order would
+                    // exist. Dead-letter it (stuck list) instead of acking a lost sale.
+                    Idem::No,
                 )
             }
             "void_ticket" => {
@@ -970,7 +1000,19 @@ impl MadarCore {
                         if let Ok(server) =
                             serde_json::from_value::<madar_api::models::Shift>(obj.clone())
                         {
-                            let _ = shift::save(&self.store, &server);
+                            // Only refresh the local shift when this ack is for the
+                            // shift the device is CURRENTLY on. A late ack of a prior or
+                            // abandoned optimistic open (the teller has since closed it
+                            // or moved to another shift) must NOT clobber the newer
+                            // current shift with this stale server snapshot.
+                            let is_current = shift::current(&self.store)
+                                .ok()
+                                .flatten()
+                                .map(|s| s.id)
+                                == Some(server.id.to_string());
+                            if is_current {
+                                let _ = shift::save(&self.store, &server);
+                            }
                             SendOutcome::Acked(Some(server.id.to_string()))
                         } else {
                             SendOutcome::Acked(None)
@@ -1171,6 +1213,32 @@ fn classify_send(err: CoreError, idem: Idem) -> SendOutcome {
             _ => SendOutcome::Dead(detail),
         },
     }
+}
+
+/// Map the host's friendlier void-reason key to the backend's accepted enum
+/// (`customer_request` | `wrong_order` | `quality_issue` | `other`). Backend keys
+/// pass through unchanged, and anything unrecognized falls back to `other` (always
+/// accepted) so a void never dead-letters on a reason-vocabulary mismatch — which
+/// would silently keep a refunded sale as revenue.
+fn map_void_reason(reason: &str) -> String {
+    match reason {
+        "customer" | "customer_request" => "customer_request",
+        "mistake" | "wrong_order" => "wrong_order",
+        "quality" | "quality_issue" => "quality_issue",
+        _ => "other",
+    }
+    .to_string()
+}
+
+/// Narrow a minor-unit cash amount to the i32 the wire expects, REJECTING a value
+/// that doesn't fit rather than silently wrapping it to a negative (a corrupt
+/// amount that would mis-reconcile the drawer). Amounts this large are never real
+/// cash, so a validation error is the right surface.
+fn cash_i32(v: i64, field: &str) -> Result<i32, CoreError> {
+    i32::try_from(v).map_err(|_| CoreError::Validation {
+        field: field.into(),
+        detail: "amount is out of range".into(),
+    })
 }
 
 // ── offline read cache (server lists mirrored to kv) ─────────────────────────
@@ -1605,7 +1673,29 @@ fn mirror_replay_op(store: &store::Store, envelope_json: &str) {
     let Ok(env) = serde_json::from_str::<serde_json::Value>(envelope_json) else { return };
     let op = env.get("op").and_then(|v| v.as_str()).unwrap_or_default();
     let teller_id = env.get("teller_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-    // A stable id for dedup: the op kind + its primary idempotency handle.
+    let event_at = chrono::Utc::now().to_rfc3339();
+
+    // Kitchen bump/unbump TOGGLE one line's state. Key the backup LINE-scoped (op-
+    // agnostic) and UPSERT so the LATEST tap wins: a bump→unbump→bump burst must not
+    // dedup-keep the first bump and then replay the stale unbump if the device dies.
+    if op == "bump_kitchen_item" || op == "unbump_kitchen_item" {
+        let line = env.get("item_id").and_then(|v| v.as_str()).unwrap_or(op);
+        let _ = store.upsert_mirror(&store::NewOutboxOp {
+            id: format!("lanmirror:kline:{line}"),
+            op_type: "lan_mirror".into(),
+            idempotency_key: format!("kline:{line}"),
+            payload: envelope_json.to_string(),
+            event_at,
+            depends_on_seq: None,
+            user_id: teller_id,
+            clock_offset_ms: None,
+            shift_id: None,
+        });
+        return;
+    }
+
+    // Every other op is distinct (its own idempotency key) → keep-first dedup on the
+    // op kind + its primary idempotency handle.
     let handle = env
         .get("request")
         .and_then(|r| r.get("idempotency_key"))
@@ -1613,13 +1703,12 @@ fn mirror_replay_op(store: &store::Store, envelope_json: &str) {
         .or_else(|| env.get("item_id").and_then(|v| v.as_str()))
         .or_else(|| env.get("ticket_id").and_then(|v| v.as_str()))
         .unwrap_or(op);
-    let op_id = format!("lanmirror:{op}:{handle}");
     let _ = store.enqueue(&store::NewOutboxOp {
-        id: op_id,
+        id: format!("lanmirror:{op}:{handle}"),
         op_type: "lan_mirror".into(),
         idempotency_key: format!("{op}:{handle}"),
         payload: envelope_json.to_string(),
-        event_at: chrono::Utc::now().to_rfc3339(),
+        event_at,
         depends_on_seq: None,
         user_id: teller_id,
         clock_offset_ms: None,
@@ -2655,7 +2744,7 @@ impl MadarCore {
         };
         let shift_id = uuid::Uuid::new_v4();
         let opened_at = self.corrected_now().fixed_offset();
-        let opening_cash = opening_cash_minor as i32;
+        let opening_cash = cash_i32(opening_cash_minor, "opening_cash")?;
         // A non-empty discrepancy reason ⇒ the teller deviated from the carried-
         // over closing. The server re-derives this authoritatively; we mirror it
         // locally for display and pass the reason through.
@@ -2731,7 +2820,7 @@ impl MadarCore {
             .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
 
         let closed_at = self.corrected_now().fixed_offset();
-        let mut request = madar_api::models::CloseShiftRequest::new(closing_cash_minor as i32);
+        let mut request = madar_api::models::CloseShiftRequest::new(cash_i32(closing_cash_minor, "closing_cash")?);
         request.cash_note = Some(cash_note);
         request.closed_at = Some(Some(closed_at));
 
@@ -2777,7 +2866,9 @@ impl MadarCore {
         use madar_api::apis::shifts_api;
         let shift = shift::current(&self.store)?
             .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no shift".into() })?;
-        let queued_cash = checkout::queued_cash_total(&self.store)?;
+        // Scope to THIS shift — a prior shift's still-undrained cash sales sit in the
+        // outbox too, and counting them would overstate this drawer's expected cash.
+        let queued_cash = checkout::queued_cash_total_for(&self.store, &shift.id)?;
         let online = self.current_session().map(|s| s.online).unwrap_or(false);
         if online {
             let res = shifts_api::get_shift_report(
@@ -2828,11 +2919,23 @@ impl MadarCore {
             .filter(|s| s.is_open)
             .ok_or_else(|| CoreError::Validation { field: "shift".into(), detail: "no open shift".into() })?;
 
+        // Mirror the backend's validation up-front: a zero amount or empty note 400s
+        // there. Without this the drawer "moves" optimistically and the op then dead-
+        // letters, leaving the local view out of sync with a movement the server never
+        // recorded. Reject before queueing so the host shows the error immediately.
+        let note = note.trim().to_string();
+        if amount_minor == 0 {
+            return Err(CoreError::Validation { field: "amount".into(), detail: "amount cannot be zero".into() });
+        }
+        if note.is_empty() {
+            return Err(CoreError::Validation { field: "note".into(), detail: "a note is required for cash movements".into() });
+        }
+
         // The client_ref IS the outbox id — stable across replays so the backend
         // dedups on its `client_ref` unique index.
         let client_ref = uuid::Uuid::new_v4();
         let created_at = self.corrected_now().fixed_offset();
-        let mut request = madar_api::models::CashMovementRequest::new(amount_minor as i32, note.clone());
+        let mut request = madar_api::models::CashMovementRequest::new(cash_i32(amount_minor, "amount")?, note.clone());
         request.client_ref = Some(Some(client_ref));
         request.created_at = Some(Some(created_at));
         let cmd = shift::CashMovementCommand { shift_id: shift.id.clone(), request };
@@ -3071,6 +3174,44 @@ impl MadarCore {
     /// foreground + on a timer so the offline/clock-skew banners and the sync
     /// chip reflect reality without waiting for the next deliberate action.
     /// Returns the new online state.
+    /// If the live session is authenticated (holds a token) but its permissions
+    /// never loaded — a blip during sign-in left `permissions_loaded == false`, so
+    /// `has_permission` stays optimistically OPEN for the session lifetime (audit
+    /// #26) — re-fetch them now and lock the gate to the real grants. A token-LESS
+    /// offline-unlock can't fetch (no bearer); its security is enforced server-side
+    /// at `/sync/replay` instead (audit #12).
+    async fn refresh_permissions_if_needed(&self) {
+        use madar_api::apis::auth_api;
+        let needs = {
+            let g = self.session.read().unwrap_or_else(|e| e.into_inner());
+            g.as_ref().map(|s| s.token.is_some() && !s.snapshot.permissions_loaded).unwrap_or(false)
+        };
+        if !needs {
+            return;
+        }
+        let Ok(p) = auth_api::get_my_permissions(&self.api.config()).await else { return };
+        let perms = session::permissions_from(&p);
+        // Update under the write lock, capture the blob, then RELEASE before touching
+        // the token store (persist_and_set locks them token-store-then-session, so we
+        // must not hold session while locking the token store — avoid a lock cycle).
+        let blob = {
+            let mut g = self.session.write().unwrap_or_else(|e| e.into_inner());
+            match g.as_mut() {
+                Some(s) if s.token.is_some() && !s.snapshot.permissions_loaded => {
+                    s.permissions = perms;
+                    s.snapshot.permissions_loaded = true;
+                    Some(s.to_blob())
+                }
+                _ => None,
+            }
+        };
+        if let Some(blob) = blob {
+            if let Some(ts) = self.token_store.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                ts.save_blob(blob);
+            }
+        }
+    }
+
     pub async fn refresh_connectivity(&self) -> bool {
         match self.api.ping().await {
             Ok(skew) => {
@@ -3092,6 +3233,10 @@ impl MadarCore {
                 // drains on this pass instead of waiting out the network window.
                 let _ = self.store.clear_network_backoff();
                 let _ = self.drain_outbox().await; // best-effort
+                // Lock the client permission gate to the REAL grants if a sign-in
+                // perms-blip left it optimistically open (audit #26) — now that
+                // connectivity is confirmed, re-fetch.
+                self.refresh_permissions_if_needed().await;
                 true
             }
             Err(_) => {
@@ -3121,7 +3266,7 @@ impl MadarCore {
         };
 
         // Always show the still-queued sales (offline-safe).
-        let mut all = orders::queued(&self.store, &shift.id)?;
+        let all = orders::queued(&self.store, &shift.id)?;
 
         // The shift's SYNCED orders: live when online (cached write-through), else
         // the last-synced snapshot. So going offline keeps the orders already synced
@@ -3145,10 +3290,11 @@ impl MadarCore {
             };
             match orders_api::list_orders(&self.api.config(), params).await {
                 Ok(page) => {
-                    // Preload each full order for OFFLINE detail + reprint.
-                    for o in &page.data {
-                        cache_views(&self.store, &format!("cache:order:{}", o.id), std::slice::from_ref(o));
-                    }
+                    // Do NOT preload page.data into cache:order:{id} for offline reprint:
+                    // the list element is models::Order (no `items` field), so it can't
+                    // deserialize as the OrderFull that get_order_or_cache reads — that
+                    // was a silent offline-reprint failure. The real OrderFull is cached
+                    // when the order is opened once online (see get_order_or_cache).
                     let views: Vec<_> = page.data.iter().map(|o| orders::from_server(o)).collect();
                     cache_views(&self.store, &key, &views);
                     views
@@ -3222,7 +3368,7 @@ impl MadarCore {
         // Queued (offline-rung) orders for THIS shift first — a shift opened AND
         // sold on entirely offline has ALL its orders here, not on the server, so
         // without this its history would be empty offline.
-        let mut all = orders::queued(&self.store, &shift_id)?;
+        let all = orders::queued(&self.store, &shift_id)?;
         let mut server: Vec<orders::OrderSummaryView> = if online {
             let params = orders_api::ListOrdersParams {
                 branch_id: Some(branch_id),
@@ -3241,10 +3387,11 @@ impl MadarCore {
             };
             match orders_api::list_orders(&self.api.config(), params).await {
                 Ok(page) => {
-                    // Preload each full order for OFFLINE detail + reprint.
-                    for o in &page.data {
-                        cache_views(&self.store, &format!("cache:order:{}", o.id), std::slice::from_ref(o));
-                    }
+                    // Do NOT preload page.data into cache:order:{id} for offline reprint:
+                    // the list element is models::Order (no `items` field), so it can't
+                    // deserialize as the OrderFull that get_order_or_cache reads — that
+                    // was a silent offline-reprint failure. The real OrderFull is cached
+                    // when the order is opened once online (see get_order_or_cache).
                     let views: Vec<_> = page.data.iter().map(|o| orders::from_server(o)).collect();
                     cache_views(&self.store, &key, &views);
                     views
@@ -3439,7 +3586,10 @@ impl MadarCore {
             return Err(CoreError::Unauthenticated { detail: "not signed in".into() });
         }
         let voided_at = self.corrected_now().fixed_offset();
-        let mut request = madar_api::models::VoidOrderRequest::new(reason);
+        // Translate the host reason key to the backend's accepted vocabulary — an
+        // unmapped value (e.g. the old "mistake"/"customer"/"quality") would 400 and
+        // dead-letter the void, leaving the refunded order counted as revenue.
+        let mut request = madar_api::models::VoidOrderRequest::new(map_void_reason(&reason));
         request.note = Some(note);
         request.restore_inventory = Some(Some(restore_inventory));
         request.voided_at = Some(Some(voided_at));
@@ -3853,9 +4003,20 @@ impl MadarCore {
             idempotency_key: op_id.clone(),
             payload: serde_json::to_string(&cmd)?,
             event_at: self.corrected_now().to_rfc3339(),
-            // Settle attaches to the cashier's shift; gate behind that shift's open
-            // if it's still queued (mirrors the order create-path gating).
-            depends_on_seq: self.store.live_seq_of(&shift_id)?,
+            // Settle has TWO prerequisites: the ticket's fire must have landed (else
+            // the backend 404s and — now that settle is non-idempotent — dead-letters
+            // the paid sale), AND it attaches to the cashier's shift's open. Gate on
+            // whichever is enqueued later (its ack implies the earlier one drained
+            // first under FIFO). When the fire was rung on another device it isn't in
+            // this outbox (live_seq_of → None) and is already server-side, so the
+            // shift gate alone applies.
+            depends_on_seq: [
+                self.store.live_seq_of(&ticket_id)?,
+                self.store.live_seq_of(&shift_id)?,
+            ]
+            .into_iter()
+            .flatten()
+            .max(),
             user_id,
             clock_offset_ms,
             shift_id: Some(shift_id.clone()),
@@ -4408,6 +4569,26 @@ mod tests {
         .to_string();
         mirror_replay_op(&store, &fire);
         assert_eq!(store.pending().unwrap().len(), 2, "distinct op → distinct backup");
+    }
+
+    #[test]
+    fn mirror_kitchen_toggle_keeps_the_latest_tap() {
+        let store = store::Store::open("").unwrap();
+        let bump = serde_json::json!({ "op": "bump_kitchen_item", "teller_id": "t1", "item_id": "k9" }).to_string();
+        let unbump = serde_json::json!({ "op": "unbump_kitchen_item", "teller_id": "t1", "item_id": "k9" }).to_string();
+        // bump → unbump → bump on ONE line collapses to a single line-scoped backup
+        // that ends on the LATEST tap (bump) — NOT the first bump with the unbump still
+        // queued behind it (which would replay a stale state if the device died).
+        mirror_replay_op(&store, &bump);
+        mirror_replay_op(&store, &unbump);
+        mirror_replay_op(&store, &bump);
+        let pending = store.pending().unwrap();
+        assert_eq!(pending.len(), 1, "one line-scoped backup, not three");
+        assert_eq!(pending[0].payload, bump, "backup reflects the LATEST tap");
+        // A different line keeps its own backup.
+        let other = serde_json::json!({ "op": "bump_kitchen_item", "teller_id": "t1", "item_id": "k7" }).to_string();
+        mirror_replay_op(&store, &other);
+        assert_eq!(store.pending().unwrap().len(), 2, "a different line → its own backup");
     }
 
     #[test]
@@ -5262,5 +5443,140 @@ mod lifecycle_tests {
         assert!(!core.api.has_bearer(), "no token to use");
         assert!(!core.borrowed_token.load(std::sync::atomic::Ordering::Relaxed));
         assert!(!core.sync_status().unwrap().auth_paused, "no banner on a fresh offline unlock (nothing expired)");
+    }
+}
+
+// ── Reservations & floor plan (host operations) ───────────────────────────────
+// View types + conversions live in `reservations.rs`; these exported methods are
+// here so they can reach MadarCore's private `api` + session via `self`. These
+// are LIVE host actions (not offline outbox ops) — direct calls to the backend.
+#[uniffi::export(async_runtime = "tokio")]
+impl MadarCore {
+    /// Floor sections for the signed-in branch (dashboard-authored geometry).
+    pub async fn list_floor_sections(
+        &self,
+    ) -> Result<Vec<reservations::FloorSectionView>, CoreError> {
+        use madar_api::apis::reservations_api;
+        let branch_id = self.reservations_branch()?;
+        let rows = reservations_api::list_sections(
+            &self.api.config(),
+            reservations_api::ListSectionsParams { branch_id },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    /// Tables (geometry + live status) for the signed-in branch.
+    pub async fn list_floor_tables(&self) -> Result<Vec<reservations::FloorTableView>, CoreError> {
+        use madar_api::apis::reservations_api;
+        let branch_id = self.reservations_branch()?;
+        let rows = reservations_api::list_floor_tables(
+            &self.api.config(),
+            reservations_api::ListFloorTablesParams { branch_id },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    /// Active bookings (reservations + waitlist) for the signed-in branch.
+    pub async fn list_reservations(&self) -> Result<Vec<reservations::ReservationView>, CoreError> {
+        use madar_api::apis::reservations_api;
+        let branch_id = self.reservations_branch()?;
+        let rows = reservations_api::list_bookings(
+            &self.api.config(),
+            reservations_api::ListBookingsParams { branch_id, status: None, date: None },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    /// Seat a party onto one or more tables (multiple ⇒ merged tables). The
+    /// backend opens a dine-in ticket on the primary table.
+    pub async fn seat_reservation(
+        &self,
+        booking_id: String,
+        table_ids: Vec<String>,
+    ) -> Result<reservations::ReservationView, CoreError> {
+        use madar_api::apis::reservations_api;
+        let ids = reservations::parse_uuids("table_ids", &table_ids)?;
+        let view = reservations_api::assign_tables(
+            &self.api.config(),
+            reservations_api::AssignTablesParams {
+                id: booking_id,
+                assign_tables_request: madar_api::models::AssignTablesRequest::new(ids),
+            },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(view.into())
+    }
+
+    /// Set a table's live status (`free` | `held` | `seated` | `dirty`).
+    pub async fn set_floor_table_status(
+        &self,
+        table_id: String,
+        status: String,
+    ) -> Result<reservations::FloorTableView, CoreError> {
+        use madar_api::apis::reservations_api;
+        let view = reservations_api::set_table_status(
+            &self.api.config(),
+            reservations_api::SetTableStatusParams {
+                id: table_id,
+                set_table_status_request: madar_api::models::SetTableStatusRequest::new(status),
+            },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(view.into())
+    }
+
+    /// Send the booking's nudge (reservation departure / waitlist ready).
+    pub async fn notify_reservation(
+        &self,
+        booking_id: String,
+    ) -> Result<reservations::ReservationView, CoreError> {
+        use madar_api::apis::reservations_api;
+        let view = reservations_api::notify_booking(
+            &self.api.config(),
+            reservations_api::NotifyBookingParams { id: booking_id },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(view.into())
+    }
+
+    /// Move an open ticket to another table (the "switch table" action). Frees the
+    /// old table, occupies the new one, and keeps the booking assignment in sync.
+    pub async fn move_ticket_to_table(
+        &self,
+        ticket_id: String,
+        table_id: String,
+    ) -> Result<(), CoreError> {
+        use madar_api::apis::open_tickets_api;
+        let tid = reservations::parse_uuid("table_id", &table_id)?;
+        open_tickets_api::move_ticket_table(
+            &self.api.config(),
+            open_tickets_api::MoveTicketTableParams {
+                id: ticket_id,
+                move_ticket_table_request: madar_api::models::MoveTicketTableRequest::new(tid),
+            },
+        )
+        .await
+        .map_err(net::map_api_error)?;
+        Ok(())
+    }
+}
+
+// Non-exported helper: the signed-in branch id, required for reservations calls.
+impl MadarCore {
+    fn reservations_branch(&self) -> Result<String, CoreError> {
+        let (_, branch) = self.org_branch()?;
+        branch.ok_or_else(|| CoreError::Validation {
+            field: "branch_id".into(),
+            detail: "no branch selected in this session".into(),
+        })
     }
 }

@@ -315,11 +315,7 @@ struct ItemDetailView: View {
 
     private var recipeSection: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
-            HStack(spacing: 6) {
-                MadarIcon("list.bullet.rectangle", size: 11)
-                    .foregroundStyle(theme.colors.accent)
-                sectionTitle(t("order.recipe"))
-            }
+            sectionTitle(t("order.recipe"))
             VStack(spacing: Space.sm) {
                 ForEach(Array(computedRecipe.enumerated()), id: \.offset) { _, r in
                     recipeRow(r)
@@ -369,7 +365,7 @@ struct ItemDetailView: View {
             withAnimation(Motion.standard) { showAll.toggle() }
         } label: {
             HStack(spacing: 6) {
-                MadarIcon(showAll ? "chevron.up" : "plus.circle", size: 12)
+                MadarIcon(showAll ? "chevron.up" : "plus", size: 12)
                 Text(showAll ? t("order.show_assigned_addons") : t("order.show_all_addons"))
                     .font(.ui(13, .semibold))
             }
@@ -573,37 +569,35 @@ struct ItemDetailView: View {
     private var footer: some View {
         let unsatisfied = firstUnsatisfied
         let canAdd = unsatisfied == nil
-        let label = !canAdd
-            ? "\(t("order.select_prefix")) \(unsatisfied!.title)"
-            : isConfiguring ? t("order.save_component")
-            : (app.detailEditKey == nil ? t("order.add_to_cart") : t("order.update_item"))
+        let label = if let unsatisfied {
+            "\(t("order.select_prefix")) \(unsatisfied.title)"
+        } else if isConfiguring {
+            t("order.save_component")
+        } else {
+            app.detailEditKey == nil ? t("order.add_to_cart") : t("order.update_item")
+        }
         let footerPrice = isConfiguring ? (addonsTotal + optionalsTotal) : lineTotal
         return VStack(spacing: Space.md) {
-            // Total row above the action (Flutter checkout/item-sheet footer).
+            // Prominent total block — tinted teal, the figure tellers look at
+            // (mirrors the cart's grand-total block in OrderView.CartFooter).
             HStack {
                 Text(t("order.total"))
-                    .font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
+                    .font(.ui(14, .bold)).foregroundStyle(theme.colors.accent)
                 Spacer()
                 Text(Money.format(footerPrice, currency))
-                    .font(.money(20, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                    .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
                     .contentTransition(.numericText())
             }
+            .padding(.horizontal, Space.md)
+            .padding(.vertical, Space.md)
+            .background(theme.colors.accentBg)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
             HStack(spacing: Space.md) {
                 if !isConfiguring {
                     miniStepper(qty, dec: { qty = Swift.max(1, qty - 1) }, inc: { qty = Swift.min(99, qty + 1) }, large: true)
                 }
                 Button {
-                    guard canAdd else { return }
-                    Haptics.impact()
-                    if let onConfigure {
-                        onConfigure(BundleComponentDraft(
-                            sizeLabel: size, addons: selectedAddons(),
-                            optionalIds: Array(optionals), extrasMinor: addonsTotal + optionalsTotal))
-                    } else {
-                        app.addConfigured(itemId: item.id, sizeLabel: size, addons: selectedAddons(),
-                                          optionalIds: Array(optionals), qty: Int64(qty),
-                                          notes: notes.isEmpty ? nil : notes)
-                    }
+                    commit(canAdd: canAdd)
                 } label: {
                     Text(label).font(.ui(14, .bold))
                         .foregroundStyle(theme.colors.textOnAccent)
@@ -616,17 +610,43 @@ struct ItemDetailView: View {
                 .allowsHitTesting(canAdd)
             }
         }
+        .animation(Motion.standard, value: footerPrice)
         .padding(.horizontal, Space.xl)
         .padding(.vertical, Space.md)
         .background(theme.colors.surface)
         .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
 
+    /// Commit the configured line — either save the bundle-component draft back to
+    /// the host (configure mode) or write the line to the cart. No-op until the
+    /// required groups are satisfied.
+    private func commit(canAdd: Bool) {
+        guard canAdd else { return }
+        Haptics.impact()
+        if let onConfigure {
+            onConfigure(BundleComponentDraft(
+                sizeLabel: size, addons: selectedAddons(),
+                optionalIds: Array(optionals), extrasMinor: addonsTotal + optionalsTotal))
+        } else {
+            app.addConfigured(itemId: item.id, sizeLabel: size, addons: selectedAddons(),
+                              optionalIds: Array(optionals), qty: Int64(qty),
+                              notes: notes.isEmpty ? nil : notes)
+        }
+    }
+
     // MARK: - Small parts
 
     private func sectionTitle(_ s: String) -> some View {
-        Text(s).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-            .textCase(.uppercase)
+        // Confident section label that matches the addon-group card headers — an
+        // accent dot + bold uppercase with tracking — so SIZE / NOTE / OPTIONALS
+        // read with the same authority as the bordered groups (not a faint muted
+        // afterthought).
+        HStack(spacing: Space.sm) {
+            Circle().fill(theme.colors.accent).frame(width: 8, height: 8)
+            Text(s).font(.ui(11, .bold)).tracking(0.6)
+                .foregroundStyle(theme.colors.textSecondary)
+                .textCase(.uppercase)
+        }
     }
 
     private func selectChip(label: String, sub: String?, active: Bool, action: @escaping () -> Void) -> some View {

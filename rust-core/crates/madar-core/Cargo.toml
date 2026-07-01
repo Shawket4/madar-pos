@@ -13,6 +13,12 @@ publish.workspace = true
 crate-type = ["lib", "cdylib", "staticlib"]
 name = "madar_core"
 
+# `fuzzing` is a real cfg that cargo-fuzz sets automatically (`--cfg fuzzing`) for
+# the `__fuzz` module + fuzz targets. Declare it so the `unexpected_cfgs` lint
+# recognizes it instead of warning — the cfg is genuine, not a typo.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
 [dependencies]
 # Proc-macro UniFFI (no .udl). "cli" gates uniffi_bindgen_main for the bin below;
 # "tokio" lets us export `async fn`s with `async_runtime = "tokio"`.

@@ -33,25 +33,80 @@ struct IncomingView: View {
         .task { await app.loadDeliveryOrders(); await app.loadOpenTickets() }
     }
 
+    // Raised header surface: back + title, then the live segmented tab bar.
     private var header: some View {
-        VStack(spacing: Space.sm) {
+        VStack(spacing: Space.md) {
             HStack(spacing: Space.md) {
                 Button { onClose() } label: {
-                    MadarIcon("chevron.backward", size: 17).foregroundStyle(theme.colors.textPrimary)
-                }.buttonStyle(.plain)
+                    MadarIcon("chevron.backward", size: IconSize.xl).foregroundStyle(theme.colors.textPrimary)
+                }
+                .buttonStyle(.pressable)
                 Text(t("incoming.title")).font(.ui(17, .heavy)).foregroundStyle(theme.colors.textPrimary)
                 Spacer()
             }
-            Picker("", selection: $app.incomingTab) {
-                Text(label(t("delivery.title"), deliveryCount)).tag(0)
-                Text(label(t("waiter.title"), ticketCount)).tag(1)
-            }
-            .pickerStyle(.segmented)
+            IncomingTabBar(
+                deliveryLabel: t("delivery.title"), deliveryCount: deliveryCount,
+                ticketLabel: t("waiter.title"), ticketCount: ticketCount,
+                selection: $app.incomingTab
+            )
         }
         .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
+}
 
-    private func label(_ s: String, _ n: Int) -> String { n > 0 ? "\(s) (\(n))" : s }
+/// The Incoming tab bar — a teal segmented control with live per-tab count
+/// badges. Replaces the stock `Picker(.segmented)` so it reads in the Madar
+/// design language (teal active fill, on-accent count pills, press-scale).
+private struct IncomingTabBar: View {
+    @Environment(\.theme) private var theme
+    let deliveryLabel: String
+    let deliveryCount: Int
+    let ticketLabel: String
+    let ticketCount: Int
+    @Binding var selection: Int
+
+    var body: some View {
+        HStack(spacing: Space.xs) {
+            IncomingTab(label: deliveryLabel, count: deliveryCount, active: selection == 0) { selection = 0 }
+            IncomingTab(label: ticketLabel, count: ticketCount, active: selection == 1) { selection = 1 }
+        }
+        .padding(Space.xs)
+        .background(theme.colors.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+    }
+}
+
+/// One segment — label + an optional count pill, teal fill when active. Mirrors
+/// the held-orders tab idiom (active = on-accent count pill, idle = surface).
+private struct IncomingTab: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let count: Int
+    let active: Bool
+    let onTap: () -> Void
+
+    private var fg: Color { active ? theme.colors.textOnAccent : theme.colors.textSecondary }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: Space.sm) {
+                Text(label).font(.ui(15, active ? .bold : .semibold))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.ui(11, .bold))
+                        .padding(.horizontal, Space.xs + 2).padding(.vertical, 1)
+                        .background(active ? theme.colors.textOnAccent.opacity(Opacity.border) : theme.colors.surface)
+                        .clipShape(Capsule())
+                }
+            }
+            .foregroundStyle(fg)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .background(active ? theme.colors.accent : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.xs, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+    }
 }

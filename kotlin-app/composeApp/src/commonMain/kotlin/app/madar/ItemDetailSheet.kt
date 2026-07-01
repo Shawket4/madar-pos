@@ -1,5 +1,6 @@
 package app.madar
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,7 +49,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +63,7 @@ import app.madar.ui.pressScale
 import app.madar.ui.Radii
 import app.madar.ui.Space
 import app.madar.ui.LocalMadarFont
+import app.madar.ui.Type
 import app.madar.ui.MadarTextField
 import app.madar.ui.madarColors
 import app.madar.ui.t
@@ -318,7 +319,7 @@ fun ItemDetailSheet(
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
             ) {
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(item.name, color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 18.sp)
                     item.description?.takeIf { it.isNotEmpty() }?.let {
                         Text(it, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp, maxLines = 2)
@@ -331,7 +332,7 @@ fun ItemDetailSheet(
                     horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 ) {
                     Text(
-                        Money.format(headerTotal, currency), color = c.navy, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                        Money.format(headerTotal, currency), color = c.navy, style = Type.money(14.sp, FontWeight.Bold),
                         modifier = Modifier.height(32.dp).clip(RoundedCornerShape(Radii.sm)).background(c.navyBg)
                             .padding(horizontal = 10.dp).wrapContentHeight(Alignment.CenterVertically),
                     )
@@ -347,7 +348,7 @@ fun ItemDetailSheet(
                     }
                     Box(
                         Modifier.size(32.dp).elevation(Elevation.CARD, RoundedCornerShape(Radii.sm)).clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
-                            .border(1.dp, c.border, RoundedCornerShape(Radii.sm)).clickable { requestClose() },
+                            .border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm)).clickable { requestClose() },
                         contentAlignment = Alignment.Center,
                     ) {
                         MadarIcon("xmark", tint = c.textMuted, size = IconSize.sm)
@@ -366,8 +367,8 @@ fun ItemDetailSheet(
         // footer (Add to Cart) is ALWAYS pinned and visible, never pushed off-screen.
         Column(
             Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
-                .padding(horizontal = Space.xl, vertical = Space.lg),
-            verticalArrangement = Arrangement.spacedBy(Space.lg),
+                .padding(start = Space.xl, end = Space.xl, top = Space.lg, bottom = Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
             // Recipe (revealed by the header button) — at the top so it's visible
             // on toggle. The core derives the effective ingredients for the live
@@ -375,10 +376,7 @@ fun ItemDetailSheet(
             val recipeLines = if (showRecipe) model.recipePreview(item.id, size, selectedAddons, optionals.toList()) else emptyList()
             if (showRecipe && recipeLines.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        MadarIcon("list.bullet.rectangle", tint = c.accent, size = IconSize.xs)
-                        SectionTitle(t("order.recipe"))
-                    }
+                    SectionTitle(t("order.recipe"))
                     // One card per ingredient (Swift recipeRow / Flutter
                     // _RecipeIngredientRow): a fixed quantity box on the LEFT, the
                     // name in the middle, and the source chip pinned RIGHT so every
@@ -438,12 +436,7 @@ fun ItemDetailSheet(
             // "Show all add-ons" only when there's actually more to reveal (the
             // allow-list is hiding options, or there are off-screen addon types).
             if (hasMore) {
-                Text(
-                    (if (showAll) "▲ " else "＋ ") + t(if (showAll) "order.show_assigned_addons" else "order.show_all_addons"),
-                    color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                    modifier = Modifier.fillMaxWidth().clickable { showAll = !showAll }.padding(vertical = Space.sm),
-                    textAlign = TextAlign.Center,
-                )
+                ShowAllToggle(showAll) { showAll = !showAll }
             }
             val fields = item.optionalFields.filter { it.isActive }
             if (fields.isNotEmpty()) {
@@ -459,7 +452,7 @@ fun ItemDetailSheet(
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         shownOpts.forEach { f ->
                             val on = f.id in optionals
-                            AddonOptionChip(f.name, f.priceMinor, on, multi = true, currency) {
+                            OptionalChip(f.name, f.priceMinor, on, currency) {
                                 optionals = if (on) optionals - f.id else optionals + f.id
                             }
                         }
@@ -484,15 +477,33 @@ fun ItemDetailSheet(
         } else if (model.detailEditKey == null) t("order.add_to_cart") else t("order.update_item")
         // Configure mode sums only the extras (the bundle covers the base).
         val footerPrice = if (isConfiguring) addonsTotal + optionalsTotal else lineTotal
+        // Commit the configured line — save the bundle-component draft back to the
+        // host (configure mode), else write the line to the cart.
+        val commit: () -> Unit = {
+            if (onConfigure != null) {
+                onConfigure(BundleComponentDraft(size, selectedAddons, optionals.toList(), addonsTotal + optionalsTotal))
+            } else {
+                model.addConfigured(item.id, size, selectedAddons, optionals.toList(), qty.toLong(), notes.ifBlank { null })
+            }
+        }
+        val footerHaptic = LocalHapticFeedback.current
         Column(
             Modifier.fillMaxWidth().background(c.surface).padding(horizontal = Space.xl, vertical = Space.md),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(t("order.total"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            // Prominent total block — tinted teal, the figure tellers look at
+            // (mirrors the cart's grand-total block in OrderScreen.CartFooter).
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.accentBg)
+                    .padding(horizontal = Space.md, vertical = Space.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(t("order.total"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Box(Modifier.weight(1f))
-                Text(Money.format(footerPrice, currency), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Crossfade(targetState = Money.format(footerPrice, currency), label = "itemTotal") { v ->
+                    Text(v, color = c.accent, style = Type.money(20.sp, FontWeight.Black))
+                }
             }
             Row(
                 Modifier.fillMaxWidth(),
@@ -503,15 +514,13 @@ fun ItemDetailSheet(
                 if (!isConfiguring) {
                     MiniStepper(qty, large = true, onDec = { qty = maxOf(1, qty - 1) }, onInc = { qty = minOf(99, qty + 1) })
                 }
+                val addInteraction = remember { MutableInteractionSource() }
                 Box(
-                    Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(Radii.sm))
+                    Modifier.weight(1f).height(50.dp).pressScale(addInteraction, 0.985f)
+                        .clip(RoundedCornerShape(Radii.sm))
                         .background(if (canAdd) c.accent else c.accent.copy(alpha = 0.45f))
-                        .clickable(enabled = canAdd) {
-                            if (onConfigure != null) {
-                                onConfigure(BundleComponentDraft(size, selectedAddons, optionals.toList(), addonsTotal + optionalsTotal))
-                            } else {
-                                model.addConfigured(item.id, size, selectedAddons, optionals.toList(), qty.toLong(), notes.ifBlank { null })
-                            }
+                        .clickable(interactionSource = addInteraction, indication = null, enabled = canAdd) {
+                            footerHaptic.performHapticFeedback(HapticFeedbackType.LongPress); commit()
                         },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -613,6 +622,30 @@ private fun AddonOptionChip(name: String, price: Long, selected: Boolean, multi:
     }
 }
 
+/** An optional-field toggle chip (Swift optionalChip): a check-circle leading
+ *  glyph, accent fill when on. */
+@Composable
+private fun OptionalChip(name: String, price: Long, on: Boolean, currency: String, onClick: () -> Unit) {
+    val c = madarColors()
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.pressScale(interaction).clip(RoundedCornerShape(Radii.xs))
+            .background(if (on) c.accent else c.surfaceAlt)
+            .border(1.dp, if (on) Color.Transparent else c.border, RoundedCornerShape(Radii.xs))
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            }
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        MadarIcon(if (on) "checkmark.circle.fill" else "circle", tint = if (on) c.textOnAccent else c.textPrimary, size = IconSize.xs)
+        Text(name, color = if (on) c.textOnAccent else c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        if (price > 0) PricePill(price, on, currency)
+    }
+}
+
 /** A selected multi-select chip with an inline qty stepper (Flutter QtyChip). */
 @Composable
 private fun AddonQtyChip(name: String, price: Long, qty: Int, currency: String, onDec: () -> Unit, onInc: () -> Unit) {
@@ -626,7 +659,7 @@ private fun AddonQtyChip(name: String, price: Long, qty: Int, currency: String, 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(name, color = c.textOnAccent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
             if (price > 0) {
-                Text("+${Money.format(price * qty, currency)}", color = c.textOnAccent.copy(alpha = 0.85f), fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                Text("+${Money.format(price * qty, currency)}", color = c.textOnAccent.copy(alpha = 0.85f), style = Type.money(9.sp, FontWeight.Bold))
             }
         }
         Text(
@@ -657,7 +690,7 @@ private fun PricePill(price: Long, on: Boolean, currency: String) {
     val c = madarColors()
     Text(
         "+${Money.format(price, currency)}", color = if (on) c.textOnAccent else c.accent,
-        fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+        style = Type.money(10.sp, FontWeight.Bold),
         modifier = Modifier.clip(CircleShape).background(if (on) c.textOnAccent.copy(alpha = 0.2f) else c.accentBg).padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
@@ -666,22 +699,63 @@ private fun PricePill(price: Long, on: Boolean, currency: String) {
 private fun fmtQty(q: Double): String =
     if (q == q.toLong().toDouble()) q.toLong().toString() else q.toString()
 
+/** Centered "Show all / show assigned add-ons" toggle (Swift showAllToggle). */
+@Composable
+private fun ShowAllToggle(showAll: Boolean, onToggle: () -> Unit) {
+    val c = madarColors()
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onToggle()
+            }
+            .padding(vertical = Space.sm),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MadarIcon(if (showAll) "chevron.up" else "plus", tint = c.accent, size = IconSize.xs)
+        Box(Modifier.width(6.dp))
+        Text(
+            t(if (showAll) "order.show_assigned_addons" else "order.show_all_addons"),
+            color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+        )
+    }
+}
+
 @Composable
 private fun SectionTitle(s: String) {
-    Text(s.uppercase(), color = madarColors().textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+    val c = madarColors()
+    // Confident section label that matches the addon-group card headers — an accent
+    // dot + bold uppercase with tracking — so SIZE / NOTE / OPTIONALS read with the
+    // same authority as the bordered groups (not a faint muted afterthought).
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(c.accent))
+        Text(
+            s.uppercase(), color = c.textSecondary, fontFamily = LocalMadarFont.current,
+            fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 0.6.sp,
+        )
+    }
 }
 
 @Composable
 private fun SelectChip(label: String, sub: String?, active: Boolean, onClick: () -> Unit) {
     val c = madarColors()
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
     Column(
-        Modifier.clip(RoundedCornerShape(Radii.sm)).background(if (active) c.accent else c.surface)
+        Modifier.pressScale(interaction).clip(RoundedCornerShape(Radii.sm))
+            .background(if (active) c.accent else c.surface)
             .border(1.dp, if (active) Color.Transparent else c.border, RoundedCornerShape(Radii.sm))
-            .clickable { onClick() }.padding(horizontal = Space.lg, vertical = Space.sm),
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            }
+            .padding(horizontal = Space.lg, vertical = Space.sm),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         Text(label, color = if (active) c.textOnAccent else c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-        sub?.let { Text(it, color = if (active) c.textOnAccent.copy(alpha = 0.8f) else c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 11.sp) }
+        sub?.let { Text(it, color = if (active) c.textOnAccent.copy(alpha = 0.8f) else c.textSecondary, style = Type.money(11.sp, FontWeight.Medium)) }
     }
 }
 

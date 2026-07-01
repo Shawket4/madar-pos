@@ -2,6 +2,12 @@ package app.madar
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -15,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +60,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
@@ -62,6 +70,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.madar.core.BundleView
@@ -99,7 +108,7 @@ import app.madar.ui.MadarIcon
 import app.madar.ui.IconSize
 import app.madar.ui.MadarButton
 import app.madar.ui.LocalMadarFont
-import app.madar.ui.MadarMark
+import app.madar.ui.MadarLockupMark
 import app.madar.ui.disclosureGlyph
 import app.madar.ui.pressScale
 import app.madar.ui.madarColors
@@ -202,7 +211,45 @@ fun OrderScreen(model: AppModel) {
             }
     ) {
         val wide = maxWidth >= Responsive.wide
-        Column(Modifier.fillMaxSize()) {
+        // Side-rail destinations, grouped into intuitive sections (the rail itself
+        // takes data + callbacks, not the model — compose-state-hoisting). Task
+        // categories scroll in the middle; system utilities pin to the footer.
+        val incomingDest = NavDest("bicycle", t("nav.incoming"), hasNew = model.deliveryHasNew || model.ticketsHasNew) {
+            model.error = null; model.clearDeliveryBadge(); model.clearTicketsBadge()
+            scope.launch { model.loadDeliveryOrders(); model.loadOpenTickets() }; model.showIncoming = true
+        }
+        val draftsDest = NavDest("tray.full", t("drafts.title")) { model.loadDrafts(); model.showDrafts = true }
+        val historyDest = NavDest("list.bullet.rectangle", t("nav.history")) { model.showHistory = true }
+        val searchDest = NavDest("magnifyingglass", t("search.title")) { model.showOrderSearch = true }
+        val cashDest = NavDest("banknote", t("cash.title")) { model.error = null; model.showCashMovements = true }
+        val shiftsDest = NavDest("clock.arrow.circlepath", t("shifts.title")) { model.showShiftHistory = true }
+        val printDest = NavDest("printer", t("shift.print_report")) { model.openShiftReportPreview() }
+        val ticketsDest = NavDest("fork.knife", t("waiter.tickets"), hasNew = model.ticketsHasNew) {
+            model.clearTicketsBadge(); scope.launch { model.loadOpenTickets() }; model.showTickets = true
+        }
+        val syncDest = NavDest("arrow.triangle.2.circlepath", t("sync.title")) { model.loadOutbox(); model.showSync = true }
+        val settingsDest = NavDest("gearshape", t("settings.title")) { model.refreshPending(); model.showSettings = true }
+        val moreDest = NavDest("ellipsis", t("chrome.more")) { model.refreshPending(); model.showMore = true }
+        // Task categories — what's navigated between while working. A waiter device
+        // only handles tickets, so it gets the single Orders group.
+        val railSections = if (isWaiter) listOf(
+            NavSection(t("nav.section.orders"), listOf(ticketsDest)),
+        ) else listOf(
+            NavSection(t("nav.section.orders"), listOf(incomingDest, draftsDest, historyDest, searchDest)),
+            NavSection(t("nav.section.money"), listOf(cashDest, shiftsDest, printDest)),
+        )
+        // System utilities — always reachable, pinned to the rail footer. The phone
+        // drawer reuses the same list (minus More, which IS the drawer).
+        val systemDests = listOf(syncDest, settingsDest)
+        val railFooter = NavSection(t("nav.section.system"), systemDests + moreDest)
+        // Phone has no rail (it's cramped) — the top-bar "options" toggle opens a
+        // drawer carrying the same grouped nav above the destructive rows.
+        Row(Modifier.fillMaxSize()) {
+            if (wide) {
+                NavRail(railSections, railFooter, Modifier.width(NavRailWidth).fillMaxHeight())
+                Box(Modifier.width(1.dp).fillMaxHeight().background(c.border))
+            }
+            Column(Modifier.weight(1f).fillMaxHeight()) {
             OrderTopBar(model, wide)
             if (!model.isOnline) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)) {
@@ -261,6 +308,30 @@ fun OrderScreen(model: AppModel) {
                 }
                 CartBar(model, currency) { showCart = true }
             }
+            }
+        }
+
+        // Input firewall — a fullscreen, visually-invisible layer that swallows ALL
+        // pointer events whenever a full-screen overlay/sheet is up. It sits ABOVE the
+        // rail Row (drawn earlier, so higher z) but BELOW every overlay block below it
+        // (drawn later, so higher still) — so an overlay's own controls keep working,
+        // while any tap that lands on the overlay but MISSES a consuming child is eaten
+        // here instead of falling through to a hidden NavRail tile / catalog / cart at
+        // the same pixel. The back buttons live top-left, right over the rail, which is
+        // exactly where the fall-through misfires. Gated on model.hasOverlay, which is
+        // the union of every model-backed full-screen screen and sheet rendered below
+        // (showCloseShift/showSync/showHistory/showOrderSearch/showCashMovements/
+        // showShiftHistory/showDrafts/showIncoming/showTickets/showSettings/
+        // showReportPreview/previewShiftReport/previewReceipt/detailItem/detailBundle/
+        // showReauth/showMore). The local-state overlays not in that predicate
+        // (showCart, showTender, showFireDetails) carry their own fullscreen scrim, so
+        // they're already sealed.
+        if (model.hasOverlay) {
+            Box(
+                Modifier.fillMaxSize().pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) { awaitPointerEvent() } }
+                }
+            )
         }
 
         // Phone cart drawer — scrim (tap to dismiss) + a bottom sheet panel.
@@ -346,6 +417,9 @@ fun OrderScreen(model: AppModel) {
             ShiftReportPreviewScreen(model) { model.showReportPreview = false }
         }
 
+        // A PAST shift's Z-report preview + print (tapped from Past Shifts).
+        model.previewShiftReport?.let { ShiftReportPreviewScreen(model, it) { model.previewShiftReport = null } }
+
         // Receipt preview before (re)printing a past order.
         model.previewReceipt?.let { ReceiptPreviewScreen(model, it) { model.previewReceipt = null } }
 
@@ -359,12 +433,27 @@ fun OrderScreen(model: AppModel) {
         // Self-gating on model.showReauth (defined in a sibling file).
         ReauthScreen(model)
 
-        // "More" overflow drawer — scrim (tap to dismiss) + a full-height side
-        // panel anchored to the leading edge (RTL-aware).
+        // "More" overflow drawer — scrim (tap to dismiss) + a side panel that
+        // expands right next to the nav rail (offset by the rail width). RTL-aware.
         if (model.showMore) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { model.showMore = false })
-            MoreDrawer(model, wide, Modifier.align(Alignment.CenterStart))
+            // A compact menu that pops from the More control: bottom-left by the
+            // rail's More tile on tablet; top-left by the top-bar toggle on phone.
+            MoreDrawer(
+                model, wide,
+                // Phone carries the full grouped nav here (no rail); System drops More
+                // (this drawer is More). Tablet shows only the destructive rows.
+                phoneSections = if (wide) emptyList() else railSections,
+                phoneSystem = if (wide) emptyList() else systemDests,
+                modifier = Modifier
+                    .align(if (wide) Alignment.BottomStart else Alignment.TopStart)
+                    .padding(
+                        start = if (wide) NavRailWidth + Space.sm else Space.sm,
+                        top = if (wide) 0.dp else 60.dp,
+                        bottom = if (wide) Space.sm else 0.dp,
+                    ),
+            )
         }
     }
 }
@@ -372,24 +461,31 @@ fun OrderScreen(model: AppModel) {
 /** The "More" overflow drawer — secondary nav-hub actions that don't fit the
  *  bar (close shift, settings, sign out). Mirrors Flutter's ActionDrawer. */
 @Composable
-private fun MoreDrawer(model: AppModel, wide: Boolean, modifier: Modifier = Modifier) {
+private fun MoreDrawer(
+    model: AppModel,
+    wide: Boolean,
+    phoneSections: List<NavSection> = emptyList(),
+    phoneSystem: List<NavDest> = emptyList(),
+    modifier: Modifier = Modifier,
+) {
     val c = madarColors()
-    val scope = rememberCoroutineScope()
     val currency = model.session?.currencyCode ?: ""
     Column(
-        // Full-height side panel anchored to the leading edge; the row list scrolls
-        // inside. Rounded on the trailing corners only (it meets the screen edge on
-        // the leading side). start/end corners keep it RTL-aware.
-        modifier.width(320.dp).fillMaxHeight()
-            .clip(RoundedCornerShape(topEnd = Radii.lg, bottomEnd = Radii.lg)).background(c.bg)
+        // A compact floating menu card that hugs its content — a couple of items on
+        // tablet, the full nav on phone. Capped height; scrolls only if it gets tall.
+        modifier.width(260.dp).heightIn(max = 560.dp)
+            .elevation(Elevation.RAISED, RoundedCornerShape(Radii.lg))
+            .clip(RoundedCornerShape(Radii.lg)).background(c.surface)
+            .border(1.dp, c.borderLight, RoundedCornerShape(Radii.lg))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
-            .padding(bottom = Space.lg),
+            .verticalScroll(rememberScrollState())
+            .padding(Space.sm),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Box(Modifier.height(Space.lg))
         model.shift?.let { s ->
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = Space.lg).clip(RoundedCornerShape(Radii.md))
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md))
                     .background(c.surfaceAlt).padding(Space.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
@@ -408,57 +504,28 @@ private fun MoreDrawer(model: AppModel, wide: Boolean, modifier: Modifier = Modi
             }
         }
         Column(
-            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(Space.lg),
+            Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            if (model.isWaiterDevice) {
-                // Waiter: open-tickets list + the sync center. No shift/cash/till rows.
-                MoreRow("fork.knife", t("waiter.tickets"), c.textPrimary) {
-                    model.showMore = false; scope.launch { model.loadOpenTickets() }; model.showTickets = true
+            // Phone: the rail's grouped destinations live here (there's no rail on
+            // phone) — each task category under its caption. On wide they're exposed
+            // in the rail, so these are empty and only the destructive rows remain.
+            phoneSections.forEach { section ->
+                MoreCaption(section.title)
+                section.items.forEach { d ->
+                    MoreRow(d.glyph, d.label, c.textPrimary) { model.showMore = false; d.onClick() }
                 }
-                MoreRow("arrow.triangle.2.circlepath", t("sync.title"), c.textPrimary) {
-                    model.showMore = false; model.loadOutbox(); model.showSync = true
+            }
+            if (phoneSystem.isNotEmpty()) {
+                MoreCaption(t("nav.section.system"))
+                phoneSystem.forEach { d ->
+                    MoreRow(d.glyph, d.label, c.textPrimary) { model.showMore = false; d.onClick() }
                 }
-            } else {
-                // Phone-only: the bar's History / Sync / Sync-data buttons live here instead.
-                if (!wide) {
-                    MoreRow("list.bullet.rectangle", t("history.title"), c.textPrimary) {
-                        model.showMore = false; model.showHistory = true
-                    }
-                    MoreRow("arrow.triangle.2.circlepath", t("sync.title"), c.textPrimary) {
-                        model.showMore = false; model.loadOutbox(); model.showSync = true
-                    }
-                    MoreRow("arrow.clockwise", t("chrome.sync_data"), c.textPrimary) {
-                        model.showMore = false; scope.launch { model.refreshServerData() }
-                    }
-                }
-                MoreRow("magnifyingglass", t("search.title"), c.textPrimary) {
-                    model.showMore = false; model.showOrderSearch = true
-                }
-                MoreRow("banknote", t("cash.title"), c.textPrimary) {
-                    model.showMore = false; model.error = null; model.showCashMovements = true
-                }
-                MoreRow("clock.arrow.circlepath", t("shifts.title"), c.textPrimary) {
-                    model.showMore = false; model.showShiftHistory = true
-                }
-                MoreRow("printer", t("shift.print_report"), c.textPrimary) {
-                    model.showMore = false; model.openShiftReportPreview()
-                }
-                MoreRow("tray.full", t("drafts.title"), c.textPrimary) {
-                    model.showMore = false; model.loadDrafts(); model.showDrafts = true
-                }
-                // ONE entry for both delivery + waiter open-tickets (two tabs).
-                MoreRow("bicycle", t("incoming.title"), c.textPrimary) {
-                    model.showMore = false; model.error = null
-                    scope.launch { model.loadDeliveryOrders(); model.loadOpenTickets() }
-                    model.showIncoming = true
-                }
+            }
+            if (!model.isWaiterDevice) {
                 MoreRow("lock", t("order.close_shift"), c.danger) {
                     model.showMore = false; model.error = null; model.showCloseShift = true
                 }
-            }
-            MoreRow("gearshape", t("settings.title"), c.textPrimary) {
-                model.showMore = false; model.refreshPending(); model.showSettings = true
             }
             MoreRow("rectangle.portrait.and.arrow.right", t("home.sign_out"), c.textPrimary) {
                 // You can't sign out mid-shift — close the drawer first.
@@ -467,6 +534,18 @@ private fun MoreDrawer(model: AppModel, wide: Boolean, modifier: Modifier = Modi
             }
         }
     }
+}
+
+/** A small uppercase section caption inside the phone "More" drawer — groups the
+ *  rows beneath it into a labelled category (mirrors the side rail's captions). */
+@Composable
+private fun MoreCaption(title: String) {
+    val c = madarColors()
+    Text(
+        title.uppercase(), color = c.textMuted, fontFamily = LocalMadarFont.current,
+        fontWeight = FontWeight.SemiBold, fontSize = 10.sp, letterSpacing = 0.8.sp,
+        modifier = Modifier.fillMaxWidth().padding(start = Space.xs, top = Space.xs, bottom = 2.dp),
+    )
 }
 
 @Composable
@@ -525,12 +604,120 @@ internal fun AuthPausedBanner(onClick: () -> Unit) {
     }
 }
 
-// ── Top action bar (the only nav hub) ───────────────────────────────────────────
+// ── Persistent side navigation rail ─────────────────────────────────────────────
+// Width owned by the caller (per compose-modifier-and-layout-style: the parent
+// places, the component structures).
+private val NavRailWidth = 80.dp
+
+/** A leading-edge nav destination: glyph + label + tap. */
+internal class NavDest(val glyph: String, val label: String, val hasNew: Boolean = false, val onClick: () -> Unit)
+
+/** A labelled group of rail destinations — the rail and the phone drawer both
+ *  render these as a caption + its tiles, so the two stay in lockstep. */
+internal class NavSection(val title: String, val items: List<NavDest>)
+
+/** The persistent side rail — destinations grouped into labelled sections. The
+ *  task categories ([sections]) scroll in the middle; the [footer] (system
+ *  utilities) pins to the bottom. The caller sets the rail's width/height via
+ *  [modifier]; the rail only paints its surface + content. */
+@Composable
+internal fun NavRail(
+    sections: List<NavSection>,
+    footer: NavSection,
+    modifier: Modifier = Modifier,
+) {
+    val c = madarColors()
+    Column(
+        modifier = modifier.background(c.surface).padding(vertical = Space.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        MadarLockupMark(width = 64.dp)
+        Box(Modifier.height(Space.sm))
+        RailDivider()
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = Space.xs),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            sections.forEachIndexed { i, section ->
+                RailCaption(section.title, top = if (i == 0) 0.dp else Space.sm)
+                section.items.forEach { NavRailItem(it.glyph, it.label, it.onClick, it.hasNew, Modifier.fillMaxWidth()) }
+            }
+        }
+        RailDivider()
+        RailCaption(footer.title, top = 0.dp)
+        footer.items.forEach { NavRailItem(it.glyph, it.label, it.onClick, it.hasNew, Modifier.fillMaxWidth()) }
+    }
+}
+
+@Composable
+private fun RailDivider() {
+    val c = madarColors()
+    Box(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs).height(1.dp).background(c.borderLight))
+}
+
+/** A tiny uppercase caption heading a rail section — what turns the flat list
+ *  into intuitive, scannable categories. */
+@Composable
+private fun RailCaption(title: String, top: Dp) {
+    val c = madarColors()
+    Text(
+        title.uppercase(), color = c.textMuted, fontFamily = LocalMadarFont.current,
+        fontWeight = FontWeight.SemiBold, fontSize = 8.sp, letterSpacing = 0.6.sp,
+        textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().padding(top = top, bottom = 2.dp, start = 2.dp, end = 2.dp),
+    )
+}
+
+@Composable
+private fun NavRailItem(glyph: String, label: String, onClick: () -> Unit, hasNew: Boolean = false, modifier: Modifier = Modifier) {
+    val c = madarColors()
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    Column(
+        modifier = modifier
+            .pressScale(interaction)
+            .clip(RoundedCornerShape(Radii.sm))
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            }
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            // A live SSE event for this module tints the tile + pulses a dot.
+            Modifier.size(36.dp).clip(RoundedCornerShape(Radii.sm)).background(if (hasNew) c.accentBg else c.surfaceAlt),
+            contentAlignment = Alignment.Center,
+        ) {
+            MadarIcon(glyph, tint = if (hasNew) c.accent else c.textSecondary, size = IconSize.lg)
+            if (hasNew) {
+                // A pulsing accent dot at the top-end corner (opacity breathes 1↔0.25).
+                val pulse = rememberInfiniteTransition(label = "railBadge")
+                val alpha by pulse.animateFloat(
+                    initialValue = 1f, targetValue = 0.25f,
+                    animationSpec = infiniteRepeatable(tween(750, easing = LinearEasing), RepeatMode.Reverse),
+                    label = "railBadgeAlpha",
+                )
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(3.dp).size(8.dp)
+                        .clip(CircleShape).background(c.accent.copy(alpha = alpha)),
+                )
+            }
+        }
+        Text(
+            label, color = if (hasNew) c.accent else c.textSecondary, fontFamily = LocalMadarFont.current,
+            fontWeight = if (hasNew) FontWeight.SemiBold else FontWeight.Medium, fontSize = 10.sp, textAlign = TextAlign.Center,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+// ── Top status bar (navigation now lives in the side rail) ───────────────────────
 @Composable
 private fun OrderTopBar(model: AppModel, wide: Boolean) {
     val c = madarColors()
     val currency = model.session?.currencyCode ?: ""
-    val scope = rememberCoroutineScope()
     val isWaiter = model.isWaiterDevice
     Column(Modifier.fillMaxWidth().background(c.surface)) {
         // Fills + right-pins when it fits; scrolls horizontally only when the
@@ -540,29 +727,27 @@ private fun OrderTopBar(model: AppModel, wide: Boolean) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            MadarMark(size = 32.dp)
-            // Phone: the status chips + secondary action buttons don't fit a ~360dp
-            // bar, so they collapse into the More drawer (which carries the teller +
-            // live stats in its header). Only the logo, sync status, and More stay.
-            // A waiter holds no shift, so it shows neither the teller chip nor stats.
-            if (wide && !isWaiter) {
-                model.shift?.let { StatusChip(it.tellerName, ChipTone.INFO, icon = "person.fill") }
+            // Phone: no side rail — a leading "options" toggle opens the nav drawer.
+            if (!wide) {
+                Box(
+                    Modifier.size(36.dp).clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
+                        .border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm))
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            model.refreshPending(); model.showMore = true
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MadarIcon("line.3.horizontal", tint = c.textPrimary, size = IconSize.lg)
+                }
+            }
+            // Status — teller (wide), live shift totals, and sync state.
+            if (!isWaiter) {
+                if (wide) model.shift?.let { StatusChip(it.tellerName, ChipTone.INFO, icon = "person.fill") }
                 if (model.shift?.isOpen == true) ShiftStatsPill(model, currency)
             }
             Box(Modifier.weight(1f))
             SyncChip(model)
-            if (isWaiter) {
-                // Waiter's nav: catalog sync (the SAME button as the teller), the
-                // open-tickets list, and settings; the rest is in More.
-                SyncDataButton(model)
-                BarButton("fork.knife") { scope.launch { model.loadOpenTickets() }; model.showTickets = true }
-                if (wide) BarButton("gearshape") { model.refreshPending(); model.showSettings = true }
-            } else if (wide) {
-                SyncDataButton(model)
-                BarButton("list.bullet.rectangle") { model.showHistory = true }
-                BarButton("gearshape") { model.refreshPending(); model.showSettings = true }
-            }
-            BarButton("ellipsis") { model.refreshPending(); model.showMore = true }
+            SyncDataButton(model)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
     }
@@ -594,23 +779,6 @@ private fun SyncDataButton(model: AppModel) {
         } else {
             MadarIcon("arrow.triangle.2.circlepath", tint = c.textMuted, size = IconSize.md)
         }
-    }
-}
-
-/** A squircle icon-glyph button for the action bar (matches the chip radius). */
-@Composable
-private fun BarButton(glyph: String, onClick: () -> Unit) {
-    val c = madarColors()
-    val haptic = LocalHapticFeedback.current
-    Box(
-        Modifier.size(34.dp).clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
-            .border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        MadarIcon(glyph, tint = c.textMuted, size = IconSize.lg)
     }
 }
 
@@ -768,94 +936,11 @@ private fun CategoryTab(label: String, icon: String?, active: Boolean, onClick: 
     }
 }
 
-@Composable
-private fun CategoryRail(
-    cats: List<CategoryView>,
-    selected: String?,
-    onSelect: (String?) -> Unit,
-    catStyle: (String) -> CatStyleView,
-    showCombos: Boolean = false,
-) {
-    val c = madarColors()
-    Column(
-        Modifier.width(96.dp).fillMaxHeight().background(c.surface)
-            .verticalScroll(rememberScrollState()).padding(vertical = Space.sm),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        RailTile(t("order.all"), null, null, "square.grid.2x2.fill", selected == null) { onSelect(null) }
-        if (showCombos) RailTile(t("order.combos"), null, null, "square.stack.3d.up.fill", selected == kCombosCategory) { onSelect(kCombosCategory) }
-        cats.filter { it.isActive }.forEach { cat ->
-            val style = catStyle(cat.name)
-            RailTile(cat.name, style, cat.imageUrl, null, selected == cat.id) { onSelect(cat.id) }
-        }
-    }
-}
-
-@Composable
-private fun RailTile(label: String, style: CatStyleView?, imageUrl: String?, fixedIcon: String?, active: Boolean, onClick: () -> Unit) {
-    val c = madarColors()
-    val haptic = LocalHapticFeedback.current
-    val interaction = remember { MutableInteractionSource() }
-    val gradient = if (style != null) {
-        Brush.linearGradient(listOf(hexColor(style.bgTop), hexColor(style.bgBottom)))
-    } else {
-        Brush.linearGradient(listOf(c.accentBg, c.accentBg))
-    }
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = Space.sm).pressScale(interaction)
-            .clip(RoundedCornerShape(Radii.sm)).background(if (active) c.accentBg else Color.Transparent)
-            .clickable(interactionSource = interaction, indication = null) {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
-            }
-            .padding(vertical = Space.sm, horizontal = Space.xs),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Box(
-            Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(gradient)
-                .border(if (active) 2.dp else 0.dp, if (active) c.accent else Color.Transparent, RoundedCornerShape(11.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            // Base — fixed icon (All/Combos) → family icon → monogram. ALWAYS drawn,
-            // so a missing/failed category image still shows something. The image
-            // overlays it when loaded.
-            val iconColor = if (style != null) hexColor(style.iconColor) else c.accent
-            val famIcon = style?.icon?.let { categoryIconName(it) }
-            when {
-                fixedIcon != null -> MadarIcon(fixedIcon, tint = iconColor, size = IconSize.md)
-                famIcon != null -> MadarIcon(famIcon, tint = iconColor, size = IconSize.md)
-                else -> Text(categoryMonogram(label), color = iconColor, fontFamily = LocalMadarFont.current,
-                    fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
-            if (fixedIcon == null && imageUrl != null) {
-                AsyncImage(model = imageUrl, contentDescription = null,
-                    modifier = Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)), contentScale = ContentScale.Crop)
-            }
-        }
-        Text(
-            label, color = if (active) c.accent else c.textSecondary, fontFamily = LocalMadarFont.current,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 10.sp,
-            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
 /** Core CatStyleView.icon key → shared Lucide icon name; null for the 'cafe'
  *  default (custom category) → caller shows the monogram instead. */
 private fun categoryIconName(key: String): String? = when (key) {
     "coffee", "mocha", "tea", "bakery", "lunch", "icecream", "drink", "water", "ice", "matcha" -> "cat.$key"
     else -> null
-}
-
-/** Up to two initials for a category name (matches the item monogram rule). */
-private fun categoryMonogram(name: String): String {
-    val w = name.split(Regex("\\s+")).filter { it.isNotEmpty() }
-    return when {
-        w.size >= 2 -> (w[0].take(1) + w[1].take(1)).uppercase()
-        w.isNotEmpty() -> w[0].take(2).uppercase()
-        else -> "•"
-    }
 }
 
 /** `#RRGGBB` → Compose Color (opaque). Pairs with the core's CatStyleView. */
@@ -1047,7 +1132,7 @@ private fun HeldTab(label: String, count: Int, active: Boolean, onTap: (() -> Un
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CartLineRow(
+internal fun CartLineRow(
     line: CartLineView,
     currency: String,
     onDec: () -> Unit,
@@ -1185,7 +1270,7 @@ private fun QtyStepper(qty: Long, onDec: () -> Unit, onInc: () -> Unit) {
     val c = madarColors()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
         StepButton(if (qty <= 1) "trash" else "minus", danger = qty <= 1, onClick = onDec)
-        Text("$qty", color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.widthIn(min = 18.dp))
+        Text("$qty", color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.widthIn(min = 24.dp))
         StepButton("plus", danger = false, onClick = onInc)
     }
 }
@@ -1208,7 +1293,7 @@ private fun StepButton(glyph: String, danger: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> Unit, onHold: (() -> Unit)? = null,
+internal fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> Unit, onHold: (() -> Unit)? = null,
                        checkoutLabel: String? = null, checkoutIcon: String? = null) {
     val c = madarColors()
     val haptic = LocalHapticFeedback.current
@@ -1226,7 +1311,19 @@ private fun CartFooter(totals: CartTotals, currency: String, onCheckout: () -> U
             }
         }
         TotalRow(t("order.tax"), Money.format(totals.taxMinor, currency))
-        TotalRow(t("order.total"), Money.format(totals.totalMinor, currency), emphasized = true)
+        // Prominent total block — tinted teal, the figure tellers look at. The
+        // sub-rows above stay light so the grand total carries the weight.
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.accentBg)
+                .padding(horizontal = Space.md, vertical = Space.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(t("order.total"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Box(Modifier.weight(1f))
+            Crossfade(targetState = Money.format(totals.totalMinor, currency), label = "total") { v ->
+                Text(v, color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 20.sp)
+            }
+        }
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,

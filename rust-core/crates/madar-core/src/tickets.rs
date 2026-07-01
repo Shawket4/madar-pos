@@ -79,7 +79,9 @@ pub struct TicketView {
 }
 
 /// One bill line (display projection of the frozen `StoredTicketLine`).
-#[derive(uniffi::Record, Clone, Debug)]
+// PartialEq/Eq + serde so it can be embedded in `DeliveryOrderView` (which derives
+// them) — tickets and delivery share this one line shape so both render identically.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TicketLineView {
     pub name: String,
     pub qty: i32,

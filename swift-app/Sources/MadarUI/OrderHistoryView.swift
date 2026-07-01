@@ -131,9 +131,8 @@ struct OrderHistoryView: View {
         .madarSheet(item: $voidTarget) { order, dismiss in
             VoidSheet(app: app, order: order, onDone: dismiss)
         }
-        .madarSheet(item: $app.previewReceipt, size: .large) { r, dismiss in
-            ReceiptPreviewSheet(app: app, receipt: r, onClose: dismiss)
-        }
+        // The receipt preview sheet is now GLOBAL (OrderScreenRouter) so it's shared
+        // with past-shift order taps too — no per-screen attachment here.
     }
 
     @ViewBuilder private var content: some View {
@@ -631,6 +630,7 @@ private struct OrderDetailPanel: View {
                 detailRow(t("order.subtotal"), Money.format(item.subtotalMinor, currency))
                 detailRow(t("order.tax"), Money.format(item.taxMinor, currency))
             }
+            grandTotal
             HStack(spacing: Space.md) {
                 Text(item.paymentLabel).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
                 Spacer()
@@ -642,6 +642,20 @@ private struct OrderDetailPanel: View {
                 }
             }
         }
+    }
+
+    /// Grand-total block — tinted teal, money as the hero (mirrors the cart's
+    /// CartFooter total). The lighter sub-rows above carry less weight.
+    private var grandTotal: some View {
+        HStack {
+            Text(t("order.total")).font(.ui(14, .bold)).foregroundStyle(theme.colors.accent)
+            Spacer()
+            Text(Money.format(item.totalMinor, currency))
+                .font(.money(18, .heavy)).foregroundStyle(theme.colors.accent)
+        }
+        .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+        .background(theme.colors.accentBg)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
     }
 
     private func actionButton(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
@@ -670,7 +684,7 @@ private struct OrderDetailPanel: View {
                 }
             }
             Spacer(minLength: Space.sm)
-            Text(Money.format(line.lineTotalMinor, currency)).font(.money(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
+            Text(Money.format(line.lineTotalMinor, currency)).font(.money(13, .bold)).foregroundStyle(theme.colors.accent)
         }
     }
 }

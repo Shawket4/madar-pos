@@ -1,7 +1,6 @@
 package app.madar
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -37,10 +36,11 @@ import app.madar.ui.Money
 import app.madar.ui.NoticeBanner
 import app.madar.ui.Radii
 import app.madar.ui.Space
-import app.madar.ui.Elevation
-import app.madar.ui.elevation
+import app.madar.ui.Type
 import app.madar.ui.StatusChip
 import app.madar.ui.MadarButton
+import app.madar.ui.MadarCard
+import app.madar.ui.SectionHeader
 import app.madar.ui.LocalMadarFont
 import app.madar.ui.MadarMark
 import app.madar.ui.MadarTextField
@@ -66,12 +66,12 @@ fun OpenShiftScreen(model: AppModel) {
             Row(Modifier.fillMaxSize()) {
                 BrandPanel(Modifier.weight(1f).fillMaxHeight())
                 Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    FormColumn(model, showLogo = false)
+                    FormColumn(model, showLogo = false, modifier = Modifier.verticalScroll(rememberScrollState()))
                 }
             }
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                FormColumn(model, showLogo = true)
+                FormColumn(model, showLogo = true, modifier = Modifier.verticalScroll(rememberScrollState()))
             }
         }
 
@@ -98,7 +98,7 @@ fun OpenShiftScreen(model: AppModel) {
 }
 
 @Composable
-private fun FormColumn(model: AppModel, showLogo: Boolean) {
+private fun FormColumn(model: AppModel, showLogo: Boolean, modifier: Modifier = Modifier) {
     val c = madarColors()
     val scope = rememberCoroutineScope()
     var openingMinor by remember { mutableStateOf(0L) }
@@ -145,7 +145,7 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
     }
 
     Column(
-        Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+        modifier.widthIn(max = 480.dp).fillMaxWidth()
             .padding(horizontal = Space.xxl, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -160,20 +160,22 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
             Text(t("shift.welcome"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Medium, fontSize = 15.sp)
             Text(
                 model.session?.displayName ?: t("shift.open_title"),
-                color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 28.sp, textAlign = TextAlign.Center,
+                color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = (-0.5).sp, textAlign = TextAlign.Center,
             )
             if (model.branchName.isNotBlank()) {
                 Box(Modifier.padding(top = Space.xs)) { StatusChip(model.branchName, ChipTone.INFO, icon = "building.2") }
             }
         }
 
-        // ── Hero count field ─────────────────────────────────────────────────
-        Column(
-            Modifier.fillMaxWidth().padding(top = Space.xxl),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Space.md),
+        // ── Hero count field (the one thing the teller must do) ───────────────
+        // Wrapped in the shared bordered surface card — matches the Order screen's
+        // raised, hairline-bordered surfaces. Section-labelled, the hero figure sits
+        // on its own elevated panel instead of floating on the page background.
+        MadarCard(
+            modifier = Modifier.padding(top = Space.xxl),
+            spacing = Space.md,
         ) {
-            Text(t("shift.opening_cash"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            SectionHeader(t("shift.opening_cash"), icon = "banknote")
             AmountField(
                 amountMinor = openingMinor,
                 onAmountMinor = { openingMinor = it },
@@ -182,22 +184,7 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
             )
 
             // Carried-over suggestion (previous declared closing).
-            if (suggested > 0L) {
-                Row(
-                    Modifier.fillMaxWidth()
-                        .elevation(Elevation.CARD, RoundedCornerShape(Radii.sm))
-                        .clip(RoundedCornerShape(Radii.sm)).background(c.surfaceAlt)
-                        .border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm))
-                        .padding(horizontal = Space.md, vertical = Space.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
-                ) {
-                    MadarIcon("clock.arrow.circlepath", tint = c.textMuted, size = IconSize.sm)
-                    Text(t("shift.suggested_from_close"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
-                    Box(Modifier.weight(1f))
-                    Text(Money.format(suggested, currency), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                }
-            }
+            if (suggested > 0L) CarryoverHint(suggested, currency)
 
             // Discrepancy reason — only when the count deviates from carryover.
             if (needsReason) {
@@ -207,6 +194,7 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
             Text(
                 if (needsReason) t("shift.opening_reason_hint") else t("shift.opening_hint"),
                 color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 12.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
 
@@ -231,5 +219,26 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
             modifier = Modifier.padding(top = Space.sm),
             variant = BtnVariant.GHOST,
         )
+    }
+}
+
+/** The carried-over opening-cash suggestion (previous declared closing) — a tinted
+ *  teal block carrying the prior figure as bold teal money, the twin of
+ *  CloseShift's ExpectedCashBlock (the figure this open count reconciles against).
+ *  Mirror of the SwiftUI OpenShiftForm.CarryoverHint. */
+@Composable
+private fun CarryoverHint(suggestedMinor: Long, currency: String, modifier: Modifier = Modifier) {
+    val c = madarColors()
+    Row(
+        modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(Radii.md)).background(c.accentBg)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        MadarIcon("clock.arrow.circlepath", tint = c.accent, size = IconSize.sm)
+        Text(t("shift.suggested_from_close"), color = c.accent, style = Type.label().copy(fontWeight = FontWeight.Bold))
+        Box(Modifier.weight(1f))
+        Text(Money.format(suggestedMinor, currency), color = c.accent, style = Type.money(20.sp, FontWeight.Black))
     }
 }

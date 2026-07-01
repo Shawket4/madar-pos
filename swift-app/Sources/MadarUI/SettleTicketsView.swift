@@ -2,6 +2,12 @@
 // branch's open/ready tickets and settles a chosen one into a paid order on the
 // CURRENT open shift (the core replays the ticket's frozen lines through the
 // order path, so it lands as a normal dine-in sale). All logic is in the core.
+//
+// The settle sheet is a TWO-STEP flow over ONE ticket: first the real order
+// details (`TicketDetailsView` — the frozen lines + money + covers), then the
+// SAME shared checkout drawer (`CheckoutDrawer`) the main cashier uses — no more
+// mirrored settle UI. The drawer's terminal action settles the ticket via
+// `app.settleTicket`.
 import SwiftUI
 
 // Settle open tickets body — the "Open tickets" tab of the unified Orders surface.
@@ -31,6 +37,7 @@ struct SettleBody: View {
             }
         }
         .task { await app.loadOpenTickets() }
+        // The full-height settle drawer: details → shared CheckoutDrawer.
         .madarSheet(item: $settling, size: .large, maxWidth: 560) { ticket, dismiss in
             SettleSheet(app: app, ticket: ticket, onClose: dismiss)
         }
@@ -48,118 +55,171 @@ struct SettleBody: View {
             ScrollView {
                 LazyVStack(spacing: Space.sm) {
                     ForEach(settleable) { ticket in
-                        Button { settling = ticket } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(ticket.ticketRef ?? t("waiter.ticket"))
-                                        .font(.ui(15, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                                    if let name = ticket.customerName, !name.isEmpty {
-                                        Text(name).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
-                                    }
-                                }
-                                Spacer()
-                                Text(Money.format(ticket.subtotalMinor, currency))
-                                    .font(.ui(15, .bold)).foregroundStyle(theme.colors.textPrimary)
-                                MadarIcon("chevron.forward", size: 14).foregroundStyle(theme.colors.textMuted)
-                            }
-                            .padding(Space.md)
-                            .background(theme.colors.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.colors.border, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
+                        SettleTicketCard(app: app, ticket: ticket, currency: currency) { settling = ticket }
                     }
                 }
-                .padding(Space.lg)
+                .frame(maxWidth: 620).frame(maxWidth: .infinity).padding(Space.lg)
             }
             .refreshable { await app.loadOpenTickets() }
         }
     }
 }
 
-private struct SettleSheet: View {
+// MARK: - Ticket card (settle side)
+
+/// A settleable ticket on the till board — the SAME card language as the waiter
+/// board and delivery queue: a status-tinted header strip (ref + state + bold-teal
+/// total) over a body with the covering customer + a "View & settle" action that
+/// opens the details→checkout sheet. (P3: consistent look across both Orders tabs.)
+private struct SettleTicketCard: View {
     @ObservedObject var app: AppModel
-    let ticket: TicketView
-    let onClose: () -> Void
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
+    let ticket: TicketView
+    let currency: String
+    let onSettle: () -> Void
 
-    @State private var methodId: String?
-    @State private var tipMinor: Int64 = 0
-    @State private var tenderedMinor: Int64 = 0
-
-    private var currency: String { app.session?.currencyCode ?? "" }
-    private var isCash: Bool { app.paymentMethods.first(where: { $0.id == methodId })?.isCash ?? false }
+    private var customerName: String? {
+        guard let name = ticket.customerName, !name.isEmpty else { return nil }
+        return name
+    }
+    private var lineCount: Int { ticket.lines.filter { !$0.voided }.count }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.md) {
-            Text(ticket.ticketRef ?? t("waiter.ticket")).font(.ui(18, .heavy)).foregroundStyle(theme.colors.textPrimary)
-
-            ScrollView {
-                VStack(spacing: Space.xs) {
-                    ForEach(ticket.lines.indices, id: \.self) { i in
-                        let line = ticket.lines[i]
-                        HStack {
-                            Text("\(line.qty)× \(line.name)").font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
-                                .strikethrough(line.voided)
-                            Spacer()
-                            Text(Money.format(line.lineTotalMinor, currency)).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
-                        }
+        VStack(spacing: 0) {
+            statusStrip
+            VStack(alignment: .leading, spacing: Space.sm) {
+                if let name = customerName {
+                    HStack(spacing: Space.sm) {
+                        MadarIcon("person.fill", size: IconSize.md)
+                            .foregroundStyle(theme.colors.accent)
+                            .frame(width: 34, height: 34)
+                            .background(theme.colors.accentBg)
+                            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                        Text(name).font(.ui(16, .bold)).foregroundStyle(theme.colors.textPrimary)
+                        Spacer(minLength: 0)
                     }
                 }
+                // Item-count meta so the card previews contents at a glance.
+                Text("\(lineCount) \(t("order.items"))")
+                    .font(.ui(11, .semibold)).foregroundStyle(theme.colors.textMuted)
+                MadarButton(label: t("waiter.settle"), icon: "arrow.right.circle") { onSettle() }
             }
-            .frame(maxHeight: 220)
-
-            HStack {
-                Text(t("tender.total")).font(.ui(14, .semibold)).foregroundStyle(theme.colors.textSecondary)
-                Spacer()
-                Text(Money.format(ticket.subtotalMinor, currency)).font(.ui(17, .heavy)).foregroundStyle(theme.colors.textPrimary)
-            }
-
-            Text(t("tender.method")).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
-            FlowLayout(spacing: Space.sm) {
-                ForEach(app.paymentMethods, id: \.id) { pm in
-                    Button { methodId = pm.id } label: {
-                        Text(pm.name)
-                            .font(.ui(14, .semibold))
-                            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
-                            .background((methodId == pm.id ? theme.colors.accent : theme.colors.surfaceAlt))
-                            .foregroundStyle(methodId == pm.id ? theme.colors.textOnAccent : theme.colors.textPrimary)
-                            .clipShape(Capsule())
-                    }.buttonStyle(.plain)
-                }
-            }
-
-            // Optional tip.
-            Text(t("order.tip")).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
-            AmountField(amountMinor: $tipMinor, currencyCode: currency)
-            // Cash: amount tendered → change due.
-            if isCash {
-                Text(t("order.cash_received")).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
-                AmountField(amountMinor: $tenderedMinor, currencyCode: currency)
-                if tenderedMinor > 0 {
-                    HStack {
-                        Text(t("order.change_due")).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textSecondary)
-                        Spacer()
-                        Text(Money.format(max(0, tenderedMinor - (ticket.subtotalMinor + tipMinor)), currency))
-                            .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
-                    }
-                }
-            }
-
-            MadarButton(label: t("waiter.settle"), icon: "checkmark.circle", loading: app.isBusy) {
-                guard let id = methodId, !app.isBusy else { return }
-                Task {
-                    let ok = await app.settleTicket(
-                        ticket.id, paymentMethodId: id,
-                        amountTenderedMinor: isCash && tenderedMinor > 0 ? tenderedMinor : nil,
-                        tipMinor: tipMinor, tipPaymentMethodId: tipMinor > 0 ? id : nil)
-                    if ok { onClose() }
-                }
-            }
-            .opacity(methodId == nil ? 0.5 : 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.md)
         }
-        .padding(Space.lg)
-        .onAppear { methodId = app.paymentMethods.first?.id }
+        .background(theme.colors.surface)
+        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        .elevation(.card)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+    }
+
+    // Status-tinted header strip — mirrors the waiter board's ticket card so the
+    // two boards read identically.
+    private var statusStrip: some View {
+        let tint = settleStatusTint(ticket.status, theme.colors)
+        return HStack(spacing: Space.sm) {
+            Circle().fill(tint.fg).frame(width: 8, height: 8)
+            Text(ticket.ticketRef ?? t("waiter.ticket"))
+                .font(.ui(19, .heavy)).foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+            TicketStatusChip(status: ticket.status)
+            if ticket.queuedOffline {
+                StatusChip(label: t("waiter.queued"), icon: "tray.and.arrow.up", tone: .warning)
+            }
+            Spacer()
+            Text(Money.format(ticket.subtotalMinor, currency))
+                .font(.money(16, .heavy)).foregroundStyle(theme.colors.accent)
+                .padding(.horizontal, Space.md).padding(.vertical, 7)
+                .background(theme.colors.accentBg)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        }
+        .padding(.horizontal, Space.md)
+        .frame(height: 56)
+        .frame(maxWidth: .infinity)
+        .background(tint.bg)
+    }
+}
+
+/// Ticket status → (foreground, tinted-background) for the settle card's header
+/// strip (mirrors the waiter board's tint).
+private func settleStatusTint(_ status: String, _ c: MadarColors) -> (fg: Color, bg: Color) {
+    switch status {
+    case "ready": return (c.success, c.successBg)
+    case "queued": return (c.warning, c.warningBg)
+    case "settled": return (c.textSecondary, c.surfaceAlt)
+    default: return (c.accent, c.accentBg)
+    }
+}
+
+// MARK: - Settle sheet (details → shared checkout drawer)
+
+/// The two-step settle sheet: STEP 1 shows the real order details (frozen lines +
+/// money + covers) with a "Settle" button; STEP 2 hands off to the SHARED
+/// `CheckoutDrawer`, whose terminal action settles the ticket into a paid order.
+private struct SettleSheet: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let ticket: TicketView
+    let onClose: () -> Void
+
+    private enum Step { case details, checkout }
+    @State private var step: Step = .details
+
+    private var currency: String { app.session?.currencyCode ?? "" }
+
+    var body: some View {
+        switch step {
+        case .details:
+            detailsStep
+        case .checkout:
+            // The SAME drawer the main cashier uses. `.flat` summary (the ticket
+            // carries just a subtotal); the terminal settles the ticket. No cart
+            // discount edit and no customer capture (the ticket already knows its
+            // covering customer).
+            CheckoutDrawer(
+                app: app,
+                title: ticket.ticketRef ?? t("waiter.ticket"),
+                total: ticket.subtotalMinor,
+                currency: currency,
+                busy: app.isBusy,
+                terminalLabel: t("waiter.settle"),
+                terminalIcon: "checkmark.circle",
+                errorMessage: app.errorMessage,
+                summary: .flat,
+                showCartDiscount: false,
+                showCustomerCapture: false,
+                onClose: onClose,
+                onTerminal: { input in
+                    let ok = await app.settleTicket(
+                        ticket.id,
+                        paymentMethodId: input.paymentMethodId,
+                        amountTenderedMinor: input.isCash && input.amountTenderedMinor > 0 ? input.amountTenderedMinor : nil,
+                        tipMinor: input.tipMinor,
+                        tipPaymentMethodId: input.tipMinor > 0 ? (input.tipPaymentMethodId ?? input.paymentMethodId) : nil)
+                    if ok { onClose() }
+                })
+        }
+    }
+
+    private var detailsStep: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                TicketDetailsView(ticket: ticket, currency: currency)
+                    .frame(maxWidth: 552).frame(maxWidth: .infinity)
+                    .padding(.horizontal, Space.xl)
+                    .padding(.top, Space.md)
+                    .padding(.bottom, Space.lg)
+            }
+            // Advance to the shared checkout drawer.
+            VStack(spacing: Space.sm) {
+                MadarButton(label: t("waiter.settle"), icon: "arrow.right.circle") {
+                    withAnimation(Motion.standard) { step = .checkout }
+                }
+            }
+            .padding(Space.lg)
+            .background(theme.colors.surface)
+            .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+        }
     }
 }

@@ -45,7 +45,7 @@ fun BrandPanel(modifier: Modifier = Modifier) {
         Column(Modifier.fillMaxSize().padding(48.dp)) {
             MadarLockup(height = 28.dp)
             Spacer(Modifier.weight(1f))
-            Text(t("brand.headline"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 44.sp)
+            Text(t("brand.headline"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 44.sp, lineHeight = 50.sp)
             Spacer(Modifier.height(Space.lg))
             Text(t("brand.tagline"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 15.sp, modifier = Modifier.widthIn(max = 300.dp))
             Spacer(Modifier.weight(1f))

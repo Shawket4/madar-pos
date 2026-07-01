@@ -113,20 +113,19 @@ fun MenuItemCard(
                 }
             }
         }
-        // ── Footer (accent dot · name · price) ───────────────────────────────
+        // ── Footer (name · bold teal price) ──────────────────────────────────
         Row(
-            Modifier.fillMaxWidth().height(48.dp).background(c.surface).padding(horizontal = 10.dp),
+            Modifier.fillMaxWidth().height(48.dp).background(c.surface).padding(horizontal = Space.md),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(style.accent))
             Text(
                 item.name, color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             )
             Text(
-                Money.format(item.basePriceMinor, currency), color = c.textSecondary,
-                fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 11.sp,
+                Money.format(item.basePriceMinor, currency), color = c.accent,
+                fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 14.sp,
             )
         }
     }

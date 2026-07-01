@@ -13,30 +13,23 @@ struct SettingsView: View {
         ZStack {
             theme.colors.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                header
+                SettingsHeader(onClose: onClose)
                 ScrollView {
                     VStack(spacing: Space.lg) {
                         if let error = app.errorMessage {
                             NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .warning)
                         }
-                        accountCard
+                        AccountCard(app: app)
                         appearanceCard
                         languageCard
-                        printerCard
-                        tillCard
-                        lanCard
+                        PrinterCard(app: app)
+                        TillCard(app: app)
+                        LanCard(app: app)
                         deviceCard
-                        diagnosticsCard
+                        DiagnosticsCard(app: app)
                         MadarButton(label: t("settings.sign_out"),
-                                     icon: "rectangle.portrait.and.arrow.right", variant: .danger) {
-                            // Sign-out (→ login) requires a closed drawer first.
-                            if app.hasOpenShift {
-                                app.flagError(t("settings.sign_out_shift_open"))
-                            } else {
-                                app.signOut()
-                                onClose()
-                            }
-                        }
+                                     icon: "rectangle.portrait.and.arrow.right", variant: .danger,
+                                     action: signOut)
                     }
                     .frame(maxWidth: 640)
                     .frame(maxWidth: .infinity)
@@ -47,7 +40,73 @@ struct SettingsView: View {
         .onAppear { app.clearError() }
     }
 
-    private var header: some View {
+    // MARK: - Actions (kept out of `body`)
+
+    private func signOut() {
+        // Sign-out (→ login) requires a closed drawer first.
+        if app.hasOpenShift {
+            app.flagError(t("settings.sign_out_shift_open"))
+        } else {
+            app.signOut()
+            onClose()
+        }
+    }
+
+    private func reconfigure() {
+        Haptics.selection()
+        // Reconfiguring re-provisions the device — only with a closed drawer.
+        if app.hasOpenShift {
+            app.flagError(t("settings.reconfigure_shift_open"))
+        } else {
+            app.beginReconfigure()
+            onClose()
+        }
+    }
+
+    // MARK: - Inline cards (no per-card state)
+
+    private var appearanceCard: some View {
+        SettingsCard(t("settings.appearance")) {
+            HStack(spacing: Space.sm) {
+                SettingsChip(t("settings.theme_light"), app.themeMode == .light) { app.themeMode = .light }
+                SettingsChip(t("settings.theme_dark"), app.themeMode == .dark) { app.themeMode = .dark }
+                SettingsChip(t("settings.theme_system"), app.themeMode == .system) { app.themeMode = .system }
+            }
+        }
+    }
+
+    private var languageCard: some View {
+        SettingsCard(t("settings.language")) {
+            HStack(spacing: Space.sm) {
+                SettingsChip("English", app.locale.hasPrefix("en")) { app.locale = "en" }
+                SettingsChip("العربية", app.locale.hasPrefix("ar")) { app.locale = "ar" }
+            }
+        }
+    }
+
+    private var deviceCard: some View {
+        SettingsCard(t("settings.device")) {
+            Button(action: reconfigure) {
+                HStack(spacing: Space.lg) {
+                    MadarIcon("building.2", size: 20).foregroundStyle(theme.colors.textSecondary)
+                    Text(t("settings.reconfigure")).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary)
+                    Spacer()
+                    MadarIcon("chevron.forward", size: 16).foregroundStyle(theme.colors.textMuted)
+                }
+            }
+            .buttonStyle(.pressable)
+        }
+    }
+}
+
+// MARK: - Header
+
+private struct SettingsHeader: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let onClose: () -> Void
+
+    var body: some View {
         HStack(spacing: Space.md) {
             Button { onClose() } label: {
                 MadarIcon("chevron.backward", size: 17)
@@ -61,9 +120,17 @@ struct SettingsView: View {
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
+}
 
-    private var accountCard: some View {
-        card(t("settings.account")) {
+// MARK: - Account
+
+private struct AccountCard: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    var body: some View {
+        SettingsCard(t("settings.account")) {
             HStack(spacing: Space.md) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
@@ -88,81 +155,58 @@ struct SettingsView: View {
             }
         }
     }
+}
 
-    private var appearanceCard: some View {
-        card(t("settings.appearance")) {
-            HStack(spacing: Space.sm) {
-                chip(t("settings.theme_light"), app.themeMode == .light) { app.themeMode = .light }
-                chip(t("settings.theme_dark"), app.themeMode == .dark) { app.themeMode = .dark }
-                chip(t("settings.theme_system"), app.themeMode == .system) { app.themeMode = .system }
-            }
-        }
+// MARK: - Printer + device code
+
+private struct PrinterCard: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    // This till's code — the <DEVICE> segment of every order_ref (e.g. T1).
+    // `private(set)` on the model: writes route through the core setter, which
+    // sanitizes to short A-Z0-9 and ignores blank.
+    private var deviceCode: Binding<String> {
+        Binding(get: { app.deviceCode }, set: { app.setDeviceCode($0) })
+    }
+    // Printer host + brand live in the CORE device config; writes route through
+    // `setDevicePrinter` (host:port + brand), keeping the other field.
+    private var printerHost: Binding<String> {
+        Binding(get: { app.printerHost }, set: { app.setDevicePrinter(host: $0, brand: app.printerBrand) })
     }
 
-    private var languageCard: some View {
-        card(t("settings.language")) {
-            HStack(spacing: Space.sm) {
-                chip("English", app.locale.hasPrefix("en")) { app.locale = "en" }
-                chip("العربية", app.locale.hasPrefix("ar")) { app.locale = "ar" }
-            }
-        }
-    }
-
-    private var deviceCard: some View {
-        card(t("settings.device")) {
-            Button {
-                Haptics.selection()
-                // Reconfiguring re-provisions the device — only with a closed drawer.
-                if app.hasOpenShift {
-                    app.flagError(t("settings.reconfigure_shift_open"))
-                } else {
-                    app.beginReconfigure()
-                    onClose()
-                }
-            } label: {
-                HStack(spacing: Space.lg) {
-                    MadarIcon("building.2", size: 20).foregroundStyle(theme.colors.textSecondary)
-                    Text(t("settings.reconfigure")).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary)
-                    Spacer()
-                    MadarIcon("chevron.forward", size: 16).foregroundStyle(theme.colors.textMuted)
-                }
-            }
-            .buttonStyle(.pressable)
-        }
-    }
-
-    private var printerCard: some View {
-        card(t("settings.printer")) {
-            // This till's code — the <DEVICE> segment of every order_ref (e.g. T1).
-            // `private(set)` on the model: writes route through the core setter,
-            // which sanitizes to short A-Z0-9 and ignores blank.
-            let deviceCode = Binding(
-                get: { app.deviceCode },
-                set: { app.setDeviceCode($0) }
-            )
+    var body: some View {
+        SettingsCard(t("settings.printer")) {
             MadarTextField(placeholder: t("settings.device_code_hint"), text: deviceCode,
                             icon: "number", caps: .words)
             Text(t("settings.device_code_caption"))
                 .font(.ui(11)).foregroundStyle(theme.colors.textMuted)
-            // Printer host + brand now live in the CORE device config; writes route
-            // through `setDevicePrinter` (host:port + brand), keeping the other field.
-            let printerHost = Binding(
-                get: { app.printerHost },
-                set: { app.setDevicePrinter(host: $0, brand: app.printerBrand) }
-            )
             MadarTextField(placeholder: t("settings.printer_hint"), text: printerHost, icon: "printer")
             HStack(spacing: Space.sm) {
-                chip(t("settings.printer_epson"), app.printerBrand == .epson) { app.setDevicePrinter(host: app.printerHost, brand: .epson) }
-                chip(t("settings.printer_star"), app.printerBrand == .star) { app.setDevicePrinter(host: app.printerHost, brand: .star) }
+                SettingsChip(t("settings.printer_epson"), app.printerBrand == .epson) {
+                    app.setDevicePrinter(host: app.printerHost, brand: .epson)
+                }
+                SettingsChip(t("settings.printer_star"), app.printerBrand == .star) {
+                    app.setDevicePrinter(host: app.printerHost, brand: .star)
+                }
             }
         }
     }
+}
 
-    // Till (drawer) binding — which POS drawer this device controls. Hidden on
-    // kitchen devices (they bind a station, not a till) and when there are none.
-    @ViewBuilder private var tillCard: some View {
+// MARK: - Till (drawer) binding
+
+// Which POS drawer this device controls. Hidden on kitchen devices (they bind a
+// station, not a till) and when there are none.
+private struct TillCard: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    var body: some View {
         if !app.isKitchenDevice && !app.tills.isEmpty {
-            card(t("settings.till")) {
+            SettingsCard(t("settings.till")) {
                 tillRow(t("settings.till_default"), app.deviceConfig.tillId == nil) { app.setDeviceTill(nil) }
                 ForEach(app.tills, id: \.id) { till in
                     tillRow(till.name, app.deviceConfig.tillId == till.id) { app.setDeviceTill(till.id) }
@@ -172,43 +216,61 @@ struct SettingsView: View {
     }
 
     private func tillRow(_ label: String, _ selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button { Haptics.selection(); action() } label: {
             HStack(spacing: Space.sm) {
                 MadarIcon(selected ? "checkmark.circle" : "circle", size: IconSize.lg)
                     .foregroundStyle(selected ? theme.colors.accent : theme.colors.textMuted)
                 Text(label).font(.ui(14, .medium)).foregroundStyle(theme.colors.textPrimary)
                 Spacer()
             }
-        }.buttonStyle(.plain)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable(scale: 0.97))
+    }
+}
+
+// MARK: - LAN relay
+
+private struct LanCard: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    // Optional fixed hub-IP for the LAN relay when mDNS auto-discovery can't reach
+    // peers. Writes route through the core (`setDeviceLanHub`), which registers it
+    // live if the relay is running and clears on blank.
+    private var hub: Binding<String> {
+        Binding(get: { app.lanHub }, set: { app.setDeviceLanHub($0) })
     }
 
-    private var lanCard: some View {
-        card(t("settings.lan")) {
-            // Optional fixed hub-IP for the LAN relay when mDNS auto-discovery can't
-            // reach peers. Writes route through the core (`setDeviceLanHub`), which
-            // registers it live if the relay is running and clears on blank.
-            let hub = Binding(
-                get: { app.lanHub },
-                set: { app.setDeviceLanHub($0) }
-            )
+    var body: some View {
+        SettingsCard(t("settings.lan")) {
             MadarTextField(placeholder: t("settings.lan_hub_hint"), text: hub, icon: "wifi")
             Text(t("settings.lan_caption"))
                 .font(.ui(11)).foregroundStyle(theme.colors.textMuted)
-            infoRow(app.lanRelayActive ? t("settings.lan_active") : t("settings.lan_offline"),
-                    app.lanRelayActive ? "\(app.lanPeerCount) \(t("settings.lan_peers"))" : "—")
+            SettingsInfoRow(app.lanRelayActive ? t("settings.lan_active") : t("settings.lan_offline"),
+                            app.lanRelayActive ? "\(app.lanPeerCount) \(t("settings.lan_peers"))" : "—")
         }
     }
+}
 
-    private var diagnosticsCard: some View {
-        card(t("settings.diagnostics")) {
-            infoRow(t("settings.version"), app.core.version())
-            infoRow(t("settings.server"), app.core.baseUrl())
-            infoRow(t("settings.pending"), "\(app.pendingCount)")
+// MARK: - Diagnostics
+
+private struct DiagnosticsCard: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    var body: some View {
+        SettingsCard(t("settings.diagnostics")) {
+            SettingsInfoRow(t("settings.version"), app.core.version())
+            SettingsInfoRow(t("settings.server"), app.core.baseUrl())
+            SettingsInfoRow(t("settings.pending"), "\(app.pendingCount)")
             // Realtime (SSE) channel health — the teller's order alerts ride this;
             // surfacing it makes a silent drop diagnosable.
-            infoRow(t("settings.realtime"), app.realtimeConnected ? t("settings.realtime_on") : t("settings.realtime_off"))
+            SettingsInfoRow(t("settings.realtime"), app.realtimeConnected ? t("settings.realtime_on") : t("settings.realtime_off"))
             if !app.diagnostics.isEmpty {
-                Divider().background(theme.colors.border)
+                Divider().background(theme.colors.borderLight)
                 HStack {
                     Text(t("settings.recent_warnings"))
                         .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
@@ -234,10 +296,23 @@ struct SettingsView: View {
             if !app.isKitchenDevice { await app.loadTills() }
         }
     }
+}
 
-    // MARK: - Parts
+// MARK: - Shared parts
 
-    private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+/// A titled settings card — muted uppercase label above a hairline-bordered
+/// `surface` panel. Takes a `@ViewBuilder` slot, not primitive content.
+private struct SettingsCard<Content: View>: View {
+    @Environment(\.theme) private var theme
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             Text(title.uppercased())
                 .font(.ui(12, .bold)).tracking(0.6).foregroundStyle(theme.colors.textMuted)
@@ -253,14 +328,28 @@ struct SettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
         }
     }
+}
 
-    private func chip(_ label: String, _ active: Bool, action: @escaping () -> Void) -> some View {
+/// A pill-toggle chip — accent fill when active, `surfaceAlt` + border otherwise.
+private struct SettingsChip: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let active: Bool
+    let action: () -> Void
+
+    init(_ label: String, _ active: Bool, action: @escaping () -> Void) {
+        self.label = label
+        self.active = active
+        self.action = action
+    }
+
+    var body: some View {
         Button { Haptics.selection(); action() } label: {
             Text(label)
                 .font(.ui(13, .semibold))
                 .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textPrimary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Space.md)
                 .background(active ? theme.colors.accent : theme.colors.surfaceAlt)
                 .overlay(
                     RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
@@ -270,8 +359,19 @@ struct SettingsView: View {
         }
         .buttonStyle(.pressable(scale: 0.97))
     }
+}
 
-    private func infoRow(_ label: String, _ value: String) -> some View {
+private struct SettingsInfoRow: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let value: String
+
+    init(_ label: String, _ value: String) {
+        self.label = label
+        self.value = value
+    }
+
+    var body: some View {
         HStack {
             Text(label).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
             Spacer(minLength: Space.md)

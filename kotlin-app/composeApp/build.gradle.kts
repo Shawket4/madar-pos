@@ -137,6 +137,12 @@ tasks.register<JavaExec>("screenshots") {
     systemProperty("madar.outDir", layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
     // Headless AWT — no Dock icon / window, just Skia rendering to a bitmap.
     systemProperty("java.awt.headless", "true")
+    // Let the UniFFI Kotlin binding find libmadar_core.dylib via JNA, so the
+    // harness can build a REAL MadarCore (in-memory store) + AppModel and render
+    // the actual screen composables headlessly. Mirrors the `application` block's
+    // jvmArgs (build.gradle.kts ~line 149). Without this the harness crashes at
+    // MadarCore() with UnsatisfiedLinkError.
+    systemProperty("jna.library.path", "${rootProject.projectDir}/../rust-core/target/debug")
 }
 
 compose.desktop {

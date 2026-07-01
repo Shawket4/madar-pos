@@ -25,7 +25,7 @@ struct BrandPanel: View {
                 Text(t("brand.headline"))
                     .font(.ui(44, .black))
                     .foregroundStyle(theme.colors.textPrimary)
-                    .lineSpacing(2)
+                    .lineSpacing(6)
                 Text(t("brand.tagline"))
                     .font(.ui(15)).foregroundStyle(theme.colors.textSecondary)
                     .lineSpacing(4)

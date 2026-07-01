@@ -92,7 +92,7 @@ private struct OpenShiftForm: View {
                 Text(t("shift.welcome"))
                     .font(.ui(15, .medium)).foregroundStyle(theme.colors.textSecondary)
                 Text(app.session?.displayName ?? t("shift.open_title"))
-                    .font(.ui(28, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                    .font(.ui(28, .black)).tracking(-0.5).foregroundStyle(theme.colors.textPrimary)
                     .multilineTextAlignment(.center)
                 if !app.branchName.isEmpty {
                     StatusChip(label: app.branchName, icon: "building.2", tone: .info)
@@ -102,14 +102,18 @@ private struct OpenShiftForm: View {
             .padding(.top, showLogo ? Space.xl : 0)
 
             // ── Hero count field (the one thing the teller must do) ───────────
-            VStack(spacing: Space.md) {
-                Text(t("shift.opening_cash"))
-                    .font(.ui(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
-                    .frame(maxWidth: .infinity)
+            // Wrapped in the shared bordered surface card — matches the Order
+            // screen's raised, hairline-bordered surfaces. Section-labelled, the
+            // hero figure sits on its own elevated panel rather than floating on
+            // the page background.
+            MadarCard(spacing: Space.md) {
+                SectionHeader(text: t("shift.opening_cash"), icon: "banknote")
                 AmountField(amountMinor: $openingMinor, currencyCode: currency, autofocus: true)
 
                 // Carried-over suggestion (previous declared closing).
-                if app.suggestedOpeningCashMinor > 0 { carryoverHint }
+                if app.suggestedOpeningCashMinor > 0 {
+                    CarryoverHint(suggestedMinor: app.suggestedOpeningCashMinor, currency: currency)
+                }
 
                 // Discrepancy reason — only when the count deviates from carryover.
                 if needsReason {
@@ -120,6 +124,7 @@ private struct OpenShiftForm: View {
                 Text(needsReason ? t("shift.opening_reason_hint") : t("shift.opening_hint"))
                     .font(.ui(12)).foregroundStyle(theme.colors.textMuted)
                     .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.top, Space.xxl)
@@ -174,24 +179,29 @@ private struct OpenShiftForm: View {
         let editReason = needsReason ? reason : nil
         Task { await app.openShift(openingCashMinor: openingMinor, editReason: editReason) }
     }
+}
 
-    /// The carried-over opening-cash suggestion (previous declared closing).
-    private var carryoverHint: some View {
+/// The carried-over opening-cash suggestion (previous declared closing) — a tinted
+/// teal block carrying the prior figure as bold teal money, the twin of
+/// CloseShift's ExpectedCashBlock (the figure this open count reconciles against).
+/// Its own `View` struct so it owns its environment and recomputes independently.
+private struct CarryoverHint: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let suggestedMinor: Int64
+    let currency: String
+
+    var body: some View {
         HStack(spacing: Space.sm) {
-            MadarIcon("clock.arrow.circlepath", size: 13).foregroundStyle(theme.colors.textMuted)
+            MadarIcon("clock.arrow.circlepath", size: IconSize.sm).foregroundStyle(theme.colors.accent)
             Text(t("shift.suggested_from_close"))
-                .font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
+                .font(.ui(12, .bold)).foregroundStyle(theme.colors.accent)
             Spacer(minLength: Space.sm)
-            Text(Money.format(app.suggestedOpeningCashMinor, currency))
-                .font(.money(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
+            Text(Money.format(suggestedMinor, currency))
+                .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
         }
-        .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
-        .background(theme.colors.surfaceAlt)
-        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                .strokeBorder(theme.colors.borderLight, lineWidth: 1)
-        )
-        .elevation(.card)
+        .padding(14)
+        .background(theme.colors.accentBg)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
     }
 }

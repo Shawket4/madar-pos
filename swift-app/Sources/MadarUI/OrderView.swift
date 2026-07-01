@@ -63,7 +63,14 @@ struct OrderView: View {
             let wide = geo.size.width >= Responsive.wide
             ZStack {
                 theme.colors.bg.ignoresSafeArea()
-                VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    // Persistent leading nav rail on tablet; phone collapses it into
+                    // a top "options" toggle (the rail is too cramped on a phone).
+                    if wide {
+                        NavRail(app: app, wide: wide)
+                        Rectangle().fill(theme.colors.border).frame(width: 1)
+                    }
+                    VStack(spacing: 0) {
                     OrderTopBar(app: app, wide: wide)
                     if !app.isOnline {
                         NoticeBanner(icon: "wifi.slash", text: t("chrome.offline_banner"), tone: .warning)
@@ -102,22 +109,27 @@ struct OrderView: View {
                         CartBar(app: app, currency: currency) { showCart = true }
                     }
                 }
-                // More — secondary nav hub as a leading side drawer (scrim +
-                // full-height panel). Replaces the old bottom sheet; .leading is
-                // layout-direction aware, so it's RTL-correct.
+                }
+                // More — overflow nav hub that expands as a panel right next to the
+                // rail (offset by the rail width). Scrim taps to dismiss. RTL-aware.
                 if app.showMore {
                     Color.black.opacity(Opacity.scrim)
                         .ignoresSafeArea()
                         .onTapGesture { withAnimation(Motion.standard) { app.showMore = false } }
                         .transition(.opacity)
-                    HStack(spacing: 0) {
-                        MoreDrawer(app: app, wide: wide)
-                            .frame(width: 320)
-                            .frame(maxHeight: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous))
-                        Spacer(minLength: 0)
+                    VStack(spacing: 0) {
+                        if wide { Spacer(minLength: 0) }
+                        HStack(spacing: 0) {
+                            // Pops from the More control: by the rail's More tile on
+                            // tablet (bottom-left); by the top-bar toggle on phone.
+                            Color.clear.frame(width: wide ? 80 + Space.sm : Space.sm)
+                            MoreDrawer(app: app, wide: wide)
+                            Spacer(minLength: 0)
+                        }
+                        if !wide { Spacer(minLength: 0) }
                     }
-                    .ignoresSafeArea(edges: .bottom)
+                    .padding(.vertical, Space.sm)
+                    .padding(.top, wide ? 0 : 56)
                     .transition(.move(edge: .leading))
                 }
             }
@@ -171,6 +183,10 @@ struct OrderView: View {
             // Mid-shift Z-report preview + print.
             .madarSheet(isPresented: $app.showReportPreview, size: .large, maxWidth: 600) { dismiss in
                 ShiftReportPreviewView(app: app, onClose: dismiss)
+            }
+            // A PAST shift's Z-report preview + print (tapped from Past Shifts).
+            .madarSheet(isPresented: $app.showPastReportPreview, size: .large, maxWidth: 600) { dismiss in
+                ShiftReportPreviewView(app: app, report: app.previewShiftReport, onClose: dismiss)
             }
             // Token expired mid-shift → re-auth the same teller to resume sync.
             .madarSheet(isPresented: $app.showReauth, size: .hug, maxWidth: 440) { dismiss in
@@ -245,6 +261,183 @@ struct OrderView: View {
     }
 }
 
+// MARK: - Side navigation rail
+
+/// A leading-edge nav destination: glyph + label + tap.
+private struct NavDest {
+    let glyph: String
+    let label: String
+    var hasNew = false
+    let action: () -> Void
+}
+
+/// A labelled group of rail destinations — the rail and the phone drawer both
+/// render these as a caption + its tiles, so the two stay in lockstep.
+private struct NavSection {
+    let title: String
+    let items: [NavDest]
+}
+
+/// The persistent side rail — secondary destinations exposed as tappable tiles on
+/// the leading edge instead of buried in a bottom sheet. Frequent destinations
+/// scroll in the middle; settings + more pin to the bottom.
+private struct NavRail: View {
+    @ObservedObject var app: AppModel
+    let wide: Bool
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // The Madar wordmark ("madar", no orbit); the asset catalog swaps to the
+            // paper variant automatically in dark mode. Sized by width for the rail.
+            Image("MadarLockup").resizable().scaledToFit().frame(width: 64)
+                .padding(.vertical, Space.sm)
+            divider
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 2) {
+                    // Task categories — each group under its caption.
+                    ForEach(Array(sections.enumerated()), id: \.offset) { item in
+                        NavRailCaption(title: item.element.title, topPad: item.offset == 0 ? 0 : Space.sm)
+                        ForEach(item.element.items, id: \.label) { NavRailItem(dest: $0) }
+                    }
+                }
+                .padding(.vertical, Space.xs)
+            }
+            divider
+            // System utilities — pinned to the footer.
+            NavRailCaption(title: footer.title, topPad: 0)
+            ForEach(footer.items, id: \.label) { NavRailItem(dest: $0) }
+        }
+        .padding(.vertical, Space.sm)
+        .frame(width: 80)
+        .frame(maxHeight: .infinity)
+        .background(theme.colors.surface)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(theme.colors.borderLight).frame(height: 1)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.xs)
+    }
+
+    // Task categories scroll in the middle; system utilities (incl. More) pin to
+    // the footer.
+    private var sections: [NavSection] { orderNavSections(app, t) }
+    private var footer: NavSection { orderNavSystem(app, t, includeMore: true) }
+}
+
+/// A tiny uppercase caption heading a rail section — what turns the flat list
+/// into intuitive, scannable categories.
+private struct NavRailCaption: View {
+    let title: String
+    var topPad: CGFloat = 0
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.ui(8, .semibold))
+            .tracking(0.6)
+            .foregroundStyle(theme.colors.textMuted)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .padding(.top, topPad)
+            .padding(.bottom, 2)
+            .padding(.horizontal, 2)
+    }
+}
+
+// Shared nav destinations — the rail (tablet) and the phone "options" drawer both
+// build these groups here, so the two stay in lockstep. Task categories scroll;
+// system utilities (orderNavSystem) pin to the footer.
+@MainActor
+private func orderNavSections(_ app: AppModel, _ t: (String) -> String) -> [NavSection] {
+    if app.isWaiterDevice {
+        // A waiter device only handles tickets — the single Orders group.
+        return [
+            NavSection(title: t("nav.section.orders"), items: [
+                NavDest(glyph: "fork.knife", label: t("waiter.tickets"), hasNew: app.ticketsHasNew) { app.clearTicketsBadge(); Task { await app.loadOpenTickets() }; app.showTickets = true },
+            ]),
+        ]
+    }
+    return [
+        // Orders — the order lifecycle: inbox → held → completed → look-up.
+        NavSection(title: t("nav.section.orders"), items: [
+            NavDest(glyph: "bicycle", label: t("nav.incoming"), hasNew: app.deliveryHasNew || app.ticketsHasNew) {
+                app.errorMessage = nil
+                app.clearDeliveryBadge(); app.clearTicketsBadge()
+                Task { await app.loadDeliveryOrders(); await app.loadOpenTickets() }
+                app.showIncoming = true
+            },
+            NavDest(glyph: "tray.full", label: t("drafts.title")) { app.loadDrafts(); app.showDrafts = true },
+            NavDest(glyph: "list.bullet.rectangle", label: t("nav.history")) { app.showHistory = true },
+            NavDest(glyph: "magnifyingglass", label: t("search.title")) { app.showOrderSearch = true },
+        ]),
+        // Money — cash drawer & shift reconciliation.
+        NavSection(title: t("nav.section.money"), items: [
+            NavDest(glyph: "banknote", label: t("cash.title")) { app.errorMessage = nil; app.showCashMovements = true },
+            NavDest(glyph: "clock.arrow.circlepath", label: t("shifts.title")) { app.showShiftHistory = true },
+            NavDest(glyph: "printer", label: t("shift.print_report")) { app.openShiftReportPreview() },
+        ]),
+    ]
+}
+
+// System utilities — always reachable. The rail footer includes More; the phone
+// drawer drops it (the drawer IS More).
+@MainActor
+private func orderNavSystem(_ app: AppModel, _ t: (String) -> String, includeMore: Bool) -> NavSection {
+    var items: [NavDest] = [
+        NavDest(glyph: "arrow.triangle.2.circlepath", label: t("sync.title")) { app.loadOutbox(); app.showSync = true },
+        orderNavSettings(app, t),
+    ]
+    if includeMore {
+        items.append(NavDest(glyph: "ellipsis", label: t("chrome.more")) { app.refreshPending(); withAnimation(Motion.standard) { app.showMore = true } })
+    }
+    return NavSection(title: t("nav.section.system"), items: items)
+}
+
+@MainActor
+private func orderNavSettings(_ app: AppModel, _ t: (String) -> String) -> NavDest {
+    NavDest(glyph: "gearshape", label: t("settings.title")) { app.refreshPending(); app.showSettings = true }
+}
+
+private struct NavRailItem: View {
+    let dest: NavDest
+    @Environment(\.theme) private var theme
+    @State private var pulse = false
+
+    var body: some View {
+        Button { Haptics.selection(); dest.action() } label: {
+            VStack(spacing: 4) {
+                MadarIcon(dest.glyph, size: 18)
+                    .foregroundStyle(dest.hasNew ? theme.colors.accent : theme.colors.textSecondary)
+                    .frame(width: 36, height: 36)
+                    .background(dest.hasNew ? theme.colors.accentBg : theme.colors.surfaceAlt)
+                    .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        // A live SSE event for this module → a pulsing accent dot.
+                        if dest.hasNew {
+                            Circle().fill(theme.colors.accent)
+                                .frame(width: 8, height: 8)
+                                .padding(3)
+                                .opacity(pulse ? 0.25 : 1)
+                                .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: pulse)
+                        }
+                    }
+                Text(dest.label)
+                    .font(.ui(10, dest.hasNew ? .semibold : .medium))
+                    .foregroundStyle(dest.hasNew ? theme.colors.accent : theme.colors.textSecondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .onAppear { pulse = dest.hasNew }
+        .onChange(of: dest.hasNew) { pulse = $0 }
+    }
+}
+
 // MARK: - Top action bar (the only nav hub)
 
 private struct OrderTopBar: View {
@@ -272,44 +465,32 @@ private struct OrderTopBar: View {
 
     @ViewBuilder private var barRow: some View {
         HStack(spacing: Space.sm) {
-            MadarMark(size: 32)
-            // Phone: the status chips + secondary action buttons don't fit a ~360pt
-            // bar, so they collapse into the More drawer (which carries the teller +
-            // live stats in its header). Only the logo, sync status, and More stay.
-            // A waiter holds no shift, so it shows neither the teller chip nor stats.
-            if wide && !app.isWaiterDevice, let s = app.shift {
-                StatusChip(label: s.tellerName, icon: "person.fill", tone: .info)
+            // Phone: no side rail — a leading "options" toggle opens the nav drawer.
+            if !wide {
+                Button { app.refreshPending(); withAnimation(Motion.standard) { app.showMore = true } } label: {
+                    MadarIcon("line.3.horizontal", size: 18)
+                        .foregroundStyle(theme.colors.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(theme.colors.surfaceAlt)
+                        .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                            .strokeBorder(theme.colors.borderLight, lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
             }
-            if wide && !app.isWaiterDevice && app.shift?.isOpen == true { ShiftStatsPill(app: app, currency: currency) }
+            // Status — teller (wide), live shift totals, and sync state.
+            if !app.isWaiterDevice {
+                if wide, let s = app.shift {
+                    StatusChip(label: s.tellerName, icon: "person.fill", tone: .info)
+                }
+                if app.shift?.isOpen == true { ShiftStatsPill(app: app, currency: currency) }
+            }
             Spacer(minLength: 0)
             SyncChip(app: app)
-            if app.isWaiterDevice {
-                // Waiter's nav: catalog sync (the SAME button as the teller), the
-                // open-tickets list, and settings; the rest is in More.
-                syncDataButton
-                barButton(icon: "fork.knife") { Task { await app.loadOpenTickets() }; app.showTickets = true }
-                if wide { barButton(icon: "gearshape") { app.refreshPending(); app.showSettings = true } }
-            } else if wide {
-                syncDataButton
-                barButton(icon: "list.bullet.rectangle") { app.showHistory = true }
-                barButton(icon: "gearshape") { app.refreshPending(); app.showSettings = true }
-            }
-            barButton(icon: "ellipsis") { app.refreshPending(); withAnimation(Motion.standard) { app.showMore = true } }
+            syncDataButton
         }
     }
 
-    private func barButton(icon: String, action: @escaping () -> Void) -> some View {
-        Button { Haptics.selection(); action() } label: {
-            MadarIcon(icon, size: 15)
-                .foregroundStyle(theme.colors.textMuted)
-                .frame(width: 34, height: 34)
-                .background(theme.colors.surfaceAlt)
-                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                    .strokeBorder(theme.colors.borderLight, lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
-    }
 
     /// Manual "sync server data" — re-pulls the catalog (menu, add-ons, bundles,
     /// payment methods, discounts). Spins + disables while running. Mirrors
@@ -441,8 +622,7 @@ private struct MoreDrawer: View {
     private var currency: String { app.session?.currencyCode ?? "" }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: Space.lg)
+        VStack(spacing: Space.sm) {
             if let s = app.shift {
                 HStack(spacing: Space.sm) {
                     Circle().fill(app.isOnline ? theme.colors.success : theme.colors.warning)
@@ -460,75 +640,74 @@ private struct MoreDrawer: View {
                     Spacer()
                 }
                 .padding(Space.md)
+                .frame(maxWidth: .infinity)
                 .background(theme.colors.surfaceAlt)
                 .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
-                .padding(.horizontal, Space.lg)
             }
-            VStack(spacing: Space.sm) {
-                if app.isWaiterDevice {
-                    // Waiter: open-tickets list + the sync center. No shift/cash/till rows.
-                    row(icon: "fork.knife", label: t("waiter.tickets"), tone: theme.colors.textPrimary) {
-                        app.showMore = false; Task { await app.loadOpenTickets() }; app.showTickets = true
-                    }
-                    row(icon: "arrow.triangle.2.circlepath", label: t("sync.title"), tone: theme.colors.textPrimary) {
-                        app.showMore = false; app.loadOutbox(); app.showSync = true
-                    }
-                } else {
-                    // Phone-only: the bar's History / Sync / Sync-data buttons live here instead.
-                    if !wide {
-                        row(icon: "list.bullet.rectangle", label: t("history.title"), tone: theme.colors.textPrimary) {
-                            app.showMore = false; app.showHistory = true
-                        }
-                        row(icon: "magnifyingglass", label: t("search.title"), tone: theme.colors.textPrimary) {
-                            app.showMore = false; app.showOrderSearch = true
-                        }
-                        row(icon: "arrow.triangle.2.circlepath", label: t("sync.title"), tone: theme.colors.textPrimary) {
-                            app.showMore = false; app.loadOutbox(); app.showSync = true
-                        }
-                        row(icon: "arrow.clockwise", label: t("chrome.sync_data"), tone: theme.colors.textPrimary) {
-                            app.showMore = false; Task { await app.syncServerData() }
-                        }
-                    }
-                    row(icon: "banknote", label: t("cash.title"), tone: theme.colors.textPrimary) {
-                        app.showMore = false; app.errorMessage = nil; app.showCashMovements = true
-                    }
-                    row(icon: "clock.arrow.circlepath", label: t("shifts.title"), tone: theme.colors.textPrimary) {
-                        app.showMore = false; app.showShiftHistory = true
-                    }
-                    row(icon: "printer", label: t("shift.print_report"), tone: theme.colors.textPrimary) {
-                        app.showMore = false; app.openShiftReportPreview()
-                    }
-                    row(icon: "tray.full", label: t("drafts.title"), tone: theme.colors.textPrimary) {
-                        app.showMore = false; app.loadDrafts(); app.showDrafts = true
-                    }
-                    // ONE entry for both delivery + waiter open-tickets (two tabs).
-                    row(icon: "bicycle", label: t("incoming.title"), tone: theme.colors.textPrimary) {
-                        app.showMore = false; app.errorMessage = nil
-                        Task { await app.loadDeliveryOrders(); await app.loadOpenTickets() }
-                        app.showIncoming = true
-                    }
-                    row(icon: "lock", label: t("order.close_shift"), tone: theme.colors.danger) {
-                        app.showMore = false; app.errorMessage = nil; app.showCloseShift = true
-                    }
-                }
-                row(icon: "gearshape", label: t("settings.title"), tone: theme.colors.textPrimary) {
-                    app.showMore = false; app.refreshPending(); app.showSettings = true
-                }
-                row(icon: "rectangle.portrait.and.arrow.right", label: t("settings.sign_out"), tone: theme.colors.textPrimary) {
-                    // You can't sign out mid-shift — close the drawer first.
-                    if app.hasOpenShift {
-                        app.flagError(t("settings.sign_out_shift_open"))
-                    } else {
-                        app.showMore = false; app.signOut()
-                    }
-                }
+            // Few items on tablet → hug; the full nav on phone → cap + scroll.
+            if wide {
+                VStack(spacing: Space.sm) { drawerRows }
+            } else {
+                ScrollView(showsIndicators: false) { VStack(spacing: Space.sm) { drawerRows } }
+                    .frame(maxHeight: 460)
             }
-            .padding(Space.lg)
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: 600)
-        .frame(maxWidth: .infinity)
-        .background(theme.colors.surfaceAlt)
+        .padding(Space.sm)
+        .frame(width: 260)
+        .background(theme.colors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous).strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        .elevation(.raised)
+    }
+
+    private var phoneSystem: NavSection { orderNavSystem(app, t, includeMore: false) }
+
+    @ViewBuilder private var drawerRows: some View {
+        // Phone: the rail's grouped destinations live here (no rail on phone) — each
+        // task category under its caption, then System. Tablet shows only the
+        // destructive rows (the groups are exposed in the rail).
+        if !wide {
+            ForEach(Array(orderNavSections(app, t).enumerated()), id: \.offset) { item in
+                caption(item.element.title)
+                ForEach(Array(item.element.items.enumerated()), id: \.offset) { sub in
+                    row(icon: sub.element.glyph, label: sub.element.label, tone: theme.colors.textPrimary) {
+                        app.showMore = false; sub.element.action()
+                    }
+                }
+            }
+            caption(phoneSystem.title)
+            ForEach(Array(phoneSystem.items.enumerated()), id: \.offset) { sub in
+                row(icon: sub.element.glyph, label: sub.element.label, tone: theme.colors.textPrimary) {
+                    app.showMore = false; sub.element.action()
+                }
+            }
+        }
+        if !app.isWaiterDevice {
+            row(icon: "lock", label: t("order.close_shift"), tone: theme.colors.danger) {
+                app.showMore = false; app.errorMessage = nil; app.showCloseShift = true
+            }
+        }
+        row(icon: "rectangle.portrait.and.arrow.right", label: t("settings.sign_out"), tone: theme.colors.textPrimary) {
+            // You can't sign out mid-shift — close the drawer first.
+            if app.hasOpenShift {
+                app.flagError(t("settings.sign_out_shift_open"))
+            } else {
+                app.showMore = false; app.signOut()
+            }
+        }
+    }
+
+    // A left-aligned uppercase caption heading a drawer group — mirrors the rail's
+    // section captions so phone and tablet read the same.
+    private func caption(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.ui(10, .semibold))
+            .tracking(0.8)
+            .foregroundStyle(theme.colors.textMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Space.xs)
+            .padding(.top, Space.xs)
+            .padding(.bottom, 2)
     }
 
     private func row(icon: String, label: String, tone: Color, action: @escaping () -> Void) -> some View {
@@ -603,83 +782,6 @@ private struct CategoryTabs: View {
             .frame(height: 46)
         }
         .buttonStyle(.pressable(scale: 0.97))
-    }
-}
-
-/// Tablet/desktop: a 94pt vertical category rail (the Flutter CategoryRail). Each
-/// tile carries a category-styled gradient icon badge above its label.
-private struct CategoryRail: View {
-    @ObservedObject var app: AppModel
-    @Environment(\.theme) private var theme
-    @Environment(\.localize) private var t
-    let categories: [CategoryView]
-    @Binding var selected: String?
-    var showCombos: Bool = false
-
-    var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 3) {
-                tile(t("order.all"), id: nil, style: nil, imageUrl: nil, fixedIcon: "square.grid.2x2.fill")
-                if showCombos { tile(t("order.combos"), id: kCombosCategory, style: nil, imageUrl: nil, fixedIcon: "square.stack.3d.up.fill") }
-                ForEach(categories.filter { $0.isActive }, id: \.id) { c in
-                    tile(c.name, id: c.id, style: app.core.categoryStyle(name: c.name, dark: theme.isDark), imageUrl: c.imageUrl, fixedIcon: nil)
-                }
-            }
-            .padding(.vertical, Space.sm)
-        }
-        .frame(width: 96)
-        .background(theme.colors.surface)
-    }
-
-    private func tile(_ label: String, id: String?, style: CatStyleView?, imageUrl: String?, fixedIcon: String?) -> some View {
-        let active = selected == id
-        let iconColor = style.map { Color(hex: $0.iconColor) } ?? theme.colors.accent
-        return Button {
-            Haptics.selection()
-            selected = id
-        } label: {
-            VStack(spacing: 5) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(LinearGradient(
-                            colors: style.map { [Color(hex: $0.bgTop), Color(hex: $0.bgBottom)] } ?? [theme.colors.accentBg, theme.colors.accentBg],
-                            startPoint: .topLeading, endPoint: .bottomTrailing))
-                    // Base layer — fixed icon (All/Combos) → family icon → monogram.
-                    // ALWAYS drawn, so a missing OR failed-to-load category image
-                    // still shows something (the previous if/else fell through to
-                    // nothing when an image url was present but didn't load).
-                    if let fixedIcon {
-                        MadarIcon(fixedIcon, size: IconSize.md).foregroundStyle(iconColor)
-                    } else if let key = style?.icon, let icon = categoryIconName(key) {
-                        MadarIcon(icon, size: IconSize.md).foregroundStyle(iconColor)
-                    } else {
-                        Text(categoryMonogram(label)).font(.ui(15, .bold)).foregroundStyle(iconColor)
-                    }
-                    // Overlay — the uploaded image covers the base once it loads.
-                    if fixedIcon == nil, let s = imageUrl, let u = URL(string: s) {
-                        CachedAsyncImage(url: u)
-                            .frame(width: 38, height: 38)
-                            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    }
-                }
-                .frame(width: 38, height: 38)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(active ? theme.colors.accent : Color.clear, lineWidth: 2))
-                Text(label)
-                    .font(.ui(10, active ? .bold : .medium))
-                    .foregroundStyle(active ? theme.colors.accent : theme.colors.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Space.sm)
-            .padding(.horizontal, Space.xs)
-            .background(active ? theme.colors.accentBg : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
-        }
-        .buttonStyle(.pressable(scale: 0.95))
-        .padding(.horizontal, Space.sm)
     }
 }
 
@@ -1080,7 +1182,8 @@ private struct QtyStepper: View {
             StepButton(symbol: qty <= 1 ? "trash" : "minus", action: onDec)
             Text("\(qty)").font(.ui(15, .bold))
                 .foregroundStyle(theme.colors.textPrimary)
-                .frame(minWidth: 18)
+                .multilineTextAlignment(.center)
+                .frame(minWidth: 24, alignment: .center)
             StepButton(symbol: "plus", action: onInc)
         }
     }
@@ -1129,7 +1232,18 @@ private struct CartFooter: View {
                 }
             }
             TotalRow(label: t("order.tax"), value: Money.format(totals.taxMinor, currency))
-            TotalRow(label: t("order.total"), value: Money.format(totals.totalMinor, currency), emphasized: true)
+            // Prominent total block — tinted teal, the figure tellers look at. The
+            // sub-rows above stay light so the grand total carries the weight.
+            HStack {
+                Text(t("order.total")).font(.ui(14, .bold)).foregroundStyle(theme.colors.accent)
+                Spacer()
+                Text(Money.format(totals.totalMinor, currency))
+                    .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
+            }
+            .padding(.horizontal, Space.md)
+            .padding(.vertical, Space.md)
+            .background(theme.colors.accentBg)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
             HStack(spacing: Space.sm) {
                 if let onHold {
                     Button { Haptics.selection(); onHold() } label: {
@@ -1260,6 +1374,24 @@ private struct OrderScreenRouter: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay {
             ZStack {
+                if active != nil {
+                    // Input firewall — a fullscreen, invisible hit-test barrier that
+                    // swallows every touch while a full-screen route is up. It sits
+                    // BELOW the routeView in this ZStack (lower zIndex), so the route's
+                    // own controls (back button, list rows) still receive taps, but any
+                    // tap that lands on the route yet MISSES a control is eaten here
+                    // instead of falling through to a hidden NavRail tile / catalog /
+                    // cart at the same pixel underneath. The back buttons sit top-left,
+                    // right over the rail, which is exactly where the fall-through
+                    // misfires. The .madarSheet overlays already carry their own
+                    // hit-blocking scrim; the routed screens (this overlay) did not.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {}
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea()
+                        .zIndex(10)
+                }
                 if let active {
                     routeView(active)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1269,6 +1401,12 @@ private struct OrderScreenRouter: ViewModifier {
                 }
             }
             .animation(Motion.standard, value: active)
+        }
+        // Global receipt preview — shown over ANY route, so the shared ReceiptPaper +
+        // Print sheet is reachable from the Order History reprint AND a past-shift
+        // order tap (and anywhere else), printer connected or not.
+        .madarSheet(item: $app.previewReceipt, size: .large) { r, dismiss in
+            ReceiptPreviewSheet(app: app, receipt: r, onClose: dismiss)
         }
     }
 

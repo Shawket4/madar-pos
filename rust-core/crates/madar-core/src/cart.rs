@@ -292,16 +292,38 @@ fn view(lines: &[StoredLine]) -> Vec<CartLineView> {
         .collect()
 }
 
-/// Charged addon price: swap families (milk_type) pay only the delta over the
-/// item's default-milk base (clamped ≥0); everything else (additive, and
-/// coffee_type which carries no base in the catalog) pays the full default —
-/// exactly the Flutter `_adjustedPrice`.
-fn adjusted_addon_price(a: &menu::AddonItemView, milk_base: i64) -> i64 {
-    if a.addon_type == "milk_type" {
-        (a.default_price_minor - milk_base).max(0)
-    } else {
-        a.default_price_minor
+/// Charged addon price: SWAP families (milk_type, coffee_type) pay only the delta
+/// over the item's default base for that family (clamped ≥0) — re-selecting the
+/// default costs 0; everything else (additive) pays the full default. The backend
+/// (component_resolve) charges a coffee swap as a delta too; the POS used to charge
+/// the FULL coffee price, overstating the order total vs the recorded sale.
+fn adjusted_addon_price(a: &menu::AddonItemView, milk_base: i64, coffee_base: i64) -> i64 {
+    match a.addon_type.as_str() {
+        "milk_type" => (a.default_price_minor - milk_base).max(0),
+        "coffee_type" => (a.default_price_minor - coffee_base).max(0),
+        _ => a.default_price_minor,
     }
+}
+
+/// The base price a coffee swap is charged ABOVE: find the item's recipe line in
+/// the `coffee_bean` category, then the coffee_type addon whose embedded ingredient
+/// matches that line's org-ingredient — its default price is the base. Recipe-driven
+/// (mirrors the backend's component_resolve; no precomputed default-coffee id).
+fn coffee_swap_base(item: &menu::MenuItemView, addon_catalog: &[menu::AddonItemView]) -> i64 {
+    let Some(base_ing) = item
+        .recipes
+        .iter()
+        .find(|r| r.category == "coffee_bean")
+        .and_then(|r| r.org_ingredient_id.as_deref())
+    else {
+        return 0;
+    };
+    addon_catalog
+        .iter()
+        .filter(|a| a.addon_type == "coffee_type")
+        .find(|a| a.ingredients.iter().any(|ing| ing.org_ingredient_id.as_deref() == Some(base_ing)))
+        .map(|a| a.default_price_minor)
+        .unwrap_or(0)
 }
 
 /// Resolve a configured line's charged prices from the cached catalog. PURE so
@@ -353,6 +375,7 @@ fn resolve_addons(
         .and_then(|id| addon_catalog.iter().find(|a| &a.id == id))
         .map(|a| a.default_price_minor)
         .unwrap_or(0);
+    let coffee_base = coffee_swap_base(item, addon_catalog);
     addon_sels
         .iter()
         .filter_map(|sel| {
@@ -360,7 +383,7 @@ fn resolve_addons(
             Some(StoredAddon {
                 addon_item_id: a.id.clone(),
                 name: a.name.clone(),
-                price_modifier_minor: adjusted_addon_price(a, milk_base),
+                price_modifier_minor: adjusted_addon_price(a, milk_base, coffee_base),
                 qty: sel.qty.max(1),
             })
         })
@@ -443,6 +466,7 @@ pub(crate) fn item_addons(
         .and_then(|id| addon_catalog.iter().find(|a| &a.id == id))
         .map(|a| a.default_price_minor)
         .unwrap_or(0);
+    let coffee_base = coffee_swap_base(item, addon_catalog);
     addon_catalog
         .iter()
         .filter(|a| a.is_active)
@@ -450,7 +474,7 @@ pub(crate) fn item_addons(
             addon_item_id: a.id.clone(),
             name: a.name.clone(),
             addon_type: a.addon_type.clone(),
-            charged_price_minor: adjusted_addon_price(a, milk_base),
+            charged_price_minor: adjusted_addon_price(a, milk_base, coffee_base),
         })
         .collect()
 }
@@ -833,6 +857,45 @@ mod tests {
         let line = resolve_line(&it, &catalog(), None,
             &[AddonSelection { addon_item_id: "almond".into(), qty: 1 }], &[], 1, None);
         assert_eq!(line.addons[0].price_modifier_minor, 2000);
+    }
+
+    fn coffee(id: &str, price: i64, ing: &str) -> menu::AddonItemView {
+        menu::AddonItemView {
+            id: id.into(), name: id.into(), addon_type: "coffee_type".into(),
+            default_price_minor: price, is_active: true,
+            ingredients: vec![menu::AddonIngredientView {
+                ingredient_name: ing.into(), unit: "g".into(), quantity: 18.0, org_ingredient_id: Some(ing.into()),
+            }],
+        }
+    }
+
+    #[test]
+    fn coffee_swap_charges_delta_over_recipe_base_not_full() {
+        // The item's recipe uses the house bean; its coffee_type addon (1200) is the
+        // DEFAULT. Swapping to a single-origin bean (1800) costs the delta 600 — not
+        // the full 1800 (the POS bug) — and re-selecting the house bean costs 0.
+        let mut it = item();
+        it.recipes = vec![menu::RecipeLineView {
+            ingredient_name: "House Bean".into(), quantity: 18.0, unit: "g".into(),
+            size_label: None, category: "coffee_bean".into(), org_ingredient_id: Some("bean-house".into()),
+        }];
+        let catalog = vec![coffee("house", 1200, "bean-house"), coffee("single", 1800, "bean-single")];
+
+        let line = resolve_line(&it, &catalog, None,
+            &[AddonSelection { addon_item_id: "single".into(), qty: 1 }], &[], 1, None);
+        assert_eq!(line.addons[0].price_modifier_minor, 600, "coffee swap = 1800 - 1200 base");
+
+        let line = resolve_line(&it, &catalog, None,
+            &[AddonSelection { addon_item_id: "house".into(), qty: 1 }], &[], 1, None);
+        assert_eq!(line.addons[0].price_modifier_minor, 0, "re-selecting the default coffee is free");
+    }
+
+    #[test]
+    fn coffee_swap_without_recipe_base_falls_back_to_full() {
+        // No coffee_bean recipe line → no base derivable → full price (best-effort).
+        let line = resolve_line(&item(), &[coffee("single", 1800, "bean-single")], None,
+            &[AddonSelection { addon_item_id: "single".into(), qty: 1 }], &[], 1, None);
+        assert_eq!(line.addons[0].price_modifier_minor, 1800);
     }
 
     #[test]

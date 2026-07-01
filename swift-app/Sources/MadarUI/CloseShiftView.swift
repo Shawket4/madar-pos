@@ -18,16 +18,17 @@ struct CloseShiftView: View {
         ZStack {
             theme.colors.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                header
+                CloseShiftHeader { app.errorMessage = nil; app.showCloseShift = false }
                 ScrollView {
                     VStack(spacing: Space.lg) {
                         if let s = app.shift { summaryCard(s) }
                         cashCard
                         if let r = app.shiftReport { reportCard(r) }
                         if app.shiftReport != nil {
-                            MadarButton(label: t("shift.print_report"), icon: "printer", variant: .outline,
-                                         loading: app.printState == .printing) {
-                                Task { await app.printShiftReport() }
+                            // Preview the Z-report (paper layout) before printing — works
+                            // with no printer; the Print lives inside the preview.
+                            MadarButton(label: t("shift.print_report"), icon: "printer", variant: .outline) {
+                                app.openShiftReportPreview()
                             }
                         }
                         if let error = app.errorMessage {
@@ -49,9 +50,53 @@ struct CloseShiftView: View {
         .task { await app.loadShiftReport() }
     }
 
-    private var header: some View {
+    private func summaryCard(_ s: ShiftView) -> some View {
+        Card {
+            CardHeader(icon: "doc.text", title: t("shift.summary"))
+            InfoRow(label: t("shift.teller"), value: s.tellerName)
+            // Opening cash is money — give it the hero treatment (bold teal, tabular).
+            InfoRow(label: t("shift.opening_cash"), value: Money.format(s.openingCashMinor, currency), money: true)
+            InfoRow(label: t("shift.opened_at"), value: app.fmtDateTime(s.openedAt))
+        }
+    }
+
+    private var cashCard: some View {
+        Card {
+            CardHeader(icon: "banknote", title: t("shift.counted_cash"))
+            // System (expected) cash — the figure the count is measured against, so
+            // it gets the hero money treatment in a tinted teal block (mirrors the
+            // order screen's grand-total block).
+            if let r = app.shiftReport {
+                ExpectedCashBlock(expected: r.expectedCashMinor, currency: currency)
+            }
+            AmountField(amountMinor: $countedMinor, currencyCode: currency, autofocus: true)
+            if let r = app.shiftReport {
+                DiscrepancyBanner(declared: countedMinor, expected: r.expectedCashMinor, currency: currency)
+            }
+            MadarTextField(placeholder: t("shift.cash_note"), text: $note, icon: "note.text", disabled: app.isBusy)
+        }
+    }
+
+    /// The Z-report breakdown: per-method sales (with order counts), drawer
+    /// pay-in/out, voided total, and the itemised cash movements.
+    private func reportCard(_ r: ShiftReportView) -> some View {
+        Card {
+            CardHeader(icon: "list.bullet.rectangle", title: t("shift.report_title"))
+            ShiftReportBreakdown(report: r, currency: currency)
+        }
+    }
+}
+
+// MARK: - Header
+
+private struct CloseShiftHeader: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let onBack: () -> Void
+
+    var body: some View {
         HStack(spacing: Space.md) {
-            Button { app.errorMessage = nil; app.showCloseShift = false } label: {
+            Button(action: onBack) {
                 MadarIcon("chevron.backward", size: 17)
                     .foregroundStyle(theme.colors.textPrimary)
             }
@@ -67,74 +112,76 @@ struct CloseShiftView: View {
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
+}
 
-    private func summaryCard(_ s: ShiftView) -> some View {
-        Card {
-            CardHeader(icon: "doc.text", title: t("shift.summary"))
-            InfoRow(label: t("shift.teller"), value: s.tellerName)
-            InfoRow(label: t("shift.opening_cash"), value: Money.format(s.openingCashMinor, currency))
-            InfoRow(label: t("shift.opened_at"), value: app.fmtDateTime(s.openedAt))
-        }
-    }
+// MARK: - Cash blocks
 
-    private var cashCard: some View {
-        Card {
-            CardHeader(icon: "banknote", title: t("shift.counted_cash"))
-            if let r = app.shiftReport {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t("shift.system_cash"))
-                            .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textSecondary)
-                        Text(t("shift.system_cash_explain"))
-                            .font(.ui(11)).foregroundStyle(theme.colors.textMuted)
-                    }
-                    Spacer(minLength: Space.sm)
-                    Text(Money.format(r.expectedCashMinor, currency))
-                        .font(.money(20, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                }
-                .padding(14)
-                .background(theme.colors.surfaceAlt)
-                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+/// The system-expected cash — bold teal money in a tinted teal block, the figure
+/// the declared count is reconciled against.
+private struct ExpectedCashBlock: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let expected: Int64
+    let currency: String
+
+    var body: some View {
+        HStack(spacing: Space.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t("shift.system_cash"))
+                    .font(.ui(12, .bold)).foregroundStyle(theme.colors.accent)
+                Text(t("shift.system_cash_explain"))
+                    .font(.ui(11, .medium)).foregroundStyle(theme.colors.textMuted)
             }
-            AmountField(amountMinor: $countedMinor, currencyCode: currency, autofocus: true)
-            if let r = app.shiftReport {
-                discrepancyBanner(declared: countedMinor, expected: r.expectedCashMinor)
-            }
-            MadarTextField(placeholder: t("shift.cash_note"), text: $note, icon: "note.text", disabled: app.isBusy)
+            Spacer(minLength: Space.sm)
+            Text(Money.format(expected, currency))
+                .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
         }
+        .padding(.horizontal, Space.lg)
+        .padding(.vertical, 14)
+        .background(theme.colors.accentBg)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
     }
+}
 
-    /// The Z-report breakdown: per-method sales (with order counts), drawer
-    /// pay-in/out, voided total, and the itemised cash movements.
-    private func reportCard(_ r: ShiftReportView) -> some View {
-        Card {
-            CardHeader(icon: "list.bullet.rectangle", title: t("shift.report_title"))
-            ShiftReportBreakdown(report: r, currency: currency)
-        }
+/// Live drawer variance — matches / over / short, toned to the result.
+private struct DiscrepancyBanner: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let declared: Int64
+    let expected: Int64
+    let currency: String
+
+    private var diff: Int64 { declared - expected }
+
+    private var color: Color {
+        diff == 0 ? theme.colors.success : (diff > 0 ? theme.colors.warning : theme.colors.danger)
     }
-
-    @ViewBuilder
-    private func discrepancyBanner(declared: Int64, expected: Int64) -> some View {
-        let diff = declared - expected
-        let color: Color = diff == 0 ? theme.colors.success : (diff > 0 ? theme.colors.warning : theme.colors.danger)
-        let bg: Color = diff == 0 ? theme.colors.successBg : (diff > 0 ? theme.colors.warningBg : theme.colors.dangerBg)
-        let icon = diff == 0 ? "checkmark.circle" : (diff > 0 ? "arrow.up.circle" : "arrow.down.circle")
-        let label = diff == 0
+    private var bg: Color {
+        diff == 0 ? theme.colors.successBg : (diff > 0 ? theme.colors.warningBg : theme.colors.dangerBg)
+    }
+    private var icon: String {
+        diff == 0 ? "checkmark.circle" : (diff > 0 ? "arrow.up.circle" : "arrow.down.circle")
+    }
+    private var label: String {
+        diff == 0
             ? t("shift.drawer_matches")
             : (diff > 0
                ? "\(t("shift.drawer_over")) \(Money.format(diff, currency))"
                : "\(t("shift.drawer_short")) \(Money.format(-diff, currency))")
-        HStack(spacing: Space.sm) {
-            MadarIcon(icon, size: 15).foregroundStyle(color)
-            Text(label).font(.ui(13, .semibold)).foregroundStyle(color)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            MadarIcon(icon, size: 16).foregroundStyle(color)
+            Text(label).font(.ui(13, .medium)).foregroundStyle(color)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.vertical, 12)
         .background(bg)
         .overlay(
             RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
-                .strokeBorder(color.opacity(0.25), lineWidth: 1)
+                .strokeBorder(color.opacity(Opacity.border), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
     }
@@ -164,13 +211,15 @@ private struct CardHeader: View {
     let icon: String
     let title: String
     var body: some View {
-        HStack(spacing: Space.md) {
+        HStack(spacing: Space.sm) {
+            // Leading teal tone-tile behind the glyph — matches the confident
+            // Kitchen/Order/Sync header (accentBg + accent icon, 34×34, Radii.sm).
             MadarIcon(icon, size: 18)
-                .foregroundStyle(theme.colors.navy)
-                .frame(width: 36, height: 36)
-                .background(theme.colors.navyBg)
-                .clipShape(RoundedRectangle(cornerRadius: Radii.xs, style: .continuous))
-            Text(title).font(.ui(14, .semibold)).foregroundStyle(theme.colors.textPrimary)
+                .foregroundStyle(theme.colors.accent)
+                .frame(width: 34, height: 34)
+                .background(theme.colors.accentBg)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            Text(title).font(.ui(17, .bold)).foregroundStyle(theme.colors.textPrimary)
         }
     }
 }
@@ -179,11 +228,18 @@ private struct InfoRow: View {
     @Environment(\.theme) private var theme
     let label: String
     let value: String
+    var money: Bool = false
     var body: some View {
         HStack {
             Text(label).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
             Spacer()
-            Text(value).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
+            // Money values are the hero — bold teal, tabular figures; everything
+            // else stays a quiet semibold primary.
+            if money {
+                Text(value).font(.money(14, .bold)).foregroundStyle(theme.colors.accent)
+            } else {
+                Text(value).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
+            }
         }
     }
 }

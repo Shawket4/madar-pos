@@ -153,13 +153,16 @@ private fun totalRow(label: String, value: String, tone: Color, emphasized: Bool
     }
 }
 
-/** Mid-shift report preview — full-screen, Print without closing the shift. */
+/** Z-report preview — full-screen, Print without closing the shift. Shows the
+ *  CURRENT shift's report by default, or a specific past shift's [report] (from
+ *  Past Shifts). The preview is fully on-screen, so it works with no printer. */
 @Composable
-fun ShiftReportPreviewScreen(model: AppModel, onClose: () -> Unit) {
+fun ShiftReportPreviewScreen(model: AppModel, report: ShiftReportView? = null, onClose: () -> Unit) {
     val c = madarColors()
     val scope = rememberCoroutineScope()
     val currency = model.session?.currencyCode ?: ""
-    LaunchedEffect(Unit) { model.loadShiftReport() }
+    LaunchedEffect(Unit) { if (report == null) model.loadShiftReport() }
+    val shown = report ?: model.shiftReport
     Column(Modifier.fillMaxSize().background(c.bg)) {
         // header
         Row(
@@ -171,9 +174,9 @@ fun ShiftReportPreviewScreen(model: AppModel, onClose: () -> Unit) {
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(t("shift.report_title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 18.sp)
-                model.shift?.let { Text(it.tellerName, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp) }
+                (report?.tellerName ?: model.shift?.tellerName)?.let { Text(it, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp) }
             }
-            model.shiftReport?.let {
+            shown?.let {
                 StatusChip(if (it.fromServer) t("chrome.online") else t("chrome.offline"),
                     if (it.fromServer) ChipTone.SUCCESS else ChipTone.WARNING)
             }
@@ -187,7 +190,7 @@ fun ShiftReportPreviewScreen(model: AppModel, onClose: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(Modifier.widthIn(max = 460.dp).fillMaxWidth()) {
-                model.shiftReport?.let { ShiftReportBreakdown(it, currency) }
+                shown?.let { ShiftReportBreakdown(it, currency) }
             }
         }
         // footer
@@ -203,7 +206,7 @@ fun ShiftReportPreviewScreen(model: AppModel, onClose: () -> Unit) {
             }
             MadarButton(
                 label = if (model.printState == PrintState.PRINTING) t("receipt.printing") else t("shift.print_report"),
-                onClick = { scope.launch { model.printShiftReport() } },
+                onClick = { scope.launch { shown?.let { model.printReportView(it) } } },
                 loading = model.printState == PrintState.PRINTING,
                 icon = "printer",
             )

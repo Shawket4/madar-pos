@@ -60,26 +60,33 @@ private struct TellerForm: View {
 
     var body: some View {
         // Spacing mirrors Flutter `_buildForm`'s deliberate rhythm (not a flat
-        // stack): xs between title/subtitle, sm before the branch chip, xxl after
+        // stack): xs between title/subtitle, md before the branch chip, xxl after
         // the header block, xl around the PIN pad, sm between button and hint.
         VStack(spacing: 0) {
             if showLogo {
-                MadarMark(size: 60)
+                MadarMark(size: 56)
                 Spacer().frame(height: Space.xxl)
             }
 
+            // The greeting is the hero — heavy, tightly tracked (mirrors the sibling
+            // OpenShift greeting). The subtitle sits beneath as a quiet eyebrow.
             VStack(spacing: Space.xs) {
-                Text(t("login.welcome_back")).font(.ui(24, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                Text(t("login.subtitle")).font(.ui(14)).foregroundStyle(theme.colors.textSecondary)
+                Text(t("login.welcome_back"))
+                    .font(.ui(28, .heavy)).tracking(-0.5)
+                    .foregroundStyle(theme.colors.textPrimary)
+                Text(t("login.subtitle"))
+                    .font(.ui(14, .medium)).foregroundStyle(theme.colors.textSecondary)
             }
 
+            // Identity moment — the bound branch as a tinted teal pill with a quiet
+            // reconfigure link beneath, echoing the order screen's tone language.
             VStack(spacing: Space.xs) {
-                StatusChip(label: branchLabel, icon: "building.2", tone: .info)
+                StatusChip(label: branchLabel, icon: "building.2", tone: .accent)
                 Button(t("login.reconfigure")) { app.beginReconfigure() }
                     .buttonStyle(.plain)
                     .font(.ui(12)).foregroundStyle(theme.colors.textMuted)
             }
-            .padding(.top, Space.sm)
+            .padding(.top, Space.md)
 
             Spacer().frame(height: Space.xxl)
 
@@ -96,7 +103,7 @@ private struct TellerForm: View {
 
             Spacer().frame(height: Space.xl)
 
-            MadarButton(label: t("login.sign_in"), loading: app.isBusy, height: 52) { submit() }
+            MadarButton(label: t("login.sign_in"), icon: "arrow.right.circle", loading: app.isBusy, height: 52) { submit() }
 
             Spacer().frame(height: Space.sm)
 
@@ -160,15 +167,18 @@ private struct DeviceSetupForm: View {
 
             VStack(spacing: Space.xs) {
                 Text(picking ? t("setup.choose_branch") : t("setup.title"))
-                    .font(.ui(22, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                    .font(.ui(24, .heavy)).tracking(-0.4)
+                    .foregroundStyle(theme.colors.textPrimary)
                 Text(picking ? t("setup.choose_branch_desc") : t("setup.desc"))
-                    .font(.ui(13.5)).foregroundStyle(theme.colors.textSecondary)
+                    .font(.ui(13, .medium)).foregroundStyle(theme.colors.textSecondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
             .padding(.bottom, Space.sm)
 
             if picking {
-                ForEach(app.branches, id: \.id) { branch in branchRow(branch) }
+                ForEach(app.branches, id: \.id) { branch in
+                    BranchRow(branch: branch) { app.bindBranch(branch) }
+                }
             } else {
                 MadarTextField(placeholder: t("setup.email"), text: $email, icon: "envelope",
                                 disabled: app.isBusy, keyboard: .email)
@@ -181,7 +191,7 @@ private struct DeviceSetupForm: View {
             }
 
             if !picking {
-                MadarButton(label: t("setup.continue"), loading: app.isBusy) {
+                MadarButton(label: t("setup.continue"), icon: "arrow.right.circle", loading: app.isBusy) {
                     Task {
                         await app.authenticateManager(
                             email: email.trimmingCharacters(in: .whitespaces),
@@ -194,14 +204,29 @@ private struct DeviceSetupForm: View {
             }
         }
     }
+}
 
-    private func branchRow(_ branch: BranchView) -> some View {
+// MARK: - Branch row (device-setup pick list)
+
+/// A selectable branch — a raised surface row with the signature leading tone-tile
+/// (teal glyph on accentBg) + a trailing disclosure chevron, matching the order
+/// screen's row language.
+private struct BranchRow: View {
+    @Environment(\.theme) private var theme
+    let branch: BranchView
+    let onTap: () -> Void
+
+    var body: some View {
         Button {
             Haptics.selection()
-            app.bindBranch(branch)
+            onTap()
         } label: {
             HStack(spacing: Space.md) {
-                MadarIcon("building.2", size: IconSize.sm).foregroundStyle(theme.colors.textMuted)
+                MadarIcon("building.2", size: IconSize.md)
+                    .foregroundStyle(theme.colors.accent)
+                    .frame(width: 36, height: 36)
+                    .background(theme.colors.accentBg)
+                    .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
                 Text(branch.name).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary)
                 Spacer()
                 MadarIcon("chevron.forward", size: 13).foregroundStyle(theme.colors.textMuted)

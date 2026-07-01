@@ -503,9 +503,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Print the shift report (Z-report) — same printer path as the receipt.
-    func printShiftReport() async {
-        guard let report = shiftReport else { return }
+    /// Render + print ANY shift report (the current shift OR a past one) — the
+    /// shared Print behind every Z-report preview. No-ops with no printer.
+    func printReportView(_ report: ShiftReportView) async {
         let (host, port) = Self.parsePrinter(printerHost)
         guard !host.isEmpty else { printState = .noPrinter; return }
         printState = .printing
@@ -522,6 +522,12 @@ final class AppModel: ObservableObject {
         } catch {
             printState = .failed
         }
+    }
+
+    /// Print the CURRENT shift report (Z-report).
+    func printShiftReport() async {
+        guard let report = shiftReport else { return }
+        await printReportView(report)
     }
 
     /// Set this device's till code (e.g. T1). The core sanitizes to short A-Z0-9
@@ -719,6 +725,18 @@ final class AppModel: ObservableObject {
     func openShiftReportPreview() {
         printState = .idle
         showReportPreview = true
+    }
+
+    /// A PAST shift's report, projected for preview before printing (from Past
+    /// Shifts), presented via [showPastReportPreview].
+    @Published var previewShiftReport: ShiftReportView?
+    @Published var showPastReportPreview = false
+    /// Fetch a past shift's Z-report so the teller can preview it before printing —
+    /// the same paper preview + Print as the current shift, even with no printer.
+    func openShiftReportPreviewFor(_ shiftId: String) async {
+        printState = .idle
+        previewShiftReport = try? await core.shiftReportFor(shiftId: shiftId)
+        showPastReportPreview = previewShiftReport != nil
     }
 
     /// Close the open shift with the counted cash + optional note. On success the
@@ -988,8 +1006,16 @@ final class AppModel: ObservableObject {
     /// The branch delivery queue (online). Active-only by default.
     func loadDeliveryOrders() async {
         isLoadingDelivery = true; defer { isLoadingDelivery = false }
-        let status: String? = deliveryActiveOnly ? activeStatusFilter : nil
-        do { deliveryOrders = try await core.listDeliveryOrders(status: status) }
+        let activeOnly = deliveryActiveOnly
+        let status: String? = activeOnly ? activeStatusFilter : nil
+        do {
+            let result = try await core.listDeliveryOrders(status: status)
+            // Drop a STALE response: toggling the filter fires overlapping loads, and
+            // last-writer-wins (by completion order) would otherwise show the wrong
+            // set. If the filter changed while awaiting, a newer load is authoritative.
+            guard activeOnly == deliveryActiveOnly else { return }
+            deliveryOrders = result
+        }
         catch { errorMessage = humanMessage(error) }
         deliverySettings = try? await core.deliverySettings()
     }
@@ -1021,7 +1047,10 @@ final class AppModel: ObservableObject {
     /// distinctly from cancel (refusing incoming work, before any prep).
     func rejectDelivery(_ o: DeliveryOrderView) async -> Bool {
         isBusy = true; errorMessage = nil; defer { isBusy = false }
-        do { _ = try await core.deliverySetStatus(id: o.id, status: "rejected"); await loadDeliveryOrders(); return true }
+        // Reject = cancel a not-yet-accepted (received) order: the backend's cancel
+        // endpoint flips received→rejected. Food isn't made yet → restore inventory.
+        // /status only accepts line steps, so posting "rejected" there always 400s.
+        do { _ = try await core.deliveryCancel(id: o.id, reason: nil, restoreInventory: true); await loadDeliveryOrders(); return true }
         catch { errorMessage = humanMessage(error); return false }
     }
     /// Finalize into a real sale on the open shift, charged to a payment method.
@@ -1103,11 +1132,19 @@ final class AppModel: ObservableObject {
         realtimeConnected = false
     }
     /// Bridge → model (already on @MainActor): refresh the surface the event touches.
+    /// Per-module "unseen realtime event" badges for the side rail — set when an SSE
+    /// event for that module arrives, cleared when the teller opens it. Drive the
+    /// animated nav-rail indicator (like the Flutter app's live dots).
+    @Published private(set) var ticketsHasNew = false
+    @Published private(set) var deliveryHasNew = false
+    func clearTicketsBadge() { ticketsHasNew = false }
+    func clearDeliveryBadge() { deliveryHasNew = false }
+
     func onRealtimeEvent(_ event: RealtimeEvent) {
         let type = event.eventType
         if type.hasPrefix("kitchen.") { Task { await loadKds() } }
-        else if type.hasPrefix("ticket.") { Task { await loadOpenTickets() } }
-        else if type.hasPrefix("delivery.") { Task { await loadDeliveryOrders() } }
+        else if type.hasPrefix("ticket.") { ticketsHasNew = true; Task { await loadOpenTickets() } }
+        else if type.hasPrefix("delivery.") { deliveryHasNew = true; Task { await loadDeliveryOrders() } }
     }
     func onRealtimeConnection(_ connected: Bool) {
         // A regained stream (disconnected → connected) is strong proof connectivity
@@ -1116,7 +1153,15 @@ final class AppModel: ObservableObject {
         // single-flight drain de-dups any overlap with the timer/foreground drains.
         let regained = connected && !realtimeConnected
         realtimeConnected = connected
-        if regained { Task { await refreshConnectivity() } }
+        if regained {
+            Task { await refreshConnectivity() }
+            // Re-seed the live boards: events that fired while we were disconnected
+            // are gone (the backend keeps no replay buffer), so refetch to recover
+            // the gap — mirrors the per-event reloads in onRealtimeEvent.
+            Task { await loadKds() }
+            Task { await loadOpenTickets() }
+            Task { await loadDeliveryOrders() }
+        }
     }
 
     // ── Kitchen Display (KDS) ─────────────────────────────────────────────────────
@@ -1198,6 +1243,56 @@ final class AppModel: ObservableObject {
         isLoadingTickets = true; defer { isLoadingTickets = false }
         if let list = try? await core.listOpenTickets() { openTickets = list }
     }
+
+    // ── Reservations & floor plan ─────────────────────────────────
+    @Published var floorTables: [FloorTableView] = []
+    @Published var floorSections: [FloorSectionView] = []
+    @Published var reservations: [ReservationView] = []
+    @Published var isLoadingFloor = false
+
+    /// Pull the branch's floor (sections + tables) and active bookings. All logic
+    /// is in the core; this just mirrors the result into `@Published` state.
+    func loadFloor() async {
+        isLoadingFloor = true; defer { isLoadingFloor = false }
+        if let sections = try? await core.listFloorSections() { floorSections = sections }
+        if let tables = try? await core.listFloorTables() { floorTables = tables }
+        if let list = try? await core.listReservations() { reservations = list }
+    }
+
+    /// Seat a party onto one or more tables (multiple ⇒ merged). Opens a ticket.
+    func seatReservation(_ bookingId: String, tableIds: [String]) async -> Bool {
+        isBusy = true; errorMessage = nil; defer { isBusy = false }
+        do {
+            _ = try await core.seatReservation(bookingId: bookingId, tableIds: tableIds)
+            await loadFloor()
+            showToast(t("reservations.seated"), icon: "chair.fill", tone: .success)
+            return true
+        } catch { errorMessage = humanMessage(error); return false }
+    }
+
+    /// Set a table's live status (`free` | `held` | `seated` | `dirty`).
+    func setTableStatus(_ tableId: String, status: String) async {
+        do { _ = try await core.setFloorTableStatus(tableId: tableId, status: status); await loadFloor() }
+        catch { errorMessage = humanMessage(error) }
+    }
+
+    /// Send the booking's nudge (reservation departure / waitlist ready).
+    func notifyReservation(_ bookingId: String) async {
+        do { _ = try await core.notifyReservation(bookingId: bookingId); await loadFloor() }
+        catch { errorMessage = humanMessage(error) }
+    }
+
+    /// Move an open ticket to another table (the "switch table" action).
+    func moveTicket(_ ticketId: String, toTable tableId: String) async -> Bool {
+        isBusy = true; errorMessage = nil; defer { isBusy = false }
+        do {
+            try await core.moveTicketToTable(ticketId: ticketId, tableId: tableId)
+            await loadFloor()
+            showToast(t("reservations.moved"), icon: "arrow.left.arrow.right", tone: .success)
+            return true
+        } catch { errorMessage = humanMessage(error); return false }
+    }
+
     /// FIRE the current cart as a NEW open ticket (waiter). Clears the cart on success.
     func fireTicket(tableId: String? = nil, customerName: String? = nil, notes: String? = nil, guestCount: Int32? = nil) async -> Bool {
         isBusy = true; errorMessage = nil; defer { isBusy = false }

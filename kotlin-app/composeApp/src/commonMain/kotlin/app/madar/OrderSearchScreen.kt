@@ -2,19 +2,21 @@
 
 package app.madar
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,24 +34,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.madar.core.OrderSummaryView
 import app.madar.ui.BtnVariant
 import app.madar.ui.ChipTone
+import app.madar.ui.Elevation
 import app.madar.ui.EmptyState
 import app.madar.ui.IconSize
-import app.madar.ui.LocalMadarFont
 import app.madar.ui.MadarButton
 import app.madar.ui.MadarIcon
 import app.madar.ui.MadarTextField
+import app.madar.ui.Metric
 import app.madar.ui.Money
 import app.madar.ui.Radii
+import app.madar.ui.ScreenHeader
 import app.madar.ui.SelectableChip
 import app.madar.ui.Space
+import app.madar.ui.StatusChip
 import app.madar.ui.Type
+import app.madar.ui.elevation
 import app.madar.ui.madarColors
+import app.madar.ui.pressScale
+import app.madar.ui.screenHeaderBar
 import app.madar.ui.t
 import kotlinx.coroutines.launch
 
@@ -73,33 +81,38 @@ fun OrderSearchScreen(model: AppModel) {
     LaunchedEffect(Unit) { run(true) }
 
     Column(Modifier.fillMaxSize().background(c.bg)) {
-        // Header
-        Column(Modifier.fillMaxWidth().background(c.surface)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md),
+        // Header — shared ScreenHeader on the standard bar chrome (mirror of
+        // OrderSearchView). Trailing carries the result count + a copy-to-clipboard
+        // CSV export action.
+        Box(Modifier.screenHeaderBar()) {
+            ScreenHeader(
+                t("search.title"),
+                onBack = { model.showOrderSearch = false },
             ) {
-                MadarIcon("chevron.backward", tint = c.textPrimary, size = 18.dp, modifier = Modifier.clickable { model.showOrderSearch = false })
-                Text(t("search.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 17.sp)
-                Box(Modifier.weight(1f))
                 if (model.orderSearchTotal > 0) {
-                    Text("${model.orderSearchTotal}", color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("${model.orderSearchTotal}", style = Type.title(), color = c.textSecondary)
                 }
                 if (model.orderSearchResults.isNotEmpty()) {
-                    MadarIcon(
-                        "square.and.arrow.up", tint = c.accent, size = 18.dp,
-                        modifier = Modifier.clickable {
-                            clipboard.setText(AnnotatedString(ordersToCsv(model.orderSearchResults, currency)))
-                            model.showToast(exportedLabel, ChipTone.SUCCESS, icon = "checkmark.circle.fill")
-                        },
-                    )
+                    val interaction = remember { MutableInteractionSource() }
+                    Box(
+                        Modifier.size(Metric.closeButton).pressScale(interaction)
+                            .clip(RoundedCornerShape(Radii.sm)).background(c.accentBg)
+                            .clickable(interactionSource = interaction, indication = null) {
+                                clipboard.setText(AnnotatedString(ordersToCsv(model.orderSearchResults, currency)))
+                                model.showToast(exportedLabel, ChipTone.SUCCESS, icon = "checkmark.circle.fill")
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) { MadarIcon("square.and.arrow.up", tint = c.accent, size = IconSize.lg) }
                 }
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
         }
 
-        // Filters
-        Column(Modifier.fillMaxWidth().background(c.surface).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        // Filters — date range, status, and a teller lookup, on a raised surface
+        // block closed off with a hairline (matches the order screen chrome).
+        Column(
+            Modifier.fillMaxWidth().background(c.surface).padding(Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+        ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 SelectableChip(t("search.date_24h"), days == 1L, { days = 1; run(true) })
                 SelectableChip(t("search.date_7d"), days == 7L, { days = 7; run(true) })
@@ -108,8 +121,8 @@ fun OrderSearchScreen(model: AppModel) {
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 SelectableChip(t("order.all"), status == null, { status = null; run(true) })
-                SelectableChip(t("history.completed"), status == "completed", { status = "completed"; run(true) })
-                SelectableChip(t("history.voided"), status == "voided", { status = "voided"; run(true) })
+                SelectableChip(t("history.completed"), status == "completed", { status = "completed"; run(true) }, tone = ChipTone.SUCCESS)
+                SelectableChip(t("history.voided"), status == "voided", { status = "voided"; run(true) }, tone = ChipTone.DANGER)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { MadarTextField(teller, { teller = it }, t("search.teller_hint"), icon = "person") }
@@ -128,7 +141,9 @@ fun OrderSearchScreen(model: AppModel) {
                 contentPadding = PaddingValues(Space.lg),
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
-                items(model.orderSearchResults, key = { it.id }) { o -> SearchResultRow(model, o, currency) }
+                items(model.orderSearchResults, key = { it.id }) { o ->
+                    SearchResultRow(model.fmtDateTime(o.createdAt), o, currency, Modifier.fillMaxWidth())
+                }
                 if (model.orderSearchHasMore) {
                     item("more") {
                         MadarButton(t("search.load_more"), { run(false) }, variant = BtnVariant.OUTLINE, loading = model.isSearchingOrders, icon = "arrow.down.circle")
@@ -154,24 +169,48 @@ private fun ordersToCsv(orders: List<OrderSummaryView>, currency: String): Strin
     return sb.toString()
 }
 
+/** Status → a tone-paired chip color (voided/failed = danger, completed =
+ *  success, queued = warning, else neutral). */
+private fun statusTone(status: String): ChipTone = when (status) {
+    "voided", "failed" -> ChipTone.DANGER
+    "completed" -> ChipTone.SUCCESS
+    "queued" -> ChipTone.WARNING
+    else -> ChipTone.NEUTRAL
+}
+
+/** One order result card: number + timestamp on the leading edge, bold-teal
+ *  money + a tone chip + payment label on the trailing edge. The caller sizes
+ *  it (per compose-modifier-and-layout-style). */
 @Composable
-private fun SearchResultRow(model: AppModel, o: OrderSummaryView, currency: String) {
+private fun SearchResultRow(timestamp: String, o: OrderSummaryView, currency: String, modifier: Modifier = Modifier) {
     val c = madarColors()
-    val tone = when (o.status) {
-        "voided" -> c.danger; "completed" -> c.success; "failed" -> c.danger; "queued" -> c.warning; else -> c.textSecondary
-    }
+    // A voided / failed order is dead money — mute + strike its total so the
+    // hero teal reads only on live orders (mirrors the history screen).
+    val dead = o.status == "voided" || o.status == "failed"
+    val shape = RoundedCornerShape(Radii.md)
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surface)
-            .border(1.dp, c.borderLight, RoundedCornerShape(Radii.md)).padding(Space.md),
-        verticalAlignment = Alignment.CenterVertically,
+        modifier.elevation(Elevation.CARD, shape)
+            .clip(shape).background(c.surface)
+            .border(1.dp, c.borderLight, shape)
+            .padding(horizontal = Space.lg, vertical = Space.md),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             Text("#${o.orderNumber ?: "—"}", style = Type.h3(), color = c.textPrimary)
-            Text(model.fmtDateTime(o.createdAt), style = Type.bodySm(), color = c.textMuted)
+            Text(timestamp, style = Type.bodySm(), color = c.textMuted)
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(Money.format(o.totalMinor, currency), style = Type.money(15.sp), color = c.textPrimary)
-            Text("${o.status} · ${o.paymentLabel}", style = Type.labelSm(), color = tone)
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            // Money is the hero — bold teal; struck + muted once voided.
+            Text(
+                Money.format(o.totalMinor, currency),
+                style = Type.money(17.sp), color = if (dead) c.textMuted else c.accent,
+                textDecoration = if (dead) TextDecoration.LineThrough else null,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text(o.paymentLabel, style = Type.labelSm(), color = c.textMuted)
+                StatusChip(o.status, statusTone(o.status))
+            }
         }
     }
 }

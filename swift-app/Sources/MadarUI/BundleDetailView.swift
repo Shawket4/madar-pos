@@ -53,19 +53,33 @@ struct BundleDetailView: View {
         ZStack {
             theme.colors.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                header
+                BundleHeader(name: bundle.name, description: bundle.description,
+                             priceMinor: bundle.priceMinor, currency: currency, onClose: onClose)
                 ScrollView {
                     VStack(alignment: .leading, spacing: Space.md) {
-                        sectionTitle(t("order.bundle_includes"))
+                        SectionTitle(text: t("order.bundle_includes"))
                         ForEach(Array(components.enumerated()), id: \.offset) { idx, c in
-                            componentTile(idx, c)
+                            ComponentTile(
+                                comp: c,
+                                currency: currency,
+                                configurable: item(for: c).map(needsConfig) ?? false,
+                                draft: drafts[idx],
+                                onTap: { open(idx, c) }
+                            )
                         }
                     }
                     .frame(maxWidth: 520)
                     .frame(maxWidth: .infinity)
                     .padding(Space.lg)
                 }
-                footer
+                BundleFooter(
+                    bundlePriceMinor: bundle.priceMinor,
+                    extrasMinor: extrasTotal,
+                    liveTotalMinor: liveTotal,
+                    currency: currency,
+                    canAdd: canAdd,
+                    onAdd: addToCart
+                )
             }
         }
         // Per-component customization, reusing ItemDetailView in configure mode.
@@ -78,16 +92,56 @@ struct BundleDetailView: View {
         }
     }
 
-    private var header: some View {
+    /// Open the per-component customization sheet (loads the component's addons
+    /// into the core first). No-op for fixed components.
+    private func open(_ idx: Int, _ c: BundleComponentView) {
+        guard let it = item(for: c), needsConfig(it) else { return }
+        Haptics.selection()
+        _ = app.componentItem(c.itemId) // loads itemAddons for the sheet
+        configuring = ConfiguringComponent(id: idx, item: it)
+    }
+
+    /// Resolve every component (configured draft, or its default size) into a
+    /// bundle selection and record one bundle line via the core.
+    private func addToCart() {
+        Haptics.impact()
+        let selections = components.enumerated().map { idx, c -> BundleComponentSelection in
+            let d = drafts[idx]
+            let defaultSize = item(for: c)?.sizes.first?.label
+            return BundleComponentSelection(
+                itemId: c.itemId,
+                sizeLabel: d?.sizeLabel ?? defaultSize,
+                qty: c.quantity,
+                addons: d?.addons ?? [],
+                optionalFieldIds: d?.optionalIds ?? [])
+        }
+        app.addBundle(bundleId: bundle.id, components: selections)
+    }
+}
+
+// MARK: - Header
+
+/// The sheet header — name + description, a navy fixed-price badge, and a close
+/// affordance. (The scrim, grab handle, and slide animation belong to the host
+/// `.madarSheet`.)
+private struct BundleHeader: View {
+    @Environment(\.theme) private var theme
+    let name: String
+    let description: String?
+    let priceMinor: Int64
+    let currency: String
+    let onClose: () -> Void
+
+    var body: some View {
         HStack(alignment: .center, spacing: Space.sm) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(bundle.name).font(.ui(19, .bold)).foregroundStyle(theme.colors.textPrimary)
-                if let d = bundle.description, !d.isEmpty {
+                Text(name).font(.ui(18, .heavy)).foregroundStyle(theme.colors.textPrimary)
+                if let d = description, !d.isEmpty {
                     Text(d).font(.ui(12)).foregroundStyle(theme.colors.textSecondary).lineLimit(2)
                 }
             }
             Spacer(minLength: 0)
-            Text(Money.format(bundle.priceMinor, currency))
+            Text(Money.format(priceMinor, currency))
                 .font(.money(14, .bold)).foregroundStyle(theme.colors.navy)
                 .frame(height: 32).padding(.horizontal, 10)
                 .background(theme.colors.navyBg)
@@ -107,25 +161,35 @@ struct BundleDetailView: View {
         .background(theme.colors.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
+}
 
-    private func componentTile(_ idx: Int, _ c: BundleComponentView) -> some View {
-        let it = item(for: c)
-        let configurable = it.map(needsConfig) ?? false
-        let draft = drafts[idx]
-        let configured = draft != nil
-        return Button {
-            guard let it, configurable else { return }
-            Haptics.selection()
-            _ = app.componentItem(c.itemId) // loads itemAddons for the sheet
-            configuring = ConfiguringComponent(id: idx, item: it)
-        } label: {
+// MARK: - Component tile
+
+/// A bundle component row — a leading status tone-tile, qty× name + a config
+/// summary, the chosen extras up-charge, and a chevron when configurable.
+private struct ComponentTile: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let comp: BundleComponentView
+    let currency: String
+    let configurable: Bool
+    let draft: BundleComponentDraft?
+    let onTap: () -> Void
+
+    private var configured: Bool { draft != nil }
+
+    var body: some View {
+        Button(action: onTap) {
             HStack(spacing: Space.md) {
-                statusIcon(configurable: configurable, configured: configured)
+                statusTile
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(c.quantity)× \(c.itemName)")
-                        .font(.ui(14, .semibold)).foregroundStyle(theme.colors.textPrimary)
-                    Text(subtitle(configurable: configurable, configured: configured, draft: draft))
-                        .font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
+                    Text("\(comp.quantity)× \(comp.itemName)")
+                        .font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.ui(12, configured ? .semibold : .medium))
+                            .foregroundStyle(configured ? theme.colors.accent : theme.colors.textSecondary)
+                    }
                 }
                 Spacer(minLength: 0)
                 if let draft, draft.extrasMinor > 0 {
@@ -139,69 +203,111 @@ struct BundleDetailView: View {
             }
             .padding(.horizontal, Space.md).padding(.vertical, Space.md)
             .background(theme.colors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous)
-                .strokeBorder(configured ? theme.colors.accent.opacity(0.4) : theme.colors.border, lineWidth: 1))
+                .strokeBorder(configured ? theme.colors.accent.opacity(0.4) : theme.colors.borderLight, lineWidth: 1))
+            .elevation(.card)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
         }
         .buttonStyle(.pressable(scale: 0.99))
         .allowsHitTesting(configurable)
     }
 
-    private func statusIcon(configurable: Bool, configured: Bool) -> some View {
-        let (symbol, color): (String, Color) = !configurable
-            ? ("checkmark.circle.fill", theme.colors.textMuted)
-            : configured ? ("checkmark.circle.fill", theme.colors.success)
-            : ("slider.horizontal.3", theme.colors.accent)
-        return MadarIcon(symbol, size: 16).foregroundStyle(color).frame(width: 22)
+    /// Leading tone-tile behind the glyph: a navy "included" ✓ when fixed, success
+    /// ✓ once configured, an accent slider glyph (on accentBg) while it needs
+    /// configuring.
+    private var statusTile: some View {
+        let (symbol, fg, bg): (String, Color, Color) = !configurable
+            ? ("checkmark.circle.fill", theme.colors.navy, theme.colors.navyBg)
+            : configured ? ("checkmark.circle.fill", theme.colors.success, theme.colors.successBg)
+            : ("slider.horizontal.3", theme.colors.accent, theme.colors.accentBg)
+        return MadarIcon(symbol, size: IconSize.md)
+            .foregroundStyle(fg)
+            .frame(width: 40, height: 40)
+            .background(bg)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
     }
 
-    private func subtitle(configurable: Bool, configured: Bool, draft: BundleComponentDraft?) -> String {
-        if !configurable { return t("order.bundle_includes") }
+    /// Subtitle for configurable rows only: a "Configure" prompt, or the chosen
+    /// size · +N once configured. Fixed components carry no subtitle — the section
+    /// header already reads "Includes", so a per-row repeat is dead weight.
+    private var subtitle: String? {
+        guard configurable else { return nil }
         guard configured else { return t("order.configure") }
         var parts: [String] = []
         if let s = draft?.sizeLabel { parts.append(s) }
-        let addonCount = draft?.addons.count ?? 0
-        let optCount = draft?.optionalIds.count ?? 0
-        if addonCount + optCount > 0 { parts.append("+\(addonCount + optCount)") }
+        let extras = (draft?.addons.count ?? 0) + (draft?.optionalIds.count ?? 0)
+        if extras > 0 { parts.append("+\(extras)") }
         return parts.isEmpty ? t("order.configure") : parts.joined(separator: " · ")
     }
+}
 
-    private var footer: some View {
-        let label = canAdd ? t("order.add_to_cart") : t("order.configure")
-        return Button {
-            guard canAdd else { return }
-            Haptics.impact()
-            let selections = components.enumerated().map { idx, c -> BundleComponentSelection in
-                let d = drafts[idx]
-                let defaultSize = item(for: c)?.sizes.first?.label
-                return BundleComponentSelection(
-                    itemId: c.itemId,
-                    sizeLabel: d?.sizeLabel ?? defaultSize,
-                    qty: c.quantity,
-                    addons: d?.addons ?? [],
-                    optionalFieldIds: d?.optionalIds ?? [])
+// MARK: - Footer
+
+/// The sheet footer — a base + extras breakdown above a tinted-teal grand-total
+/// block (the live combo price is the hero figure), then the Add-to-cart CTA.
+/// Mirrors the Order screen's CartFooter.
+private struct BundleFooter: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let bundlePriceMinor: Int64
+    let extrasMinor: Int64
+    let liveTotalMinor: Int64
+    let currency: String
+    let canAdd: Bool
+    let onAdd: () -> Void
+
+    var body: some View {
+        VStack(spacing: Space.sm) {
+            // Base price + (optional) extras — light sub-rows so the total carries weight.
+            BundleTotalRow(label: t("order.subtotal"), value: Money.format(bundlePriceMinor, currency))
+            if extrasMinor > 0 {
+                BundleTotalRow(label: t("order.addon_extra"), value: "+\(Money.format(extrasMinor, currency))")
             }
-            app.addBundle(bundleId: bundle.id, components: selections)
-        } label: {
+            // Grand total — tinted teal block, the figure the cashier reads.
             HStack {
-                Text(label).font(.ui(14, .bold))
+                Text(t("order.total")).font(.ui(14, .bold)).foregroundStyle(theme.colors.accent)
                 Spacer()
-                Text(Money.format(liveTotal, currency)).font(.money(14, .heavy))
+                Text(Money.format(liveTotalMinor, currency))
+                    .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
             }
-            .foregroundStyle(theme.colors.textOnAccent)
-            .padding(.horizontal, Space.lg).frame(height: 50).frame(maxWidth: .infinity)
-            .background(canAdd ? theme.colors.accent : theme.colors.accent.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            .padding(.horizontal, Space.md)
+            .padding(.vertical, Space.md)
+            .background(theme.colors.accentBg)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+            MadarButton(label: canAdd ? t("order.add_to_cart") : t("order.configure"),
+                        isEnabled: canAdd, action: onAdd)
+                .padding(.top, Space.xs)
         }
-        .buttonStyle(.pressable(scale: 0.985))
-        .allowsHitTesting(canAdd)
+        .animation(Motion.standard, value: liveTotalMinor)
         .padding(Space.lg)
         .background(theme.colors.surface)
         .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
+}
 
-    private func sectionTitle(_ s: String) -> some View {
-        Text(s).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted).textCase(.uppercase)
+/// A light subtotal/extras row above the tinted total block.
+private struct BundleTotalRow: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label).font(.ui(13, .medium)).foregroundStyle(theme.colors.textSecondary)
+            Spacer()
+            Text(value).font(.money(13, .semibold)).foregroundStyle(theme.colors.textSecondary)
+        }
+    }
+}
+
+// MARK: - Section title
+
+private struct SectionTitle: View {
+    @Environment(\.theme) private var theme
+    let text: String
+
+    var body: some View {
+        Text(text).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted).textCase(.uppercase)
     }
 }
 

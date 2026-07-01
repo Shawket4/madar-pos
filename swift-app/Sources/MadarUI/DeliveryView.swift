@@ -16,6 +16,7 @@ struct DeliveryBody: View {
 
     @State private var finalizing: DeliveryOrderView?
     @State private var cancelling: DeliveryOrderView?
+    @State private var viewing: DeliveryOrderView?
 
     var body: some View {
         ZStack {
@@ -40,11 +41,17 @@ struct DeliveryBody: View {
                 await app.loadDeliveryOrders()
             }
         }
-        .madarSheet(item: $finalizing, maxWidth: 520) { order, dismiss in
+        // Finalize — the full-height details → shared CheckoutDrawer flow, the SAME
+        // drawer the cashier checkout and ticket settle use (mirrors SettleSheet).
+        .madarSheet(item: $finalizing, size: .large, maxWidth: 560) { order, dismiss in
             FinalizeSheet(app: app, order: order, onClose: dismiss)
         }
         .madarSheet(item: $cancelling, maxWidth: 520) { order, dismiss in
             CancelSheet(app: app, order: order, onClose: dismiss)
+        }
+        // Order details — the SAME layout as the ticket details sheet (P1/P3).
+        .madarSheet(item: $viewing, size: .large, maxWidth: 560) { order, dismiss in
+            DeliveryDetailsSheet(order: order, currency: app.session?.currencyCode ?? "", onClose: dismiss)
         }
     }
 
@@ -87,7 +94,7 @@ struct DeliveryBody: View {
         } label: {
             StatusChip(label: "\(label): \(modeLabel)", tone: tone)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .opacity(enabled ? 1 : 0.5)
     }
 
@@ -106,6 +113,7 @@ struct DeliveryBody: View {
                     ForEach(app.deliveryOrders, id: \.id) { order in
                         DeliveryOrderCard(
                             app: app, order: order,
+                            onView: { viewing = order },
                             onFinalize: { finalizing = order },
                             onCancel: { cancelling = order },
                             onReject: { Task { _ = await app.rejectDelivery(order) } }
@@ -125,6 +133,7 @@ private struct DeliveryOrderCard: View {
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     let order: DeliveryOrderView
+    let onView: () -> Void
     let onFinalize: () -> Void
     let onCancel: () -> Void
     let onReject: () -> Void
@@ -132,105 +141,202 @@ private struct DeliveryOrderCard: View {
     private var currency: String { app.session?.currencyCode ?? "" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            HStack(spacing: Space.sm) {
-                StatusChip(label: t("delivery.status.\(order.status)"), tone: statusTone(order.status))
-                StatusChip(label: t("delivery.\(order.channel)"), tone: .neutral)
-                Spacer()
-                if let ref = order.orderRef {
-                    Text(ref).font(.money(12, .semibold)).foregroundStyle(theme.colors.textMuted)
+        VStack(spacing: 0) {
+            statusStrip
+            VStack(alignment: .leading, spacing: Space.sm) {
+                customerHeader
+                if let addr = order.address {
+                    Text(addr).font(.ui(12)).foregroundStyle(theme.colors.textSecondary).lineLimit(2)
                 }
-            }
-            HStack {
-                Text(order.customerName).font(.ui(15, .bold)).foregroundStyle(theme.colors.textPrimary)
-                Spacer()
-                Text(Money.format(order.totalMinor, currency)).font(.money(15, .heavy)).foregroundStyle(theme.colors.accent)
-            }
-            Text(order.customerPhone).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
-            if let addr = order.address {
-                Text(addr).font(.ui(12)).foregroundStyle(theme.colors.textSecondary).lineLimit(2)
-            }
-            // Customer delivery instructions ("leave at door", "call on arrival") —
-            // fulfillment-critical text the core carries but neither host rendered.
-            if let note = order.deliveryNotes, !note.isEmpty {
-                HStack(alignment: .top, spacing: Space.xs) {
-                    MadarIcon("text.bubble", size: IconSize.sm).foregroundStyle(theme.colors.warning)
-                    Text(note).font(.ui(12, .medium)).foregroundStyle(theme.colors.warning)
+                // Customer delivery instructions ("leave at door", "call on arrival") —
+                // fulfillment-critical text the core carries but neither host rendered.
+                if let note = order.deliveryNotes, !note.isEmpty {
+                    deliveryNote(note)
                 }
+                metaLine
+                // "View order" — opens the shared details layout (P1). Always
+                // available (even terminal orders, for lookup).
+                MadarButton(label: t("order.view_order"), icon: "list.bullet.rectangle", variant: .outline) { onView() }
+                if !order.isTerminal { actions }
             }
-            HStack(spacing: Space.sm) {
-                Text("\(order.itemCount) \(t("delivery.items"))").font(.ui(11, .medium)).foregroundStyle(theme.colors.textMuted)
-                if order.deliveryFeeMinor > 0 {
-                    Text("· \(t("receipt.delivery_fee")) \(Money.format(order.deliveryFeeMinor, currency))")
-                        .font(.ui(11)).foregroundStyle(theme.colors.textMuted)
-                }
-            }
-            if !order.isTerminal { actions }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.md)
         }
-        .padding(Space.md)
         .background(theme.colors.surface)
-        .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous).strokeBorder(theme.colors.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        .elevation(.card)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+    }
+
+    // Status-tinted header strip — fixed height so every card's body starts at the
+    // same y and the lifecycle status reads at a glance (mirrors the Kitchen ticket's
+    // age-tinted strip). Status dot + bold label lead; channel chip + order ref follow.
+    private var statusStrip: some View {
+        let tint = statusTint(order.status, theme.colors)
+        return HStack(spacing: Space.sm) {
+            Circle().fill(tint.fg).frame(width: 8, height: 8)
+            Text(t("delivery.status.\(order.status)")).font(.ui(14, .black)).foregroundStyle(tint.fg).lineLimit(1)
+            StatusChip(label: t("delivery.\(order.channel)"), tone: .neutral)
+            Spacer()
+            if let ref = order.orderRef {
+                Text(ref).font(.money(13, .bold)).foregroundStyle(tint.fg)
+            }
+        }
+        .padding(.horizontal, Space.md)
+        .frame(height: 50)
+        .frame(maxWidth: .infinity)
+        .background(tint.bg)
+    }
+
+    // Leading person tone-tile + name/phone, money as the hero in a tinted teal block.
+    private var customerHeader: some View {
+        HStack(spacing: Space.sm) {
+            MadarIcon("person.fill", size: IconSize.lg)
+                .foregroundStyle(theme.colors.accent)
+                .frame(width: 40, height: 40)
+                .background(theme.colors.accentBg)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(order.customerName).font(.ui(16, .bold)).foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+                Text(order.customerPhone).font(.ui(12, .medium)).foregroundStyle(theme.colors.textSecondary)
+            }
+            Spacer(minLength: Space.sm)
+            Text(Money.format(order.totalMinor, currency))
+                .font(.money(17, .heavy)).foregroundStyle(theme.colors.accent)
+                .padding(.horizontal, Space.md).padding(.vertical, 7)
+                .background(theme.colors.accentBg)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        }
+    }
+
+    private func deliveryNote(_ note: String) -> some View {
+        HStack(alignment: .top, spacing: Space.xs) {
+            MadarIcon("text.bubble", size: IconSize.sm).foregroundStyle(theme.colors.warning)
+            Text(note).font(.ui(12, .medium)).foregroundStyle(theme.colors.warning)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Space.sm).padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.colors.warningBg)
         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
     }
+
+    private var metaLine: some View {
+        HStack(spacing: Space.sm) {
+            Text("\(order.itemCount) \(t("delivery.items"))").font(.ui(11, .semibold)).foregroundStyle(theme.colors.textMuted)
+            if order.deliveryFeeMinor > 0 {
+                Text("· \(t("receipt.delivery_fee")) \(Money.format(order.deliveryFeeMinor, currency))")
+                    .font(.money(11, .medium)).foregroundStyle(theme.colors.textMuted)
+            }
+        }
+    }
+
+    private func advance() { Task { await app.advanceDelivery(order) } }
+    private func addPrep() { Task { await app.addDeliveryPrep(order) } }
 
     private var actions: some View {
         HStack(spacing: Space.sm) {
             if let next = nextStatus(order.status) {
-                MadarButton(label: t("delivery.action.\(next)"), icon: "arrow.right.circle", fullWidth: false) {
-                    Task { await app.advanceDelivery(order) }
-                }
+                MadarButton(label: t("delivery.action.\(next)"), icon: "arrow.right.circle", fullWidth: false, action: advance)
             }
             Spacer()
             Menu {
-                Button { Task { await app.addDeliveryPrep(order) } } label: { Label(t("delivery.add_prep"), systemImage: "clock") }
-                Button { onFinalize() } label: { Label(t("delivery.finalize"), systemImage: "checkmark.seal") }
+                Button(action: addPrep) { Label(t("delivery.add_prep"), systemImage: "clock") }
+                Button(action: onFinalize) { Label(t("delivery.finalize"), systemImage: "checkmark.seal") }
                 if order.status == "received" {
-                    Button(role: .destructive) { onReject() } label: { Label(t("delivery.reject"), systemImage: "hand.raised") }
+                    Button(role: .destructive, action: onReject) { Label(t("delivery.reject"), systemImage: "hand.raised") }
                 }
-                Button(role: .destructive) { onCancel() } label: { Label(t("delivery.cancel"), systemImage: "xmark.circle") }
+                Button(role: .destructive, action: onCancel) { Label(t("delivery.cancel"), systemImage: "xmark.circle") }
             } label: {
-                MadarIcon("ellipsis.circle", size: 22).foregroundStyle(theme.colors.textSecondary)
+                MadarIcon("ellipsis", size: IconSize.lg)
+                    .foregroundStyle(theme.colors.textSecondary)
+                    .frame(width: 34, height: 34)
+                    .background(theme.colors.surfaceAlt)
+                    .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous)
+                        .strokeBorder(theme.colors.borderLight, lineWidth: 1))
             }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .fixedSize()
         }
         .padding(.top, 2)
     }
 }
 
-// MARK: - Finalize (payment picker)
+// MARK: - Finalize (details → shared checkout drawer)
 
+/// The two-step finalize sheet — the delivery counterpart to `SettleSheet`, so the
+/// delivery finalize, the cashier checkout, and the ticket settle all route through
+/// the ONE shared `CheckoutDrawer` (no more mirrored delivery payment picker).
+/// STEP 1 shows the real order details (frozen lines + money + fulfillment context);
+/// STEP 2 hands off to the SHARED drawer, whose terminal finalizes the delivery into
+/// a paid order on the open shift via `app.finalizeDelivery`.
 private struct FinalizeSheet: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     let order: DeliveryOrderView
     let onClose: () -> Void
-    @State private var method: String?
+
+    private enum Step { case details, checkout }
+    @State private var step: Step = .details
 
     private var currency: String { app.session?.currencyCode ?? "" }
 
     var body: some View {
-        VStack(spacing: Space.lg) {
-            Text(t("delivery.finalize")).font(.ui(20, .heavy)).foregroundStyle(theme.colors.textPrimary)
-            Text("\(order.customerName) · \(Money.format(order.totalMinor, currency))")
-                .font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
-            Text(t("delivery.finalize_pay")).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: Space.sm)], spacing: Space.sm) {
-                ForEach(app.paymentMethods, id: \.id) { m in
-                    MadarButton(label: m.name, variant: m.id == method ? .primary : .outline) { method = m.id }
+        switch step {
+        case .details:
+            detailsStep
+        case .checkout:
+            // The SAME drawer the main cashier + ticket settle use. `.flat` summary
+            // on the delivery total (order.totalMinor INCLUDES the delivery fee, so
+            // cash-due + change math is correct). The backend finalize only needs the
+            // payment method (shift resolved inside finalizeDelivery), so the drawer's
+            // tip/split/cash-tendered extras are cashier aid only — ignored here. No
+            // cart-discount edit, no customer capture (the order already knows both).
+            CheckoutDrawer(
+                app: app,
+                title: order.orderRef ?? order.customerName,
+                total: order.totalMinor,
+                currency: currency,
+                busy: app.isBusy,
+                terminalLabel: t("delivery.finalize"),
+                terminalIcon: "checkmark.seal",
+                errorMessage: app.errorMessage,
+                summary: .flat,
+                showCartDiscount: false,
+                showCustomerCapture: false,
+                onClose: onClose,
+                onTerminal: { input in
+                    if await app.finalizeDelivery(order, paymentMethodId: input.paymentMethodId) {
+                        onClose()
+                    }
+                })
+        }
+    }
+
+    private var detailsStep: some View {
+        VStack(spacing: 0) {
+            // Surface the real priced lines + fulfillment context via the shared
+            // DeliveryDetailsView (same layout as the "View order" sheet).
+            ScrollView {
+                DeliveryDetailsView(order: order, currency: currency)
+                    .frame(maxWidth: 552).frame(maxWidth: .infinity)
+                    .padding(.horizontal, Space.xl)
+                    .padding(.top, Space.md)
+                    .padding(.bottom, Space.lg)
+            }
+            // Advance to the shared checkout drawer.
+            VStack(spacing: Space.sm) {
+                MadarButton(label: t("delivery.finalize"), icon: "checkmark.seal") {
+                    withAnimation(Motion.standard) { step = .checkout }
                 }
             }
-            MadarButton(label: t("delivery.finalize"), icon: "checkmark.seal", loading: app.isBusy) {
-                guard let id = method else { return }
-                Task { if await app.finalizeDelivery(order, paymentMethodId: id) { onClose() } }
-            }
-            .disabled(method == nil)
-            Spacer()
+            .padding(Space.lg)
+            .background(theme.colors.surface)
+            .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
         }
-        .frame(maxWidth: 460)
-        .frame(maxWidth: .infinity)
-        .padding(Space.xl)
-        .onAppear { method = (app.paymentMethods.first { $0.isCash } ?? app.paymentMethods.first)?.id }
     }
 }
 
@@ -245,20 +351,22 @@ private struct CancelSheet: View {
     @State private var reason = ""
     @State private var restock = true
 
+    private func cancel() {
+        Task {
+            if await app.cancelDelivery(order, reason: reason.isEmpty ? nil : reason, restoreInventory: restock) { onClose() }
+        }
+    }
+
     var body: some View {
         VStack(spacing: Space.lg) {
-            Text(t("delivery.cancel")).font(.ui(20, .heavy)).foregroundStyle(theme.colors.textPrimary)
+            Text(t("delivery.cancel")).typo(.h2).foregroundStyle(theme.colors.textPrimary)
             Text(order.customerName).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
             MadarTextField(placeholder: t("delivery.cancel_reason"), text: $reason, icon: "text.bubble")
             Toggle(isOn: $restock) {
                 Text(t("delivery.restore_inventory")).font(.ui(14)).foregroundStyle(theme.colors.textPrimary)
             }
             .tint(theme.colors.accent)
-            MadarButton(label: t("delivery.cancel"), icon: "xmark.circle", variant: .danger, loading: app.isBusy) {
-                Task {
-                    if await app.cancelDelivery(order, reason: reason.isEmpty ? nil : reason, restoreInventory: restock) { onClose() }
-                }
-            }
+            MadarButton(label: t("delivery.cancel"), icon: "xmark.circle", variant: .danger, loading: app.isBusy, action: cancel)
             Spacer()
         }
         .frame(maxWidth: 460)
@@ -280,14 +388,37 @@ private func nextStatus(_ s: String) -> String? {
     }
 }
 
-private func statusTone(_ s: String) -> ChipTone {
+// Status → (foreground, tinted-background) for the card's header strip. Mirrors the
+// Kitchen ticket's age-tint pattern so the lifecycle reads at a glance.
+private func statusTint(_ s: String, _ c: MadarColors) -> (fg: Color, bg: Color) {
     switch s {
-    case "received": return .info
-    case "confirmed", "out_for_delivery": return .accent
-    case "preparing": return .warning
-    case "ready", "delivered": return .success
-    case "cancelled", "rejected": return .danger
-    default: return .neutral
+    case "received": return (c.navy, c.navyBg)
+    case "confirmed", "out_for_delivery": return (c.accent, c.accentBg)
+    case "preparing": return (c.warning, c.warningBg)
+    case "ready", "delivered": return (c.success, c.successBg)
+    case "cancelled", "rejected": return (c.danger, c.dangerBg)
+    default: return (c.textSecondary, c.surfaceAlt)
+    }
+}
+
+// MARK: - Details sheet
+
+/// Scrollable wrapper that presents the shared `DeliveryDetailsView` in a sheet —
+/// the delivery counterpart to the ticket details step, so both Orders tabs route
+/// through the same details layout (P1/P3).
+private struct DeliveryDetailsSheet: View {
+    let order: DeliveryOrderView
+    let currency: String
+    let onClose: () -> Void
+
+    var body: some View {
+        ScrollView {
+            DeliveryDetailsView(order: order, currency: currency)
+                .frame(maxWidth: 552).frame(maxWidth: .infinity)
+                .padding(.horizontal, Space.xl)
+                .padding(.top, Space.md)
+                .padding(.bottom, Space.lg)
+        }
     }
 }
 

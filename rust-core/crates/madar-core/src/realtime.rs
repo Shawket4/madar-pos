@@ -116,7 +116,11 @@ fn alert_for(event_type: &str, data: &str, locale: &str) -> Option<Alert> {
 /// Teller / till RECEIVE delivery + tickets-to-settle + ready → everything alerts.
 fn role_wants_alert(event_type: &str, role: &str) -> bool {
     match role {
-        "waiter" => matches!(event_type, "ticket.ready" | "kitchen.ticket_ready"),
+        // The waiter's "go serve" signal is `ticket.ready` (their open ticket is up).
+        // The backend ALSO emits `kitchen.ticket_ready` on the kitchen topic for the
+        // SAME ready open ticket, and the waiter subscribes to both topics — alerting
+        // on both double-pinged the waiter (two notifications) for one order.
+        "waiter" => event_type == "ticket.ready",
         "kitchen" => event_type == "kitchen.fired",
         // Teller / cashier / manager: incoming work to settle / handle — but NOT
         // `kitchen.fired`. That's the kitchen device's new-work signal; one waiter
@@ -314,6 +318,14 @@ async fn run_supervisor(
                 listener.on_connection_changed(false);
                 return;
             }
+            // A permanent authz failure (branch access revoked, no readable topics)
+            // returns 403 on EVERY attempt — retrying forever just hammers the
+            // endpoint with no UI signal. Stop; a re-subscribe (access restored +
+            // app resume, or re-login) revives it, exactly like the 401 path.
+            Err(CoreError::Forbidden { .. }) => {
+                listener.on_connection_changed(false);
+                return;
+            }
             // Offline / 5xx / portal — back off and retry.
             Err(_) => {
                 listener.on_connection_changed(false);
@@ -380,8 +392,10 @@ struct SseFrame {
 /// tail and emits a frame per blank line. Handles `event:`/`data:`/`id:` fields,
 /// `\n` and `\r\n` line endings, multi-`data:` joining, and `:`-comment keepalives.
 struct SseParser {
-    /// Bytes after the last newline — an incomplete line awaiting more chunks.
-    tail: String,
+    /// Raw bytes after the last newline — an incomplete line awaiting more chunks.
+    /// Kept as BYTES (not a String) so a multi-byte UTF-8 char (e.g. Arabic) split
+    /// across a chunk boundary isn't decoded prematurely into replacement chars.
+    tail: Vec<u8>,
     /// Accumulated `data:` lines for the in-progress event (joined by `\n`).
     data: String,
     /// The in-progress event's `event:` field (defaults to "message").
@@ -395,21 +409,25 @@ struct SseParser {
 
 impl SseParser {
     fn new() -> Self {
-        Self { tail: String::new(), data: String::new(), event_type: None, id: None, saw_field: false }
+        Self { tail: Vec::new(), data: String::new(), event_type: None, id: None, saw_field: false }
     }
 
     /// Feed a chunk; return any events completed by it.
     fn push(&mut self, bytes: &[u8]) -> Vec<SseFrame> {
-        self.tail.push_str(&String::from_utf8_lossy(bytes));
+        self.tail.extend_from_slice(bytes);
         let mut out = Vec::new();
-        // Process every complete line (terminated by '\n'); keep the remainder.
+        // Process every COMPLETE line (terminated by '\n'); keep the remainder as
+        // bytes. Decoding only whole lines means a multi-byte char is never split
+        // mid-sequence (the split sits in `tail` until its rest arrives).
         loop {
-            let Some(nl) = self.tail.find('\n') else { break };
-            let mut line: String = self.tail.drain(..=nl).collect();
-            line.pop(); // drop '\n'
-            if line.ends_with('\r') {
-                line.pop();
+            let Some(nl) = self.tail.iter().position(|&b| b == b'\n') else { break };
+            let line_bytes: Vec<u8> = self.tail.drain(..=nl).collect();
+            let mut end = line_bytes.len() - 1; // drop '\n'
+            if end > 0 && line_bytes[end - 1] == b'\r' {
+                end -= 1; // drop a CRLF '\r'
             }
+            // A complete line is whole UTF-8 (lossy is only a defensive fallback).
+            let line = String::from_utf8_lossy(&line_bytes[..end]);
             if let Some(frame) = self.feed_line(&line) {
                 out.push(frame);
             }
@@ -508,6 +526,21 @@ mod tests {
     }
 
     #[test]
+    fn handles_multibyte_utf8_split_across_chunks() {
+        // "نقدي" (cash) — each Arabic letter is 2 bytes. Cut a chunk INSIDE the first
+        // letter (between its two bytes); the parser must buffer the partial byte and
+        // decode the whole letter once its rest arrives, not emit a replacement char.
+        let full = "data: نقدي\n\n".as_bytes().to_vec();
+        let cut = 7; // "data: " (6 bytes) + the first byte of ن
+        let mut p = SseParser::new();
+        let mut out = Vec::new();
+        out.extend(p.push(&full[..cut]));
+        out.extend(p.push(&full[cut..]));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].data, "نقدي", "Arabic survives a mid-character chunk split");
+    }
+
+    #[test]
     fn ignores_comment_keepalives() {
         // A `: ping` comment between events must not emit an empty frame.
         let f = frames(&[": ping\n\n", "data: real\n\n"]);
@@ -586,7 +619,10 @@ mod tests {
         assert!(!role_wants_alert("ticket.round_added", "waiter"));
         assert!(!role_wants_alert("kitchen.fired", "waiter"));
         assert!(role_wants_alert("ticket.ready", "waiter"));
-        assert!(role_wants_alert("kitchen.ticket_ready", "waiter"));
+        // NOT kitchen.ticket_ready: the backend emits it on the kitchen topic for the
+        // SAME ready open ticket as ticket.ready, and the waiter sees both topics —
+        // alerting on both double-pinged the waiter. ticket.ready is the one signal.
+        assert!(!role_wants_alert("kitchen.ticket_ready", "waiter"));
         // The kitchen COOKS → only a new kitchen ticket; not its own ready stamps.
         assert!(role_wants_alert("kitchen.fired", "kitchen"));
         assert!(!role_wants_alert("kitchen.ticket_ready", "kitchen"));

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -56,6 +57,8 @@ import app.madar.resources.Res
 // app.madar.resources package; they must be imported to use Res.drawable.Icon/Logo.
 import app.madar.resources.Icon
 import app.madar.resources.Logo
+import app.madar.resources.wordmark_primary
+import app.madar.resources.wordmark_reversed
 import org.jetbrains.compose.resources.painterResource
 
 // The Compose mirror of the refined SwiftUI component library — same tokens,
@@ -353,6 +356,20 @@ fun MadarLockup(height: Dp = 30.dp) {
         painter = painterResource(Res.drawable.Logo),
         contentDescription = "Madar",
         modifier = Modifier.height(height),
+        contentScale = ContentScale.Fit,
+    )
+}
+
+/// The Madar wordmark ("madar", no orbit) — the real brand asset, theme-aware:
+/// ink+teal on light, paper on dark. Sized by width for the narrow nav rail.
+@Composable
+fun MadarLockupMark(width: Dp) {
+    androidx.compose.foundation.Image(
+        painter = painterResource(
+            if (madarColors().isDark) Res.drawable.wordmark_reversed else Res.drawable.wordmark_primary
+        ),
+        contentDescription = "Madar",
+        modifier = Modifier.width(width),
         contentScale = ContentScale.Fit,
     )
 }

@@ -3,6 +3,10 @@ package app.madar
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import app.madar.core.AppRoute
 import app.madar.core.BranchView
 import app.madar.core.DeviceConfigView
@@ -13,6 +17,9 @@ import app.madar.core.KdsTicketView
 import app.madar.core.RealtimeEvent
 import app.madar.core.RealtimePlayer
 import app.madar.core.TicketView
+import app.madar.core.FloorTableView
+import app.madar.core.FloorSectionView
+import app.madar.core.ReservationView
 import app.madar.core.PrinterBrand
 import app.madar.core.CartLineView
 import app.madar.core.CartTotals
@@ -560,9 +567,9 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
         }
     }
 
-    /** Print the shift report (Z-report) — same printer path as the receipt. */
-    suspend fun printShiftReport() {
-        val report = shiftReport ?: return
+    /** Render + print ANY shift report (the current shift OR a past one) — the
+     *  shared Print action behind every Z-report preview. No-ops with no printer. */
+    suspend fun printReportView(report: ShiftReportView) {
         val (host, port) = parsePrinter(printerHost)
         if (host.isBlank()) { printState = PrintState.NO_PRINTER; return }
         printState = PrintState.PRINTING
@@ -574,6 +581,9 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
             PrintState.FAILED
         }
     }
+
+    /** Print the CURRENT shift report (Z-report). */
+    suspend fun printShiftReport() { shiftReport?.let { printReportView(it) } }
 
     /** Split "host" / "host:port" → (host, port); default JetDirect port 9100. */
     private fun parsePrinter(raw: String): Pair<String, UShort> {
@@ -770,6 +780,17 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     fun openShiftReportPreview() {
         printState = PrintState.IDLE
         showReportPreview = true
+    }
+
+    /** A PAST shift's report, projected for preview before printing (from Past
+     *  Shifts). Drives a [ShiftReportPreviewScreen] over any screen. */
+    var previewShiftReport by mutableStateOf<ShiftReportView?>(null)
+    /** Fetch a past shift's Z-report so the teller can preview it before printing —
+     *  the same paper preview + Print as the current shift, even with no printer. */
+    suspend fun openShiftReportPreviewFor(shiftId: String) {
+        printState = PrintState.IDLE
+        previewShiftReport = runCatching { core.shiftReportFor(shiftId) }.getOrNull()
+        if (previewShiftReport == null) showToast(t("receipt.print_failed"), ChipTone.DANGER, icon = "xmark.circle")
     }
 
     /** Close the open shift with the counted cash + optional note. On success the
@@ -987,7 +1008,11 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
      *  distinctly from cancel (refusing incoming work, before any prep). */
     suspend fun rejectDelivery(o: DeliveryOrderView): Boolean {
         isBusy = true; error = null
-        return try { core.deliverySetStatus(o.id, "rejected"); loadDeliveryOrders(); true }
+        // Reject = cancel a not-yet-accepted (received) order: the backend's cancel
+        // endpoint flips received→rejected (later states→cancelled). The food isn't
+        // made yet, so restore inventory. The /status endpoint only accepts the line
+        // steps, so posting "rejected" there always 400s (reject was fully broken).
+        return try { core.deliveryCancel(o.id, null, true); loadDeliveryOrders(); true }
         catch (e: CoreException) { error = humanMessage(e); false }
         finally { isBusy = false }
     }
@@ -1149,6 +1174,14 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     var kitchenTick by mutableStateOf(0); private set
     var ticketTick by mutableStateOf(0); private set
     var deliveryTick by mutableStateOf(0); private set
+
+    // Per-module "unseen realtime event" badges for the side rail — set when an SSE
+    // event for that module arrives, cleared when the teller opens that module. Drive
+    // the animated nav-rail indicator (like the Flutter app's live dots).
+    var ticketsHasNew by mutableStateOf(false); private set
+    var deliveryHasNew by mutableStateOf(false); private set
+    fun clearTicketsBadge() { ticketsHasNew = false }
+    fun clearDeliveryBadge() { deliveryHasNew = false }
     private var realtimeBridge: RealtimeBridge? = null
 
     // ── in-app realtime alert banner (the visual companion to the OS notification) ──
@@ -1212,15 +1245,41 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     fun unsubscribeRealtime() {
         core.unsubscribeRealtime(); realtimeBridge = null; realtimeConnected = false
     }
-    /** Bridge → model (may be off the main thread; snapshot state is thread-safe). */
-    fun onRealtimeEvent(event: RealtimeEvent) {
-        when {
-            event.eventType.startsWith("kitchen.") -> kitchenTick++
-            event.eventType.startsWith("ticket.") -> ticketTick++
-            event.eventType.startsWith("delivery.") -> deliveryTick++
+    // Tick bumps arrive from TWO delivery threads (cloud SSE + the LAN relay), and
+    // `tick++` is a read-modify-write that those threads could interleave and lose.
+    // Serialize every bump onto a single confined dispatcher so increments never
+    // race (a lost bump could drop a board refresh). Snapshot writes are themselves
+    // thread-safe; this only makes the increment atomic.
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val tickScope = CoroutineScope(Dispatchers.Default.limitedParallelism(1) + SupervisorJob())
+
+    private fun bumpTicks(kitchen: Boolean = false, ticket: Boolean = false, delivery: Boolean = false) {
+        tickScope.launch {
+            if (kitchen) kitchenTick++
+            if (ticket) ticketTick++
+            if (delivery) deliveryTick++
         }
     }
-    fun onRealtimeConnection(connected: Boolean) { realtimeConnected = connected }
+
+    /** Bridge → model (may be off the main thread; bumps are serialized via tickScope). */
+    fun onRealtimeEvent(event: RealtimeEvent) {
+        when {
+            event.eventType.startsWith("kitchen.") -> bumpTicks(kitchen = true)
+            event.eventType.startsWith("ticket.") -> { bumpTicks(ticket = true); ticketsHasNew = true }
+            event.eventType.startsWith("delivery.") -> { bumpTicks(delivery = true); deliveryHasNew = true }
+        }
+    }
+    fun onRealtimeConnection(connected: Boolean) {
+        val wasConnected = realtimeConnected
+        realtimeConnected = connected
+        // Re-seed on (re)connect: events that fired while we were disconnected are
+        // gone (covered by the backend replay buffer when present; this is the belt-
+        // and-braces refetch), so nudge every live board to reload — the tick
+        // observers reload as they do for a real event.
+        if (connected && !wasConnected) {
+            bumpTicks(kitchen = true, ticket = true, delivery = true)
+        }
+    }
 
     // ── Kitchen Display (KDS) ─────────────────────────────────────────────────────
     var kdsTickets by mutableStateOf<List<KdsTicketView>>(emptyList()); private set
@@ -1282,6 +1341,46 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
     suspend fun loadOpenTickets() {
         runCatching { core.listOpenTickets() }.getOrNull()?.let { openTickets = it }
     }
+
+    // ── Reservations & floor plan ─────────────────────────────────
+    var floorTables by mutableStateOf<List<FloorTableView>>(emptyList()); private set
+    var floorSections by mutableStateOf<List<FloorSectionView>>(emptyList()); private set
+    var reservations by mutableStateOf<List<ReservationView>>(emptyList()); private set
+
+    /** Pull the branch's floor (sections + tables) and active bookings. */
+    suspend fun loadFloor() {
+        runCatching { core.listFloorSections() }.getOrNull()?.let { floorSections = it }
+        runCatching { core.listFloorTables() }.getOrNull()?.let { floorTables = it }
+        runCatching { core.listReservations() }.getOrNull()?.let { reservations = it }
+    }
+
+    /** Seat a party onto one or more tables (multiple ⇒ merged). Opens a ticket. */
+    suspend fun seatReservation(bookingId: String, tableIds: List<String>): Boolean =
+        runCatching { core.seatReservation(bookingId, tableIds) }
+            .onSuccess { loadFloor(); showToast(t("reservations.seated"), ChipTone.SUCCESS, icon = "chair") }
+            .onFailure { if (it is CoreException) error = humanMessage(it) }
+            .isSuccess
+
+    /** Set a table's live status (free | held | seated | dirty). */
+    suspend fun setTableStatus(tableId: String, status: String) {
+        runCatching { core.setFloorTableStatus(tableId, status) }
+            .onSuccess { loadFloor() }
+            .onFailure { if (it is CoreException) error = humanMessage(it) }
+    }
+
+    /** Send the booking's nudge (reservation departure / waitlist ready). */
+    suspend fun notifyReservation(bookingId: String) {
+        runCatching { core.notifyReservation(bookingId) }
+            .onSuccess { loadFloor() }
+            .onFailure { if (it is CoreException) error = humanMessage(it) }
+    }
+
+    /** Move an open ticket to another table (the "switch table" action). */
+    suspend fun moveTicket(ticketId: String, tableId: String): Boolean =
+        runCatching { core.moveTicketToTable(ticketId, tableId) }
+            .onSuccess { loadFloor(); showToast(t("reservations.moved"), ChipTone.SUCCESS, icon = "swap") }
+            .onFailure { if (it is CoreException) error = humanMessage(it) }
+            .isSuccess
     /** Waiter checkout: fire the cart as a NEW ticket, or add it as a ROUND to the
      *  targeted `activeTicketId`. Clears the target on success. */
     suspend fun fireOrAddRound(
@@ -1342,7 +1441,7 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
      *  rather than pop the Activity out of the app. */
     val hasOverlay: Boolean
         get() = showMore || showReauth || detailBundle != null || detailItem != null ||
-            previewReceipt != null || showReportPreview || showSettings || showTickets ||
+            previewReceipt != null || previewShiftReport != null || showReportPreview || showSettings || showTickets ||
             showIncoming || showDrafts || showShiftHistory ||
             showCashMovements || showHistory || showOrderSearch || showSync || showCloseShift
 
@@ -1356,6 +1455,7 @@ class AppModel(val core: MadarCore, private val vault: HostVault, private val pl
             detailBundle != null -> closeBundleDetail()
             detailItem != null -> closeItemDetail()
             previewReceipt != null -> previewReceipt = null
+            previewShiftReport != null -> previewShiftReport = null
             showReportPreview -> showReportPreview = false
             showSettings -> showSettings = false
             showTickets -> showTickets = false

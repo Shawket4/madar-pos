@@ -24,6 +24,15 @@ struct CashMovementsView: View {
     private var totalOut: Int64 { app.cashMovements.filter { $0.amountMinor < 0 }.reduce(0) { $0 - $1.amountMinor } }
     private var net: Int64 { totalIn - totalOut }
 
+    private func record() {
+        Task {
+            let signed = isIn ? amountMinor : -amountMinor
+            if await app.recordCashMovement(amountMinor: signed, note: note) {
+                amountMinor = 0; note = ""
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(t("cash.title"), onBack: onClose).screenHeaderBar()
@@ -32,9 +41,12 @@ struct CashMovementsView: View {
                     if let error = app.errorMessage {
                         NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
                     }
-                    if !app.cashMovements.isEmpty { summaryStrip }
-                    recordCard
-                    movementsList
+                    if !app.cashMovements.isEmpty {
+                        CashSummaryStrip(totalIn: totalIn, totalOut: totalOut, net: net, currency: currency)
+                    }
+                    RecordCard(app: app, isIn: $isIn, amountMinor: $amountMinor, note: $note,
+                               currency: currency, canRecord: canRecord, onRecord: record)
+                    MovementsList(movements: app.cashMovements, currency: currency)
                 }
                 .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
@@ -44,110 +56,144 @@ struct CashMovementsView: View {
         .background(theme.colors.bg.ignoresSafeArea())
         .task { await app.loadCashMovements() }
     }
+}
 
-    /// Total in / out / net for the open shift — one card, three columns
-    /// (matches Flutter `_SummaryStrip`: a single `SurfaceCard` with a `Row`).
-    private var summaryStrip: some View {
-        HStack(spacing: Space.sm) {
-            stat(t("cash.total_in"), "+ " + Money.format(totalIn, currency), tone: theme.colors.success)
-            stat(t("cash.total_out"), "− " + Money.format(totalOut, currency), tone: theme.colors.danger)
-            stat(t("cash.net"), (net < 0 ? "−" : "") + Money.format(abs(net), currency),
-                 tone: net < 0 ? theme.colors.danger : theme.colors.textPrimary)
+/// Total in / out / net for the open shift — In / Out as lighter stats above a
+/// tinted-teal Net block (the hero figure tellers look at, mirroring the cart's
+/// grand-total panel). Matches Flutter's `_SummaryStrip`.
+private struct CashSummaryStrip: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let totalIn: Int64
+    let totalOut: Int64
+    let net: Int64
+    let currency: String
+
+    var body: some View {
+        MadarCard(spacing: Space.md) {
+            HStack(spacing: Space.sm) {
+                stat(t("cash.total_in"), "+ " + Money.format(totalIn, currency), tone: theme.colors.success)
+                stat(t("cash.total_out"), "− " + Money.format(totalOut, currency), tone: theme.colors.danger)
+            }
+            // Net — the running figure for the shift, in the signature tinted-teal block.
+            HStack {
+                Text(t("cash.net")).font(.money(14, .bold)).foregroundStyle(theme.colors.accent)
+                Spacer()
+                Text((net < 0 ? "−" : "") + Money.format(abs(net), currency))
+                    .font(Typo.moneyLg.font)
+                    .foregroundStyle(net < 0 ? theme.colors.danger : theme.colors.accent)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .padding(.horizontal, Space.md).padding(.vertical, Space.md)
+            .background(theme.colors.accentBg)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
         }
-        .padding(Space.lg)
-        .background(theme.colors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.border, lineWidth: 1))
     }
 
     private func stat(_ label: String, _ value: String, tone: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.ui(12)).foregroundStyle(theme.colors.textSecondary)
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text(label).font(.ui(11, .semibold)).tracking(0.6).textCase(.uppercase)
+                .foregroundStyle(theme.colors.textMuted).lineLimit(1)
             Text(value).font(.money(16, .bold)).foregroundStyle(tone).lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    private var recordCard: some View {
-        VStack(alignment: .leading, spacing: Space.md) {
+/// Direction toggle + amount + note + record, in a bordered card.
+private struct RecordCard: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    @Binding var isIn: Bool
+    @Binding var amountMinor: Int64
+    @Binding var note: String
+    let currency: String
+    let canRecord: Bool
+    let onRecord: () -> Void
+
+    var body: some View {
+        MadarCard {
             HStack(spacing: Space.sm) {
                 directionChip(t("cash.in"), active: isIn, tone: theme.colors.success) { isIn = true }
                 directionChip(t("cash.out"), active: !isIn, tone: theme.colors.danger) { isIn = false }
             }
             AmountField(amountMinor: $amountMinor, currencyCode: currency)
             MadarTextField(placeholder: t("cash.note"), text: $note, icon: "text.bubble")
-            MadarButton(label: t("cash.record"), icon: "plus.forwardslash.minus", loading: app.isBusy) {
-                Task {
-                    let signed = isIn ? amountMinor : -amountMinor
-                    if await app.recordCashMovement(amountMinor: signed, note: note) {
-                        amountMinor = 0; note = ""
-                    }
-                }
+            MadarButton(label: t("cash.record"), icon: "plus.forwardslash.minus",
+                        loading: app.isBusy, isEnabled: canRecord) {
+                onRecord()
             }
-            .opacity(canRecord ? 1 : 0.5).allowsHitTesting(canRecord)
         }
-        .padding(Space.lg)
-        .background(theme.colors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous)
-            .strokeBorder(theme.colors.border, lineWidth: 1))
     }
 
     private func directionChip(_ label: String, active: Bool, tone: Color, action: @escaping () -> Void) -> some View {
         Button { Haptics.selection(); action() } label: {
-            Text(label).font(.ui(13, .bold))
+            Text(label).font(.ui(15, .semibold))
                 .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
-                .frame(maxWidth: .infinity).padding(.vertical, 10)
+                .frame(maxWidth: .infinity).padding(.vertical, Space.md)
                 .background(active ? tone : theme.colors.surfaceAlt)
                 .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
         .buttonStyle(.pressable(scale: 0.97))
     }
+}
 
-    @ViewBuilder private var movementsList: some View {
-        sectionTitle(t("cash.history"))
-        if app.cashMovements.isEmpty {
+/// The cash-movement history — a section header over a single card of hairline-
+/// separated rows (matches Flutter's `SurfaceCard` + `Divider`).
+private struct MovementsList: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let movements: [CashMovementView]
+    let currency: String
+
+    var body: some View {
+        SectionHeader(text: t("cash.history"))
+        if movements.isEmpty {
             Text(t("cash.empty")).font(.ui(13)).foregroundStyle(theme.colors.textMuted)
                 .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, Space.lg)
         } else {
-            // One card, rows separated by hairlines (matches Flutter's single
-            // `SurfaceCard(radius: AppRadius.lg)` with `Divider` between rows).
             VStack(spacing: 0) {
-                ForEach(Array(app.cashMovements.enumerated()), id: \.element.id) { index, m in
+                ForEach(Array(movements.enumerated()), id: \.element.id) { index, m in
                     if index > 0 { Rectangle().fill(theme.colors.borderLight).frame(height: 1) }
-                    movementRow(m)
+                    MovementRow(movement: m, currency: currency)
                 }
             }
             .background(theme.colors.surface)
             .clipShape(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous)
-                .strokeBorder(theme.colors.border, lineWidth: 1))
+                .strokeBorder(theme.colors.borderLight, lineWidth: 1))
+            .elevation(.card)
         }
     }
+}
 
-    private func movementRow(_ m: CashMovementView) -> some View {
-        let positive = m.amountMinor >= 0
+private struct MovementRow: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let movement: CashMovementView
+    let currency: String
+
+    private var positive: Bool { movement.amountMinor >= 0 }
+
+    var body: some View {
         let tone = positive ? theme.colors.success : theme.colors.danger
         let toneBg = positive ? theme.colors.successBg : theme.colors.dangerBg
-        return HStack(spacing: Space.md) {
+        HStack(spacing: Space.md) {
             ZStack {
                 Circle().fill(toneBg).frame(width: 38, height: 38)
                 MadarIcon(positive ? "arrow.down.left" : "arrow.up.right", size: 18).foregroundStyle(tone)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(m.note.isEmpty ? (positive ? t("cash.in") : t("cash.out")) : m.note)
-                    .font(.ui(14, .semibold)).foregroundStyle(theme.colors.textPrimary).lineLimit(1)
-                Text(m.movedByName).font(.ui(12)).foregroundStyle(theme.colors.textSecondary).lineLimit(1)
+                Text(movement.note.isEmpty ? (positive ? t("cash.in") : t("cash.out")) : movement.note)
+                    .font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+                Text(movement.movedByName).font(.ui(13)).foregroundStyle(theme.colors.textSecondary).lineLimit(1)
             }
             Spacer(minLength: Space.sm)
-            Text("\(positive ? "+" : "−") \(Money.format(abs(m.amountMinor), currency))")
+            Text("\(positive ? "+" : "−") \(Money.format(abs(movement.amountMinor), currency))")
                 .font(.money(14, .bold)).foregroundStyle(tone)
         }
         .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
-    }
-
-    private func sectionTitle(_ s: String) -> some View {
-        Text(s).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted).textCase(.uppercase)
     }
 }
 
@@ -187,6 +233,12 @@ struct ShiftHistoryView: View {
         return [pinned] + page
     }
 
+    private func toggle(_ id: String) {
+        withAnimation(Motion.standard) {
+            expandedId = expandedId == id ? nil : id
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             // Width-driven, matching Flutter's `compact = maxWidth < 680`.
@@ -194,35 +246,11 @@ struct ShiftHistoryView: View {
             VStack(spacing: 0) {
                 ScreenHeader(t("shifts.title"), onBack: onClose).screenHeaderBar()
                 if shifts.isEmpty {
-                    emptyState
+                    EmptyState(icon: "clock.arrow.circlepath", title: t("shifts.empty"))
                 } else {
                     ScrollView {
-                        let rows = VStack(spacing: wide ? 0 : Space.sm) {
-                            if wide { columnHeader }
-                            ForEach(Array(shifts.enumerated()), id: \.element.id) { index, s in
-                                ShiftRow(app: app, shift: s, currency: currency, wide: wide,
-                                         odd: index.isMultiple(of: 2) == false,
-                                         expanded: expandedId == s.id) {
-                                    withAnimation(Motion.standard) {
-                                        expandedId = expandedId == s.id ? nil : s.id
-                                    }
-                                }
-                            }
-                        }
-                        // Wide: header + rows live in one card (Flutter's single
-                        // `SurfaceCard(radius: AppRadius.lg)`); narrow keeps per-row cards.
-                        Group {
-                            if wide {
-                                rows
-                                    .background(theme.colors.surface)
-                                    .clipShape(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous)
-                                        .strokeBorder(theme.colors.border, lineWidth: 1))
-                            } else {
-                                rows
-                            }
-                        }
-                        .frame(maxWidth: 880).frame(maxWidth: .infinity).padding(Space.lg)
+                        rows(wide: wide)
+                            .frame(maxWidth: 880).frame(maxWidth: .infinity).padding(Space.lg)
                     }
                 }
             }
@@ -234,19 +262,39 @@ struct ShiftHistoryView: View {
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: Space.md) {
-            MadarIcon("clock.arrow.circlepath", size: 36)
-                .foregroundStyle(theme.colors.textMuted)
-            Text(t("shifts.empty")).font(.ui(14)).foregroundStyle(theme.colors.textSecondary)
+    // Wide: header + rows live in one card (Flutter's single `SurfaceCard`); narrow
+    // keeps per-row cards.
+    @ViewBuilder
+    private func rows(wide: Bool) -> some View {
+        let stack = VStack(spacing: wide ? 0 : Space.sm) {
+            if wide { ShiftColumnHeader() }
+            ForEach(Array(shifts.enumerated()), id: \.element.id) { index, s in
+                ShiftRow(app: app, shift: s, currency: currency, wide: wide,
+                         odd: index.isMultiple(of: 2) == false,
+                         expanded: expandedId == s.id) { toggle(s.id) }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if wide {
+            stack
+                .background(theme.colors.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radii.lg, style: .continuous)
+                    .strokeBorder(theme.colors.borderLight, lineWidth: 1))
+                .elevation(.card)
+        } else {
+            stack
+        }
     }
+}
 
-    // Flutter `_Cols`: [status dot 26][Teller flex2][Opened flex2][Closed flex2]
-    // [Declared 110 trailing][chevron 44]. The header omits the status-dot label
-    // (blank in Flutter) and end-aligns Declared.
-    private var columnHeader: some View {
+// Flutter `_Cols`: [status dot 26][Teller flex2][Opened flex2][Closed flex2]
+// [Declared 110 trailing][chevron 44]. The header omits the status-dot label
+// (blank in Flutter) and end-aligns Declared.
+private struct ShiftColumnHeader: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    var body: some View {
         HStack(spacing: Space.md) {
             Spacer().frame(width: ShiftRow.statusW)
             Text(t("shift.teller")).frame(maxWidth: .infinity, alignment: .leading)
@@ -304,6 +352,12 @@ private struct ShiftRow: View {
         }
     }
 
+    private func reprint() {
+        printing = true
+        // Preview the past shift's Z-report (paper layout) before printing.
+        Task { await app.openShiftReportPreviewFor(shift.id); printing = false }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Button { Haptics.selection(); onToggle() } label: {
@@ -312,14 +366,14 @@ private struct ShiftRow: View {
             .buttonStyle(.plain)
             if expanded {
                 expansion
-                    .padding(.horizontal, wide ? Space.md : Space.md)
+                    .padding(.horizontal, Space.md)
                     .padding(.bottom, Space.md)
             }
         }
         .background(rowBackground)
         .overlay(
             RoundedRectangle(cornerRadius: wide ? 0 : Radii.md, style: .continuous)
-                .strokeBorder(theme.colors.border, lineWidth: wide ? 0 : 1))
+                .strokeBorder(theme.colors.borderLight, lineWidth: wide ? 0 : 1))
         .overlay(alignment: .bottom) { if wide { Rectangle().fill(theme.colors.borderLight).frame(height: 1) } }
         .clipShape(RoundedRectangle(cornerRadius: wide ? 0 : Radii.md, style: .continuous))
     }
@@ -334,7 +388,7 @@ private struct ShiftRow: View {
                 .frame(width: Self.statusW, alignment: .center)
             // Teller: the real teller name (NEW field), not a status chip.
             Text(shift.tellerName ?? "—")
-                .font(.ui(14, .semibold)).foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+                .font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             // Opened.
             Text(app.fmtDateTime(shift.openedAt))
@@ -346,7 +400,7 @@ private struct ShiftRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             // Declared cash — right-aligned, muted when nil.
             Text(shift.closingDeclaredMinor.map { Money.format($0, currency) } ?? "—")
-                .font(.money(14, .semibold))
+                .font(.money(14, .bold))
                 .foregroundStyle(shift.closingDeclaredMinor == nil ? theme.colors.textMuted : theme.colors.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .frame(width: Self.declaredW, alignment: .trailing)
@@ -361,18 +415,18 @@ private struct ShiftRow: View {
     private var cardRow: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             HStack {
-                Text(app.fmtDateShort(shift.openedAt)).font(.ui(14, .bold)).foregroundStyle(theme.colors.textPrimary)
+                Text(app.fmtDateShort(shift.openedAt)).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textPrimary)
                 Spacer()
                 statusChip
                 MadarIcon(expanded ? "chevron.down" : "chevron.right", size: 12).foregroundStyle(theme.colors.textMuted)
             }
-            metric(t("shifts.opening"), Money.format(shift.openingCashMinor, currency))
+            MetricRow(label: t("shifts.opening"), value: Money.format(shift.openingCashMinor, currency))
             if let declared = shift.closingDeclaredMinor {
-                metric(t("shifts.declared"), Money.format(declared, currency))
+                MetricRow(label: t("shifts.declared"), value: Money.format(declared, currency))
             }
             if let disc = shift.discrepancyMinor, disc != 0 {
-                metric(t("shifts.discrepancy"),
-                       "\(disc > 0 ? "+" : "−")\(Money.format(abs(disc), currency))", valueColor: theme.colors.danger)
+                MetricRow(label: t("shifts.discrepancy"),
+                          value: "\(disc > 0 ? "+" : "−")\(Money.format(abs(disc), currency))", tone: .danger)
             }
         }
         .padding(Space.lg)
@@ -384,10 +438,7 @@ private struct ShiftRow: View {
         HStack {
             Text(t("shifts.orders")).font(.ui(12, .semibold)).foregroundStyle(theme.colors.textMuted).textCase(.uppercase)
             Spacer()
-            Button {
-                printing = true
-                Task { await app.reprintShiftReport(shift.id); printing = false }
-            } label: {
+            Button(action: reprint) {
                 HStack(spacing: 5) {
                     if printing { ProgressView().controlSize(.small) }
                     else { MadarIcon("printer", size: IconSize.sm) }
@@ -412,31 +463,31 @@ private struct ShiftRow: View {
     }
 
     private func orderRow(_ o: OrderSummaryView) -> some View {
-        HStack(spacing: Space.sm) {
-            Text(o.orderNumber.map { "#\($0)" } ?? t("history.order"))
-                .font(.ui(12, .semibold)).foregroundStyle(theme.colors.textPrimary)
-            Text(app.fmtTime(o.createdAt)).font(.ui(11)).foregroundStyle(theme.colors.textMuted)
-            if o.status == "voided" { StatusChip(label: t("history.voided"), tone: .danger) }
-            Spacer(minLength: Space.sm)
-            Text(o.paymentLabel).font(.ui(11)).foregroundStyle(theme.colors.textMuted)
-            Text(Money.format(o.totalMinor, currency)).font(.money(12, .bold)).foregroundStyle(theme.colors.textPrimary)
+        // Tap a past order to preview its receipt (and print from the preview) — the
+        // same shared ReceiptPaper sheet as the Order History reprint.
+        Button {
+            Haptics.selection()
+            Task { await app.openOrderReceiptPreview(o.id) }
+        } label: {
+            HStack(spacing: Space.sm) {
+                Text(o.orderNumber.map { "#\($0)" } ?? t("history.order"))
+                    .font(.ui(11, .semibold)).foregroundStyle(theme.colors.textPrimary)
+                Text(app.fmtTime(o.createdAt)).font(.ui(11, .semibold)).foregroundStyle(theme.colors.textMuted)
+                if o.status == "voided" { StatusChip(label: t("history.voided"), tone: .danger) }
+                Spacer(minLength: Space.sm)
+                Text(o.paymentLabel).font(.ui(11, .semibold)).foregroundStyle(theme.colors.textMuted)
+                Text(Money.format(o.totalMinor, currency)).font(.money(12, .bold)).foregroundStyle(theme.colors.textPrimary)
+                MadarIcon("printer", size: IconSize.sm).foregroundStyle(theme.colors.accent)
+            }
+            .padding(.vertical, 5).padding(.horizontal, Space.sm)
+            .background(theme.colors.surfaceAlt)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.xs, style: .continuous))
         }
-        .padding(.vertical, 5).padding(.horizontal, Space.sm)
-        .background(theme.colors.surfaceAlt)
-        .clipShape(RoundedRectangle(cornerRadius: Radii.xs, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     private var statusChip: some View {
         StatusChip(label: shift.isOpen ? t("shifts.open_now") : t("shifts.closed"),
                    tone: shift.isOpen ? .success : .neutral)
     }
-
-    private func metric(_ label: String, _ value: String, valueColor: Color? = nil) -> some View {
-        HStack {
-            Text(label).font(.ui(12, .medium)).foregroundStyle(theme.colors.textSecondary)
-            Spacer()
-            Text(value).font(.money(13, .semibold)).foregroundStyle(valueColor ?? theme.colors.textPrimary)
-        }
-    }
 }
-

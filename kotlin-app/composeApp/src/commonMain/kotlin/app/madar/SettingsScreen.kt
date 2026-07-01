@@ -3,6 +3,7 @@ package app.madar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -19,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,9 +39,8 @@ import app.madar.ui.MadarButton
 import app.madar.ui.LocalMadarFont
 import app.madar.ui.MadarTextField
 import app.madar.ui.ThemeMode
-import app.madar.ui.backGlyph
-import app.madar.ui.disclosureGlyph
 import app.madar.ui.madarColors
+import app.madar.ui.pressScale
 import app.madar.ui.t
 import app.madar.ui.MadarIcon
 import app.madar.ui.IconSize
@@ -53,17 +54,7 @@ fun SettingsScreen(model: AppModel) {
     val c = madarColors()
     LaunchedEffect(Unit) { model.clearError() }
     Column(Modifier.fillMaxSize().background(c.bg)) {
-        Column(Modifier.fillMaxWidth().background(c.surface)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.md),
-            ) {
-                MadarIcon("chevron.backward", tint = c.textPrimary, size = 17.dp, modifier = Modifier.clickable { model.showSettings = false })
-                Text(t("settings.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 17.sp)
-            }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
-        }
+        SettingsHeader { model.showSettings = false }
 
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.lg),
@@ -71,41 +62,21 @@ fun SettingsScreen(model: AppModel) {
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
                 model.error?.let { NoticeBanner(it, ChipTone.WARNING, icon = "exclamationmark.circle") }
-                Card(t("settings.account")) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(Radii.sm)).background(c.navyBg), contentAlignment = Alignment.Center) {
-                            Text((model.shift?.tellerName ?: "?").take(1).uppercase(), color = c.navy,
-                                fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(model.shift?.tellerName ?: "—", color = c.textPrimary,
-                                fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            if (model.branchName.isNotBlank()) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                                    MadarIcon("storefront", tint = c.textMuted, size = IconSize.sm)
-                                    Text(model.branchName, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                        model.session?.role?.takeIf { it.isNotBlank() }?.let {
-                            StatusChip(it.replace('_', ' ').uppercase(), ChipTone.INFO)
-                        }
-                    }
-                }
-                Card(t("settings.appearance")) {
+                AccountCard(model)
+                SettingsCard(t("settings.appearance")) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Chip(Modifier.weight(1f), t("settings.theme_light"), model.themeMode == ThemeMode.LIGHT) { model.setThemeMode(ThemeMode.LIGHT) }
                         Chip(Modifier.weight(1f), t("settings.theme_dark"), model.themeMode == ThemeMode.DARK) { model.setThemeMode(ThemeMode.DARK) }
                         Chip(Modifier.weight(1f), t("settings.theme_system"), model.themeMode == ThemeMode.SYSTEM) { model.setThemeMode(ThemeMode.SYSTEM) }
                     }
                 }
-                Card(t("settings.language")) {
+                SettingsCard(t("settings.language")) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Chip(Modifier.weight(1f), "English", model.locale.startsWith("en")) { model.setLocale("en") }
                         Chip(Modifier.weight(1f), "العربية", model.locale.startsWith("ar")) { model.setLocale("ar") }
                     }
                 }
-                Card(t("settings.printer")) {
+                SettingsCard(t("settings.printer")) {
                     // This till's code (the <DEVICE> segment of every order_ref) lives
                     // in the printer card alongside the printer host + brand (matches Swift).
                     MadarTextField(model.deviceCode, { model.setDeviceCode(it) }, t("settings.device_code_hint"), icon = "number")
@@ -128,7 +99,7 @@ fun SettingsScreen(model: AppModel) {
                 if (!model.isKitchenDevice) {
                     LaunchedEffect(Unit) { model.loadTills() }
                     if (model.tills.isNotEmpty()) {
-                        Card(t("settings.till")) {
+                        SettingsCard(t("settings.till")) {
                             TillRow(t("settings.till_default"), model.deviceConfig.tillId == null) { model.setDeviceTill(null) }
                             model.tills.forEach { till ->
                                 TillRow(till.name, model.deviceConfig.tillId == till.id) { model.setDeviceTill(till.id) }
@@ -136,7 +107,7 @@ fun SettingsScreen(model: AppModel) {
                         }
                     }
                 }
-                Card(t("settings.lan")) {
+                SettingsCard(t("settings.lan")) {
                     // Optional fixed hub-IP for the LAN relay when mDNS auto-discovery
                     // can't reach peers. Writes route through the core (setLanHub),
                     // which registers it live if the relay is running and clears on blank.
@@ -147,49 +118,18 @@ fun SettingsScreen(model: AppModel) {
                         if (model.lanRelayActive) "${model.lanPeerCount} ${t("settings.lan_peers")}" else "—",
                     )
                 }
-                Card(t("settings.device")) {
-                    Row(
-                        Modifier.fillMaxWidth().clickable {
-                            // Re-provisioning is only allowed with a closed drawer.
-                            if (model.hasOpenShift) {
-                                model.flagError(model.t("settings.reconfigure_shift_open"))
-                            } else {
-                                model.beginReconfigure(); model.showSettings = false
-                            }
-                        },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.lg),
-                    ) {
-                        MadarIcon("building.2", tint = c.textSecondary, size = 20.dp)
-                        Text(t("settings.reconfigure"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                        Box(Modifier.weight(1f))
-                        MadarIcon("chevron.right", tint = c.textMuted, size = IconSize.md)
+                SettingsCard(t("settings.device")) {
+                    ReconfigureRow {
+                        // Re-provisioning is only allowed with a closed drawer.
+                        if (model.hasOpenShift) {
+                            model.flagError(model.t("settings.reconfigure_shift_open"))
+                        } else {
+                            model.beginReconfigure(); model.showSettings = false
+                        }
                     }
                 }
                 LaunchedEffect(Unit) { model.loadDiagnostics() }
-                Card(t("settings.diagnostics")) {
-                    InfoRow(t("settings.version"), model.core.version())
-                    InfoRow(t("settings.server"), model.core.baseUrl())
-                    InfoRow(t("settings.pending"), "${model.pendingCount}")
-                    // Realtime (SSE) channel health — the teller's order alerts ride
-                    // this; surfacing it makes a silent drop diagnosable.
-                    InfoRow(t("settings.realtime"), if (model.realtimeConnected) t("settings.realtime_on") else t("settings.realtime_off"))
-                    if (model.diagnostics.isNotEmpty()) {
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(t("settings.recent_warnings"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                            Box(Modifier.weight(1f))
-                            Text(t("settings.clear"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
-                                modifier = Modifier.clickable { model.clearDiagnostics() })
-                        }
-                        model.diagnostics.take(15).forEach { e ->
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(e.message, color = if (e.level == "error") c.danger else c.warning, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
-                                Text(e.at, color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 10.sp)
-                            }
-                        }
-                    }
-                }
+                DiagnosticsCard(model)
                 MadarButton(
                     t("settings.sign_out"),
                     {
@@ -209,13 +149,105 @@ fun SettingsScreen(model: AppModel) {
 }
 
 @Composable
-private fun Card(title: String, content: @Composable () -> Unit) {
+private fun SettingsHeader(modifier: Modifier = Modifier, onClose: () -> Unit) {
     val c = madarColors()
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+    val interaction = remember { MutableInteractionSource() }
+    Column(modifier.fillMaxWidth().background(c.surface)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
+        ) {
+            MadarIcon(
+                "chevron.backward", tint = c.textPrimary, size = 17.dp,
+                modifier = Modifier.pressScale(interaction)
+                    .clickable(interactionSource = interaction, indication = null) { onClose() },
+            )
+            Text(t("settings.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 17.sp)
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+    }
+}
+
+@Composable
+private fun AccountCard(model: AppModel, modifier: Modifier = Modifier) {
+    val c = madarColors()
+    SettingsCard(t("settings.account"), modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(Radii.sm)).background(c.navyBg), contentAlignment = Alignment.Center) {
+                Text((model.shift?.tellerName ?: "?").take(1).uppercase(), color = c.navy,
+                    fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(model.shift?.tellerName ?: "—", color = c.textPrimary,
+                    fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                if (model.branchName.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                        MadarIcon("storefront", tint = c.textMuted, size = IconSize.sm)
+                        Text(model.branchName, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
+                    }
+                }
+            }
+            model.session?.role?.takeIf { it.isNotBlank() }?.let {
+                StatusChip(it.replace('_', ' ').uppercase(), ChipTone.INFO)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReconfigureRow(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val c = madarColors()
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier.fillMaxWidth().pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null) { onClick() },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.lg),
+    ) {
+        MadarIcon("building.2", tint = c.textSecondary, size = 20.dp)
+        Text(t("settings.reconfigure"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Box(Modifier.weight(1f))
+        MadarIcon("chevron.right", tint = c.textMuted, size = IconSize.md)
+    }
+}
+
+@Composable
+private fun DiagnosticsCard(model: AppModel, modifier: Modifier = Modifier) {
+    val c = madarColors()
+    SettingsCard(t("settings.diagnostics"), modifier) {
+        InfoRow(t("settings.version"), model.core.version())
+        InfoRow(t("settings.server"), model.core.baseUrl())
+        InfoRow(t("settings.pending"), "${model.pendingCount}")
+        // Realtime (SSE) channel health — the teller's order alerts ride
+        // this; surfacing it makes a silent drop diagnosable.
+        InfoRow(t("settings.realtime"), if (model.realtimeConnected) t("settings.realtime_on") else t("settings.realtime_off"))
+        if (model.diagnostics.isNotEmpty()) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("settings.recent_warnings"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Box(Modifier.weight(1f))
+                Text(t("settings.clear"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                    modifier = Modifier.clickable { model.clearDiagnostics() })
+            }
+            model.diagnostics.take(15).forEach { e ->
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(e.message, color = if (e.level == "error") c.danger else c.warning, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
+                    Text(e.at, color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 10.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val c = madarColors()
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         Text(title.uppercase(), color = c.textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 0.6.sp)
         Column(
             Modifier.fillMaxWidth().elevation(Elevation.CARD, RoundedCornerShape(Radii.md)).clip(RoundedCornerShape(Radii.md)).background(c.surface)
-                .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.lg),
+                .border(1.dp, c.borderLight, RoundedCornerShape(Radii.md)).padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) { content() }
     }
@@ -224,10 +256,11 @@ private fun Card(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun Chip(modifier: Modifier, label: String, active: Boolean, onClick: () -> Unit) {
     val c = madarColors()
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        modifier.clip(RoundedCornerShape(Radii.sm)).background(if (active) c.accent else c.surfaceAlt)
+        modifier.pressScale(interaction).clip(RoundedCornerShape(Radii.sm)).background(if (active) c.accent else c.surfaceAlt)
             .border(1.dp, if (active) Color.Transparent else c.border, RoundedCornerShape(Radii.sm))
-            .clickable { onClick() }.padding(vertical = 12.dp),
+            .clickable(interactionSource = interaction, indication = null) { onClick() }.padding(vertical = Space.md),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = if (active) c.textOnAccent else c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -235,10 +268,12 @@ private fun Chip(modifier: Modifier, label: String, active: Boolean, onClick: ()
 }
 
 @Composable
-private fun TillRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun TillRow(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val c = madarColors()
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth().clickable { onClick() },
+        modifier.fillMaxWidth().pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null) { onClick() },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,22 +43,27 @@ import app.madar.core.ShiftSummaryView
 import app.madar.core.ShiftView
 import app.madar.ui.AmountField
 import app.madar.ui.ChipTone
+import app.madar.ui.EmptyState
+import app.madar.ui.MadarButton
+import app.madar.ui.MadarCard
+import app.madar.ui.MadarIcon
+import app.madar.ui.MadarTextField
+import app.madar.ui.MetricRow
 import app.madar.ui.Money
+import app.madar.ui.Motion
 import app.madar.ui.NoticeBanner
+import app.madar.ui.IconSize
 import app.madar.ui.Radii
+import app.madar.ui.Responsive
+import app.madar.ui.ScreenHeader
+import app.madar.ui.SectionHeader
 import app.madar.ui.Space
 import app.madar.ui.StatusChip
-import app.madar.ui.MadarButton
-import app.madar.ui.LocalMadarFont
-import app.madar.ui.MadarTextField
-import app.madar.ui.backGlyph
+import app.madar.ui.Type
 import app.madar.ui.madarColors
+import app.madar.ui.pressScale
+import app.madar.ui.screenHeaderBar
 import app.madar.ui.t
-import app.madar.ui.MadarIcon
-import app.madar.ui.IconSize
-import app.madar.ui.Responsive
-import app.madar.ui.Elevation
-import app.madar.ui.elevation
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,7 +88,9 @@ fun CashMovementsScreen(model: AppModel) {
     LaunchedEffect(Unit) { model.loadCashMovements() }
 
     Column(Modifier.fillMaxSize().background(c.bg)) {
-        ScreenHeader(t("cash.title")) { model.showCashMovements = false }
+        Box(Modifier.screenHeaderBar()) {
+            ScreenHeader(t("cash.title"), onBack = { model.showCashMovements = false })
+        }
 
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.lg),
@@ -129,11 +137,7 @@ private fun RecordCard(
     onRecord: () -> Unit,
 ) {
     val c = madarColors()
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.lg),
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
+    MadarCard {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             DirectionChip(t("cash.in"), isIn, c.success, Modifier.weight(1f)) { onDirection(true) }
             DirectionChip(t("cash.out"), !isIn, c.danger, Modifier.weight(1f)) { onDirection(false) }
@@ -147,62 +151,74 @@ private fun RecordCard(
 @Composable
 private fun DirectionChip(label: String, active: Boolean, tone: Color, modifier: Modifier, onClick: () -> Unit) {
     val c = madarColors()
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        modifier.clip(RoundedCornerShape(Radii.sm))
+        modifier.pressScale(interaction, 0.97f).clip(RoundedCornerShape(Radii.sm))
             .background(if (active) tone else c.surfaceAlt)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
-            .padding(vertical = 10.dp),
+            .clickable(interactionSource = interaction, indication = null) { onClick() }
+            .padding(vertical = Space.md),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            label, color = if (active) c.textOnAccent else c.textSecondary, fontFamily = LocalMadarFont.current,
-            fontWeight = FontWeight.Bold, fontSize = 13.sp,
+            label, style = Type.title(),
+            color = if (active) c.textOnAccent else c.textSecondary,
         )
     }
 }
 
-// Total in / out / net for the open shift — one card, three columns (matches
-// Flutter `_SummaryStrip`: a single SurfaceCard with a Row).
+// Total in / out / net for the open shift — In / Out as lighter stats above a
+// tinted-teal Net block (the hero figure tellers look at, mirroring the cart's
+// grand-total panel). Matches Flutter's `_SummaryStrip` projected onto the bold
+// money language.
 @Composable
 private fun CashSummaryStrip(totalIn: Long, totalOut: Long, net: Long, currency: String) {
     val c = madarColors()
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(Radii.md)).padding(Space.lg),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        Stat(Modifier.weight(1f), t("cash.total_in"), "+ " + Money.format(totalIn, currency), c.success)
-        Stat(Modifier.weight(1f), t("cash.total_out"), "− " + Money.format(totalOut, currency), c.danger)
-        Stat(Modifier.weight(1f), t("cash.net"),
-            (if (net < 0) "−" else "") + Money.format(abs(net), currency),
-            if (net < 0) c.danger else c.textPrimary)
+    MadarCard(spacing = Space.md) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Stat(Modifier.weight(1f), t("cash.total_in"), "+ " + Money.format(totalIn, currency), c.success)
+            Stat(Modifier.weight(1f), t("cash.total_out"), "− " + Money.format(totalOut, currency), c.danger)
+        }
+        // Net — the running figure for the shift, in the signature tinted-teal block.
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.accentBg)
+                .padding(horizontal = Space.md, vertical = Space.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(t("cash.net"), style = Type.money(14.sp, FontWeight.Bold), color = c.accent)
+            Box(Modifier.weight(1f))
+            Text(
+                (if (net < 0) "−" else "") + Money.format(abs(net), currency),
+                style = Type.moneyLg(),
+                color = if (net < 0) c.danger else c.accent,
+            )
+        }
     }
 }
 
 @Composable
 private fun Stat(modifier: Modifier, label: String, value: String, tone: Color) {
     val c = madarColors()
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(label, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
-        Text(value, color = tone, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Text(
+            label.uppercase(), style = Type.labelSm(), color = c.textMuted,
+            letterSpacing = Motion.trackingSp.sp, maxLines = 1,
+        )
+        Text(value, style = Type.money(16.sp), color = tone, maxLines = 1)
     }
 }
 
 @Composable
 private fun MovementsList(movements: List<CashMovementView>, currency: String) {
     val c = madarColors()
-    SectionTitle(t("cash.history"))
+    SectionHeader(t("cash.history"))
     if (movements.isEmpty()) {
         Box(Modifier.fillMaxWidth().padding(vertical = Space.lg), contentAlignment = Alignment.Center) {
-            Text(t("cash.empty"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 13.sp)
+            Text(t("cash.empty"), style = Type.bodySm(), color = c.textMuted)
         }
     } else {
         // One card, rows separated by hairlines (matches Flutter's single
         // SurfaceCard(radius: AppRadius.lg) with a Divider between rows).
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.lg)).background(c.surface)
-                .border(1.dp, c.border, RoundedCornerShape(Radii.lg)),
-        ) {
+        MadarCard(padding = PaddingValues(0.dp), spacing = 0.dp) {
             movements.forEachIndexed { index, m ->
                 if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.borderLight))
                 MovementRow(m, currency)
@@ -231,25 +247,15 @@ private fun MovementRow(m: CashMovementView, currency: String) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 m.note.ifEmpty { if (positive) t("cash.in") else t("cash.out") },
-                color = c.textPrimary, fontFamily = LocalMadarFont.current,
-                fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1,
+                style = Type.title(), color = c.textPrimary, maxLines = 1,
             )
-            Text(m.movedByName, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp, maxLines = 1)
+            Text(m.movedByName, style = Type.bodySm(), color = c.textSecondary, maxLines = 1)
         }
         Text(
             "${if (positive) "+" else "−"} ${Money.format(abs(m.amountMinor), currency)}",
-            color = tone, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+            style = Type.money(), color = tone,
         )
     }
-}
-
-@Composable
-private fun SectionTitle(label: String) {
-    val c = madarColors()
-    Text(
-        label.uppercase(), color = c.textMuted, fontFamily = LocalMadarFont.current,
-        fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
-    )
 }
 
 // ── Past shifts ────────────────────────────────────────────────────────────────────
@@ -294,15 +300,12 @@ fun ShiftHistoryScreen(model: AppModel) {
     val shifts = shiftsWithLocalOpen(model.shiftHistory, model.shift)
 
     Column(Modifier.fillMaxSize().background(c.bg)) {
-        ScreenHeader(t("shifts.title")) { model.showShiftHistory = false }
+        Box(Modifier.screenHeaderBar()) {
+            ScreenHeader(t("shifts.title"), onBack = { model.showShiftHistory = false })
+        }
 
         if (shifts.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                    MadarIcon("arrow.clockwise", tint = c.textMuted, size = 36.dp)
-                    Text(t("shifts.empty"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 14.sp)
-                }
-            }
+            EmptyState("clock.arrow.circlepath", t("shifts.empty"))
         } else {
             // Width-driven, matching Flutter's `compact = maxWidth < 680`.
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -313,22 +316,32 @@ fun ShiftHistoryScreen(model: AppModel) {
                 ) {
                     // Wide: header + rows live in one card (Flutter's single
                     // SurfaceCard); narrow keeps per-row cards.
-                    val rowsModifier = Modifier.widthIn(max = 880.dp).fillMaxWidth().let {
-                        if (wide) it.clip(RoundedCornerShape(Radii.lg)).background(c.surface)
-                            .border(1.dp, c.border, RoundedCornerShape(Radii.lg)) else it
-                    }
-                    Column(
-                        rowsModifier,
-                        verticalArrangement = if (wide) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(Space.sm),
-                    ) {
-                        if (wide) ColumnHeader()
-                        shifts.forEachIndexed { index, s ->
-                            ShiftRow(
-                                model, s, currency, wide = wide,
-                                odd = index % 2 != 0,
-                                expanded = expandedId == s.id,
-                                onToggle = { expandedId = if (expandedId == s.id) null else s.id },
-                            )
+                    val rowsModifier = Modifier.widthIn(max = 880.dp).fillMaxWidth()
+                    if (wide) {
+                        MadarCard(rowsModifier, padding = PaddingValues(0.dp), spacing = 0.dp) {
+                            ColumnHeader()
+                            shifts.forEachIndexed { index, s ->
+                                ShiftRow(
+                                    model, s, currency, wide = true,
+                                    odd = index % 2 != 0,
+                                    expanded = expandedId == s.id,
+                                    onToggle = { expandedId = if (expandedId == s.id) null else s.id },
+                                )
+                            }
+                        }
+                    } else {
+                        Column(
+                            rowsModifier,
+                            verticalArrangement = Arrangement.spacedBy(Space.sm),
+                        ) {
+                            shifts.forEachIndexed { index, s ->
+                                ShiftRow(
+                                    model, s, currency, wide = false,
+                                    odd = index % 2 != 0,
+                                    expanded = expandedId == s.id,
+                                    onToggle = { expandedId = if (expandedId == s.id) null else s.id },
+                                )
+                            }
                         }
                     }
                 }
@@ -364,10 +377,7 @@ private fun ColumnHeader() {
 private fun HeaderCell(label: String, modifier: Modifier, alignEnd: Boolean = false) {
     val c = madarColors()
     Box(modifier, contentAlignment = if (alignEnd) Alignment.CenterEnd else Alignment.CenterStart) {
-        Text(
-            label.uppercase(), color = c.textMuted, fontFamily = LocalMadarFont.current,
-            fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1,
-        )
+        Text(label.uppercase(), style = Type.labelSm(), color = c.textMuted, maxLines = 1)
     }
 }
 
@@ -402,7 +412,7 @@ private fun ShiftRow(
     }
 
     val container = Modifier.fillMaxWidth().background(rowBackground).let {
-        if (wide) it else it.clip(RoundedCornerShape(Radii.md)).border(1.dp, c.border, RoundedCornerShape(Radii.md))
+        if (wide) it else it.clip(RoundedCornerShape(Radii.md)).border(1.dp, c.borderLight, RoundedCornerShape(Radii.md))
     }
     Column(container) {
         if (wide) {
@@ -417,24 +427,25 @@ private fun ShiftRow(
                     Box(Modifier.size(8.dp).clip(CircleShape).background(statusColor))
                 }
                 Text(
-                    s.tellerName ?: "—", color = c.textPrimary, fontFamily = LocalMadarFont.current,
-                    fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1,
-                    modifier = Modifier.weight(1f),
+                    s.tellerName ?: "—", style = Type.title(), color = c.textPrimary,
+                    maxLines = 1, modifier = Modifier.weight(1f),
                 )
                 Text(
-                    model.fmtDateTime(s.openedAt), color = c.textSecondary, fontFamily = LocalMadarFont.current,
-                    fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f),
+                    model.fmtDateTime(s.openedAt), style = Type.bodySm(), color = c.textSecondary,
+                    maxLines = 1, modifier = Modifier.weight(1f),
                 )
                 Text(
                     s.closedAt?.let { model.fmtDateTime(it) } ?: "—",
+                    style = Type.bodySm(),
                     color = if (s.closedAt == null) c.textMuted else c.textSecondary,
-                    fontFamily = LocalMadarFont.current, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f),
+                    maxLines = 1, modifier = Modifier.weight(1f),
                 )
                 Box(Modifier.width(ShiftDeclaredW), contentAlignment = Alignment.CenterEnd) {
                     Text(
                         s.closingDeclaredMinor?.let { Money.format(it, currency) } ?: "—",
+                        style = Type.money(),
                         color = if (s.closingDeclaredMinor == null) c.textMuted else c.textPrimary,
-                        fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1,
+                        maxLines = 1,
                     )
                 }
                 Box(Modifier.width(ShiftChevW), contentAlignment = Alignment.Center) {
@@ -448,15 +459,15 @@ private fun ShiftRow(
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(model.fmtDateShort(s.openedAt), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(model.fmtDateShort(s.openedAt), style = Type.title(), color = c.textPrimary)
                     Box(Modifier.weight(1f))
                     StatusChip(if (s.isOpen) t("shifts.open_now") else t("shifts.closed"), if (s.isOpen) ChipTone.SUCCESS else ChipTone.NEUTRAL)
                     MadarIcon(if (expanded) "chevron.down" else "chevron.right", tint = c.textMuted, size = IconSize.sm)
                 }
-                Metric(t("shifts.opening"), Money.format(s.openingCashMinor, currency))
-                s.closingDeclaredMinor?.let { Metric(t("shifts.declared"), Money.format(it, currency)) }
+                MetricRow(t("shifts.opening"), Money.format(s.openingCashMinor, currency))
+                s.closingDeclaredMinor?.let { MetricRow(t("shifts.declared"), Money.format(it, currency)) }
                 s.discrepancyMinor?.takeIf { it != 0L }?.let { disc ->
-                    Metric(t("shifts.discrepancy"), "${if (disc > 0L) "+" else "−"}${Money.format(abs(disc), currency)}", valueColor = c.danger)
+                    MetricRow(t("shifts.discrepancy"), "${if (disc > 0L) "+" else "−"}${Money.format(abs(disc), currency)}", tone = ChipTone.DANGER)
                 }
             }
         }
@@ -467,18 +478,18 @@ private fun ShiftRow(
             ) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
                 Row(Modifier.fillMaxWidth().padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    Text(t("shifts.orders").uppercase(), color = c.textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Text(t("shifts.orders").uppercase(), style = Type.label(), color = c.textMuted)
                     Box(Modifier.weight(1f))
                     Row(
                         Modifier.clickable(enabled = !printing) {
-                            printing = true; scope.launch { model.reprintShiftReport(s.id); printing = false }
+                            printing = true; scope.launch { model.openShiftReportPreviewFor(s.id); printing = false }
                         },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         if (printing) CircularProgressIndicator(color = c.accent, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
                         else MadarIcon("printer", tint = c.accent, size = IconSize.sm)
-                        Text(t("shift.print_report"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text(t("shift.print_report"), style = Type.label(), color = c.accent)
                     }
                 }
                 val orders = model.shiftOrders[s.id]
@@ -486,7 +497,7 @@ private fun ShiftRow(
                     model.loadingShiftOrders.contains(s.id) ->
                         Box(Modifier.fillMaxWidth().padding(vertical = Space.sm), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = c.textMuted, strokeWidth = 2.dp, modifier = Modifier.size(18.dp)) }
                     orders.isNullOrEmpty() ->
-                        Text(t("shifts.no_orders"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 12.sp, modifier = Modifier.padding(vertical = Space.sm))
+                        Text(t("shifts.no_orders"), style = Type.bodySm(), color = c.textMuted, modifier = Modifier.padding(vertical = Space.sm))
                     else -> orders.forEach { o -> ShiftOrderRow(model, o, currency) }
                 }
             }
@@ -498,43 +509,21 @@ private fun ShiftRow(
 @Composable
 private fun ShiftOrderRow(model: AppModel, o: OrderSummaryView, currency: String) {
     val c = madarColors()
+    val scope = rememberCoroutineScope()
+    // Tap a past order to preview its receipt (and print from the preview) — same
+    // shared ReceiptPaper sheet as the Order History reprint.
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.xs)).background(c.surfaceAlt)
+            .clickable { scope.launch { model.openOrderReceiptPreview(o.id) } }
             .padding(horizontal = Space.sm, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Text(o.orderNumber?.let { "#$it" } ?: t("history.order"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-        Text(model.fmtTime(o.createdAt), color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 11.sp)
+        Text(o.orderNumber?.let { "#$it" } ?: t("history.order"), style = Type.labelSm(), color = c.textPrimary)
+        Text(model.fmtTime(o.createdAt), style = Type.labelSm(), color = c.textMuted)
         if (o.status == "voided") StatusChip(t("history.voided"), ChipTone.DANGER)
         Box(Modifier.weight(1f))
-        Text(o.paymentLabel, color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 11.sp)
-        Text(Money.format(o.totalMinor, currency), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun Metric(label: String, value: String, valueColor: Color? = null) {
-    val c = madarColors()
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Medium, fontSize = 12.sp)
-        Box(Modifier.weight(1f))
-        Text(value, color = valueColor ?: c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-    }
-}
-
-// ── Shared back-chevron header ──────────────────────────────────────────────────────
-@Composable
-private fun ScreenHeader(title: String, onClose: () -> Unit) {
-    val c = madarColors()
-    Column(Modifier.fillMaxWidth().background(c.surface)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
-        ) {
-            MadarIcon("chevron.backward", tint = c.textPrimary, size = 17.dp, modifier = Modifier.clickable { onClose() })
-            Text(title, color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 17.sp)
-        }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        Text(o.paymentLabel, style = Type.labelSm(), color = c.textMuted)
+        Text(Money.format(o.totalMinor, currency), style = Type.money(12.sp, FontWeight.Bold), color = c.textPrimary)
+        MadarIcon("printer", tint = c.accent, size = IconSize.sm)
     }
 }

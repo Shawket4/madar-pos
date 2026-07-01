@@ -25,15 +25,14 @@ struct WaiterTicketsListView: View {
             VStack(spacing: 0) {
                 ScreenHeader(t("waiter.tickets"), isLoading: app.isLoadingTickets, onBack: onClose) {
                     Button { Task { await app.loadOpenTickets() } } label: {
-                        MadarIcon("arrow.clockwise", size: 16).foregroundStyle(theme.colors.textSecondary)
+                        MadarIcon("arrow.clockwise", size: IconSize.md).foregroundStyle(theme.colors.textSecondary)
                     }.buttonStyle(.plain)
                 }
-                .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
-                .background(theme.colors.surface)
-                .overlay(alignment: .bottom) { Rectangle().fill(theme.colors.border).frame(height: 1) }
+                .screenHeaderBar()
 
                 if let error = app.errorMessage {
-                    NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .warning).padding(Space.lg)
+                    NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .warning)
+                        .padding(.horizontal, Space.lg).padding(.top, Space.sm)
                 }
                 ticketList
             }
@@ -46,13 +45,7 @@ struct WaiterTicketsListView: View {
 
     @ViewBuilder private var ticketList: some View {
         if app.openTickets.isEmpty {
-            VStack(spacing: Space.md) {
-                Spacer()
-                MadarIcon("tray", size: 40).foregroundStyle(theme.colors.textMuted)
-                Text(t("waiter.no_tickets")).font(.ui(15, .semibold)).foregroundStyle(theme.colors.textSecondary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            EmptyState(icon: "tray", title: t("waiter.no_tickets"))
         } else {
             ScrollView {
                 LazyVStack(spacing: Space.sm) {
@@ -77,6 +70,9 @@ struct WaiterTicketsListView: View {
     }
 }
 
+/// Open-ticket card on the waiter board — a status-tinted header strip (ref + state
+/// + bold-teal total) over a body with the covering customer and inline "Add round"
+/// / "Void" actions. Mirrors the Delivery open-order card so the two boards match.
 private struct TicketRow: View {
     @ObservedObject var app: AppModel
     let ticket: TicketView
@@ -86,52 +82,103 @@ private struct TicketRow: View {
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
 
+    private var isLive: Bool { ticket.status == "open" || ticket.status == "ready" }
+    private var customerName: String? {
+        guard let name = ticket.customerName, !name.isEmpty else { return nil }
+        return name
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            HStack {
-                Text(ticket.ticketRef ?? t("waiter.ticket")).font(.ui(15, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                StatusBadge(status: ticket.status)
-                if ticket.queuedOffline {
-                    Text(t("waiter.queued")).font(.ui(11, .bold)).foregroundStyle(theme.colors.warning)
+        VStack(spacing: 0) {
+            statusStrip
+            if customerName != nil || isLive {
+                VStack(alignment: .leading, spacing: Space.sm) {
+                    // Covering customer — leading person tone-tile + name (mirrors the
+                    // Delivery card's customer header).
+                    if let name = customerName {
+                        HStack(spacing: Space.sm) {
+                            MadarIcon("person.fill", size: IconSize.md)
+                                .foregroundStyle(theme.colors.accent)
+                                .frame(width: 34, height: 34)
+                                .background(theme.colors.accentBg)
+                                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+                            Text(name).font(Typo.title.font).foregroundStyle(theme.colors.textPrimary)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    if isLive {
+                        // Two equal-width actions (matches Kotlin's weight(1f) split).
+                        HStack(spacing: Space.sm) {
+                            MadarButton(label: t("waiter.add_round"), icon: "plus", variant: .outline) { onAddRound() }
+                            MadarButton(label: t("common.void"), icon: "xmark", variant: .ghost) { onVoid() }
+                        }
+                    }
                 }
-                Spacer()
-                Text(Money.format(ticket.subtotalMinor, currency)).font(.ui(15, .bold)).foregroundStyle(theme.colors.textPrimary)
-            }
-            if let name = ticket.customerName, !name.isEmpty {
-                Text(name).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
-            }
-            if ticket.status == "open" || ticket.status == "ready" {
-                HStack(spacing: Space.sm) {
-                    MadarButton(label: t("waiter.add_round"), icon: "plus", variant: .outline, fullWidth: false) { onAddRound() }
-                    MadarButton(label: t("common.void"), icon: "xmark", variant: .ghost, fullWidth: false) { onVoid() }
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Space.md)
             }
         }
-        .padding(Space.md)
         .background(theme.colors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.colors.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        .elevation(.card)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+    }
+
+    // Status-tinted header strip — fixed height so every card's body starts at the
+    // same y; status dot + bold ref + state lead, money is the hero on the trailing
+    // edge in a tinted teal block.
+    private var statusStrip: some View {
+        let tint = ticketStatusTint(ticket.status, theme.colors)
+        return HStack(spacing: Space.sm) {
+            Circle().fill(tint.fg).frame(width: 8, height: 8)
+            Text(ticket.ticketRef ?? t("waiter.ticket"))
+                .font(.ui(19, .heavy)).foregroundStyle(theme.colors.textPrimary).lineLimit(1)
+            TicketStatusChip(status: ticket.status)
+            if ticket.queuedOffline {
+                StatusChip(label: t("waiter.queued"), icon: "tray.and.arrow.up", tone: .warning)
+            }
+            Spacer()
+            Text(Money.format(ticket.subtotalMinor, currency))
+                .font(.money(16, .heavy)).foregroundStyle(theme.colors.accent)
+                .padding(.horizontal, Space.md).padding(.vertical, 7)
+                .background(theme.colors.accentBg)
+                .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
+        }
+        .padding(.horizontal, Space.md)
+        .frame(height: 56)
+        .frame(maxWidth: .infinity)
+        .background(tint.bg)
     }
 }
 
-private struct StatusBadge: View {
+/// Status pill for a ticket — maps the ticket state to a shared `StatusChip` tone
+/// (ready → success, queued → warning, settled → neutral, else accent).
+struct TicketStatusChip: View {
     let status: String
-    @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
-    var body: some View {
-        Text(t("ticket.status.\(status)"))
-            .font(.ui(11, .bold))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(tone.opacity(0.15)).foregroundStyle(tone)
-            .clipShape(Capsule())
-    }
-    private var tone: Color {
+
+    private var tone: ChipTone {
         switch status {
-        case "ready": return theme.colors.success
-        case "queued": return theme.colors.warning
-        case "settled": return theme.colors.textMuted
-        default: return theme.colors.accent
+        case "ready": return .success
+        case "queued": return .warning
+        case "settled": return .neutral
+        default: return .accent
         }
+    }
+
+    var body: some View {
+        StatusChip(label: t("ticket.status.\(status)"), tone: tone)
+    }
+}
+
+/// Ticket status → (foreground, tinted-background) for the card's header strip.
+/// Mirrors the Delivery/Kitchen tint pattern so the ticket state reads at a glance.
+private func ticketStatusTint(_ status: String, _ c: MadarColors) -> (fg: Color, bg: Color) {
+    switch status {
+    case "ready": return (c.success, c.successBg)
+    case "queued": return (c.warning, c.warningBg)
+    case "settled": return (c.textSecondary, c.surfaceAlt)
+    default: return (c.accent, c.accentBg)
     }
 }
 
@@ -139,20 +186,30 @@ private struct VoidTicketSheet: View {
     @ObservedObject var app: AppModel
     let ticket: TicketView
     let onClose: () -> Void
+    @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     @State private var reason = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.md) {
-            Text(t("waiter.void_title")).font(.ui(17, .heavy))
-            MadarTextField(placeholder: t("waiter.void_reason"), text: $reason)
-            HStack {
-                MadarButton(label: t("common.cancel"), variant: .ghost, fullWidth: false) { onClose() }
-                MadarButton(label: t("common.void"), variant: .danger, fullWidth: false) {
-                    Task { await app.voidTicket(ticket.id, reason: reason.isEmpty ? nil : reason); onClose() }
-                }
+            Text(t("waiter.void_title")).font(Typo.h2.font).foregroundStyle(theme.colors.textPrimary)
+            if let ref = ticket.ticketRef {
+                Text(ref).font(.ui(13)).foregroundStyle(theme.colors.textSecondary)
+            }
+            MadarTextField(placeholder: t("waiter.void_reason"), text: $reason, icon: "exclamationmark.bubble")
+            // Two equal-width actions (matches Kotlin's weight(1f) split).
+            HStack(spacing: Space.sm) {
+                MadarButton(label: t("common.cancel"), variant: .ghost) { onClose() }
+                MadarButton(label: t("common.void"), icon: "xmark", variant: .danger) { confirmVoid() }
             }
         }
         .padding(Space.lg)
+    }
+
+    private func confirmVoid() {
+        Task {
+            await app.voidTicket(ticket.id, reason: reason.isEmpty ? nil : reason)
+            onClose()
+        }
     }
 }

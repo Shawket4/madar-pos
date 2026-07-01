@@ -57,7 +57,9 @@ import app.madar.core.BundleComponentSelection
 import app.madar.core.BundleComponentView
 import app.madar.core.BundleView
 import app.madar.core.MenuItemView
+import app.madar.ui.BtnVariant
 import app.madar.ui.ChipTone
+import app.madar.ui.MadarButton
 import app.madar.ui.Money
 import app.madar.ui.Radii
 import app.madar.ui.Space
@@ -153,7 +155,7 @@ fun BundleDetailSheet(model: AppModel, bundle: BundleView, onClose: () -> Unit) 
                     horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(bundle.name, color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                        Text(bundle.name, color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 18.sp)
                         bundle.description?.takeIf { it.isNotEmpty() }?.let {
                             Text(it, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
@@ -202,38 +204,29 @@ fun BundleDetailSheet(model: AppModel, bundle: BundleView, onClose: () -> Unit) 
                 }
             }
 
-            // ── Footer (Add to cart · live total) ─────────────────────────────────
-            val label = if (canAdd) t("order.add_to_cart") else t("order.configure")
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
-            Row(
-                Modifier.fillMaxWidth().background(c.surface).padding(Space.lg),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(Radii.sm))
-                        .background(if (canAdd) c.accent else c.accent.copy(alpha = 0.45f))
-                        .clickable(enabled = canAdd) {
-                            val selections = components.mapIndexed { idx, comp ->
-                                val d = drafts[idx]
-                                val defaultSize = itemFor(comp)?.sizes?.firstOrNull()?.label
-                                BundleComponentSelection(
-                                    comp.itemId,
-                                    d?.sizeLabel ?: defaultSize,
-                                    comp.quantity,
-                                    d?.addons ?: emptyList<AddonSelection>(),
-                                    d?.optionalIds ?: emptyList<String>(),
-                                )
-                            }
-                            model.addBundle(bundle.id, selections)
-                        }
-                        .padding(horizontal = Space.lg),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(label, color = c.textOnAccent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Box(Modifier.weight(1f))
-                    Text(Money.format(liveTotal, currency), color = c.textOnAccent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                }
-            }
+            // ── Footer (base + extras · tinted teal total · Add to cart) ──────────
+            BundleFooter(
+                bundlePriceMinor = bundle.priceMinor,
+                extrasMinor = extrasTotal,
+                liveTotalMinor = liveTotal,
+                currency = currency,
+                canAdd = canAdd,
+                onAdd = {
+                    val selections = components.mapIndexed { idx, comp ->
+                        val d = drafts[idx]
+                        val defaultSize = itemFor(comp)?.sizes?.firstOrNull()?.label
+                        BundleComponentSelection(
+                            comp.itemId,
+                            d?.sizeLabel ?: defaultSize,
+                            comp.quantity,
+                            d?.addons ?: emptyList<AddonSelection>(),
+                            d?.optionalIds ?: emptyList<String>(),
+                        )
+                    }
+                    model.addBundle(bundle.id, selections)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         // Per-component customization, reusing ItemDetailSheet in configure mode.
@@ -254,6 +247,64 @@ fun BundleDetailSheet(model: AppModel, bundle: BundleView, onClose: () -> Unit) 
     }
 }
 
+/** The sheet footer — a base + extras breakdown above a tinted-teal grand-total
+ *  block (the live combo price is the hero figure), then the Add-to-cart CTA. The
+ *  caller owns the footer's width via [modifier]; the footer paints its own
+ *  surface, hairline, and padding. Mirrors the Order screen's CartFooter. */
+@Composable
+private fun BundleFooter(
+    bundlePriceMinor: Long,
+    extrasMinor: Long,
+    liveTotalMinor: Long,
+    currency: String,
+    canAdd: Boolean,
+    onAdd: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = madarColors()
+    // surface-painted footer with a top hairline; the inner column owns padding.
+    Column(modifier.background(c.surface)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        Column(
+            Modifier.fillMaxWidth().padding(Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            // Base price + (optional) extras — light sub-rows so the total carries weight.
+            TotalRow(t("order.subtotal"), Money.format(bundlePriceMinor, currency))
+            if (extrasMinor > 0) {
+                TotalRow(t("order.addon_extra"), "+${Money.format(extrasMinor, currency)}")
+            }
+            // Grand total — tinted teal block, the figure the cashier reads.
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.accentBg)
+                    .padding(horizontal = Space.md, vertical = Space.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(t("order.total"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Box(Modifier.weight(1f))
+                Text(Money.format(liveTotalMinor, currency), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 20.sp)
+            }
+            MadarButton(
+                label = if (canAdd) t("order.add_to_cart") else t("order.configure"),
+                onClick = onAdd,
+                enabled = canAdd,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+        }
+    }
+}
+
+/** A light subtotal/extras row above the tinted total block. */
+@Composable
+private fun TotalRow(label: String, value: String) {
+    val c = madarColors()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+        Box(Modifier.weight(1f))
+        Text(value, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+    }
+}
+
 /** A bundle component row — status icon, qty× name + a config summary, the chosen
  *  extras up-charge, and a chevron when configurable. */
 @Composable
@@ -268,17 +319,19 @@ private fun ComponentTile(
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val configured = draft != null
-    // Status icon: muted ✓ when not configurable, success ✓ once configured, an
-    // accent slider glyph while it still needs configuring.
-    val (glyph, glyphColor) = when {
-        !configurable -> "checkmark.circle.fill" to c.textMuted
-        configured -> "checkmark.circle.fill" to c.success
-        else -> "slider.horizontal.3" to c.accent
+    // Leading status tile — a tone tile behind the glyph (the design-language
+    // tone-tile pattern). A navy "included" ✓ when fixed, success ✓ once
+    // configured, an accent slider glyph (on accentBg) while it still needs configuring.
+    val (glyph, glyphColor, tileBg) = when {
+        !configurable -> Triple("checkmark.circle.fill", c.navy, c.navyBg)
+        configured -> Triple("checkmark.circle.fill", c.success, c.successBg)
+        else -> Triple("slider.horizontal.3", c.accent, c.accentBg)
     }
-    // Subtitle: "Includes" when fixed, the chosen size · +N once configured, else
-    // a "Configure" prompt.
+    // Subtitle for configurable rows only: a "Configure" prompt, or the chosen
+    // size · +N once configured. Fixed components carry no subtitle — the section
+    // header already reads "Includes", so a per-row repeat is dead weight.
     val subtitle = when {
-        !configurable -> t("order.bundle_includes")
+        !configurable -> null
         !configured -> t("order.configure")
         else -> {
             val parts = mutableListOf<String>()
@@ -288,9 +341,10 @@ private fun ComponentTile(
             if (parts.isEmpty()) t("order.configure") else parts.joinToString(" · ")
         }
     }
+    val shape = RoundedCornerShape(Radii.md)
     Row(
-        Modifier.fillMaxWidth().pressScale(interaction, 0.99f).clip(RoundedCornerShape(Radii.md)).background(c.surface)
-            .border(1.dp, if (configured) c.accent.copy(alpha = 0.4f) else c.border, RoundedCornerShape(Radii.md))
+        Modifier.fillMaxWidth().pressScale(interaction, 0.99f).elevation(Elevation.CARD, shape).clip(shape).background(c.surface)
+            .border(1.dp, if (configured) c.accent.copy(alpha = 0.4f) else c.borderLight, shape)
             .then(
                 if (configurable) Modifier.clickable(interactionSource = interaction, indication = null) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
@@ -300,12 +354,17 @@ private fun ComponentTile(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
-            MadarIcon(glyph, tint = glyphColor, size = 16.dp)
+        Box(
+            Modifier.size(40.dp).clip(RoundedCornerShape(Radii.sm)).background(tileBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            MadarIcon(glyph, tint = glyphColor, size = IconSize.md)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("${comp.quantity}× ${comp.itemName}", color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            Text(subtitle, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
+            Text("${comp.quantity}× ${comp.itemName}", color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            subtitle?.let {
+                Text(it, color = if (configured) c.accent else c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = if (configured) FontWeight.SemiBold else FontWeight.Medium, fontSize = 12.sp)
+            }
         }
         if (draft != null && draft.extrasMinor > 0) {
             Text("+${Money.format(draft.extrasMinor, currency)}", color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 12.sp)

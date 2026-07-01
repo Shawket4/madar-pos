@@ -546,9 +546,45 @@ fn parse_uuid(s: &str, field: &str) -> CoreResult<uuid::Uuid> {
     uuid::Uuid::parse_str(s).map_err(|_| CoreError::Validation { field: field.into(), detail: "bad uuid".into() })
 }
 
-/// Total of still-queued cash sales (outbox `create_order` whose payment method
-/// is cash) — added to the shift report's expected cash so the close-shift
-/// guidance stays right before those orders sync.
+/// Cash physically in the drawer for ONE queued order: the cash leg(s) of the
+/// sale PLUS a cash tip. A SPLIT order contributes only its cash legs (not the
+/// whole total — the card/wallet legs aren't drawer cash); a single-method order
+/// contributes its total only when that method is cash. The backend prices the
+/// tip separately from `total_amount`, so a CASH tip (its own method, or the
+/// order's method when none was chosen) is added on top.
+fn order_cash_in_drawer(
+    req: &models::CreateOrderRequest,
+    cash_names: &std::collections::HashSet<String>,
+) -> i64 {
+    let sale_cash: i64 = match req.payment_splits.as_ref().and_then(|s| s.as_ref()) {
+        Some(legs) if !legs.is_empty() => legs
+            .iter()
+            .filter(|l| cash_names.contains(&l.method))
+            .map(|l| l.amount as i64)
+            .sum(),
+        _ if cash_names.contains(&req.payment_method) => req.total_amount.flatten().unwrap_or(0) as i64,
+        _ => 0,
+    };
+    let tip = req.tip_amount.flatten().unwrap_or(0) as i64;
+    let tip_cash = if tip > 0 {
+        let tip_method = req
+            .tip_payment_method
+            .as_ref()
+            .and_then(|m| m.as_ref())
+            .map(|s| s.as_str())
+            .unwrap_or(req.payment_method.as_str());
+        if cash_names.contains(tip_method) { tip } else { 0 }
+    } else {
+        0
+    };
+    sale_cash + tip_cash
+}
+
+/// All-shifts aggregate of still-queued cash (cash legs + cash tips + movements).
+/// Production scopes per-shift via [`queued_cash_total_for`] (a prior shift's
+/// undrained cash must not inflate the current drawer); this unscoped roll-up is
+/// retained to exercise the shared [`order_cash_in_drawer`] aggregation.
+#[cfg(test)]
 pub(crate) fn queued_cash_total(store: &Store) -> CoreResult<i64> {
     let raw: Vec<models::OrgPaymentMethod> = match store.kv_get(menu::K_PAYMENT_METHODS)? {
         Some(j) => serde_json::from_str(&j).unwrap_or_default(),
@@ -566,12 +602,10 @@ pub(crate) fn queued_cash_total(store: &Store) -> CoreResult<i64> {
             continue;
         }
         match item.op_type.as_str() {
-            // A still-queued cash sale: its cash is physically in the drawer.
+            // A still-queued cash sale: the cash leg(s) + any cash tip are in the drawer.
             "create_order" => {
                 if let Ok(cmd) = serde_json::from_str::<CheckoutCommand>(&item.payload) {
-                    if cash_names.contains(&cmd.request.payment_method) {
-                        total += cmd.request.total_amount.flatten().unwrap_or(0) as i64;
-                    }
+                    total += order_cash_in_drawer(&cmd.request, &cash_names);
                 }
             }
             // A queued pay-in/pay-out (signed): the drawer already moved.
@@ -609,9 +643,7 @@ pub(crate) fn queued_cash_total_for(store: &Store, shift_id: &str) -> CoreResult
         match item.op_type.as_str() {
             "create_order" => {
                 if let Ok(cmd) = serde_json::from_str::<CheckoutCommand>(&item.payload) {
-                    if cash_names.contains(&cmd.request.payment_method) {
-                        total += cmd.request.total_amount.flatten().unwrap_or(0) as i64;
-                    }
+                    total += order_cash_in_drawer(&cmd.request, &cash_names);
                 }
             }
             "cash_movement" => {
@@ -802,6 +834,61 @@ mod tests {
         queue("o2", "Card", 1500); // not cash → excluded
         queue("o3", "Cash", 1000);
         assert_eq!(queued_cash_total(&store).unwrap(), 3280);
+    }
+
+    #[test]
+    fn queued_cash_total_counts_only_cash_legs_and_cash_tips() {
+        let store = Store::open("").unwrap();
+        seed_methods(&store); // "Cash" is_cash=true, "Card" is_cash=false
+        let push = |id: &str, req: models::CreateOrderRequest| {
+            let cmd = CheckoutCommand { request: req };
+            store
+                .enqueue(&crate::store::NewOutboxOp {
+                    id: id.into(),
+                    op_type: "create_order".into(),
+                    idempotency_key: id.into(),
+                    payload: serde_json::to_string(&cmd).unwrap(),
+                    event_at: "2026-06-20T12:00:00+00:00".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+        };
+        let mk = || models::CreateOrderRequest::new(uuid::Uuid::new_v4(), vec![], "Cash".into(), uuid::Uuid::new_v4());
+
+        // Split: total 1000 = 600 cash + 400 card → only the 600 cash leg is drawer cash.
+        let mut split = mk();
+        split.total_amount = Some(Some(1000));
+        split.payment_splits = Some(Some(vec![
+            models::PaymentSplitInput { amount: 600, method: "Cash".into(), reference: None },
+            models::PaymentSplitInput { amount: 400, method: "Card".into(), reference: None },
+        ]));
+        push("split", split);
+        assert_eq!(queued_cash_total(&store).unwrap(), 600, "split counts only the cash leg, not the whole total");
+
+        // Cash order 1000 + CASH tip 150 → both in the drawer.
+        let mut cash_tip = mk();
+        cash_tip.total_amount = Some(Some(1000));
+        cash_tip.tip_amount = Some(Some(150));
+        cash_tip.tip_payment_method = Some(Some("Cash".into()));
+        push("cashtip", cash_tip);
+
+        // Card order 2000 + CASH tip 200 → only the tip is drawer cash.
+        let mut card_with_cash_tip = mk();
+        card_with_cash_tip.payment_method = "Card".into();
+        card_with_cash_tip.total_amount = Some(Some(2000));
+        card_with_cash_tip.tip_amount = Some(Some(200));
+        card_with_cash_tip.tip_payment_method = Some(Some("Cash".into()));
+        push("cardtip", card_with_cash_tip);
+
+        // Cash order 500 + CARD tip 99 → the tip is NOT drawer cash.
+        let mut cash_with_card_tip = mk();
+        cash_with_card_tip.total_amount = Some(Some(500));
+        cash_with_card_tip.tip_amount = Some(Some(99));
+        cash_with_card_tip.tip_payment_method = Some(Some("Card".into()));
+        push("cashcardtip", cash_with_card_tip);
+
+        // 600 + (1000+150) + 200 + 500 = 2450 (no card sale, no card tip).
+        assert_eq!(queued_cash_total(&store).unwrap(), 600 + 1150 + 200 + 500);
     }
 
     // ── idempotency key ───────────────────────────────────────────────────────

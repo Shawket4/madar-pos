@@ -86,18 +86,17 @@ struct MenuItemCard: View {
 
     private var footer: some View {
         HStack(spacing: Space.sm) {
-            Circle().fill(style.accent).frame(width: 7, height: 7)
             Text(item.name)
-                .font(.ui(12, .semibold))
+                .font(.ui(13, .semibold))
                 .foregroundStyle(theme.colors.textPrimary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(Money.format(item.basePriceMinor, currency))
-                .font(.money(11, .bold))
-                .foregroundStyle(theme.colors.textSecondary)
+                .font(.money(14, .heavy))
+                .foregroundStyle(theme.colors.accent)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, Space.md)
         .frame(height: 48)
         .frame(maxWidth: .infinity)
         .background(theme.colors.surface)

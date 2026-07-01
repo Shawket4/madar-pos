@@ -7,19 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		03683CB4AC48F7EA8408C994 /* MadarTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */; };
 		05F9EB4973CAABC247B17E32 /* BundleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A6454292C0709AACE8B45A /* BundleDetailView.swift */; };
 		08F89ED6EB076D4896A826C5 /* MadarMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8795563D490E093CEE91C055 /* MadarMark.swift */; };
 		09873816146F1EF42544076B /* KitchenDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */; };
 		106B95670F968FF0DDE7E32C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DC44A1146E760945E5C0544A /* Assets.xcassets */; };
 		17523B0F7711948AE39DAEFF /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = E1DBA34D4FA0D50D4C76A885 /* Fonts */; };
 		19893C16878B7DD0DE521664 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = 8C6605B4728E0ADB8518EBBD /* Sounds */; };
+		1C02FA03340C44D93EE8148A /* StationPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80304B0FBAC0C1D9BD3A1D0D /* StationPickerView.swift */; };
 		1D8885BEA2CCA0D67B583E1B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DC44A1146E760945E5C0544A /* Assets.xcassets */; };
 		1F6523FE9DD6354BE9588AAF /* RealtimeAlertBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */; };
 		21EB774F46284F8D02C7B53C /* PressableScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */; };
 		239E908C3ECC66D03A3F7B24 /* IncomingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FF0E6F55971DD7E3028220 /* IncomingView.swift */; };
 		26727D4F1A77B19A5ECC8900 /* ReceiptPaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */; };
-		2A0CAE7F0DCBC5A79133310D /* MadarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* MadarApp.swift */; };
 		2A887437B40C0FA04E59DB3C /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */; };
 		2C95DFE71E228CB531FE596F /* ShiftReportPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5267241C1AC9273C755769A /* ShiftReportPreview.swift */; };
 		2DBC5CA87ADB1AC071A22C23 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = E1DBA34D4FA0D50D4C76A885 /* Fonts */; };
@@ -40,19 +39,23 @@
 		47F35994C30761504684CAC5 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8575D6F7B26B1A8B923D513 /* ContentView.swift */; };
 		4B9E14EC8E1C710D6CFE4883 /* MadarSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A961800CB4E1087339EE466 /* MadarSheet.swift */; };
 		4C5E66497AD87F22B99C0765 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8575D6F7B26B1A8B923D513 /* ContentView.swift */; };
+		50991E87CEFD1627A1DD9D5A /* MadarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FCFB7AD2855842DA9D2968 /* MadarButton.swift */; };
 		52B6DF3DF0AB091938D3343B /* SettleTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */; };
 		59DB993E64C20A1AAF1D2426 /* MadarCoreFFI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */; };
 		5B3978C7E29D218874B903CC /* MenuItemCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */; };
 		5B9E72C3B5C44F3A5A167B47 /* OpenShiftView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFEF7EC990C77923E9CC282B /* OpenShiftView.swift */; };
 		5DCF9304631011EC7CA35F92 /* Skeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */; };
+		60880A4E0F2978BDD5E20A87 /* MadarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B11C5B4D580A641104FDB4 /* MadarApp.swift */; };
+		619AC4CC5443A03294A4A9CF /* MadarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B11C5B4D580A641104FDB4 /* MadarApp.swift */; };
 		6305C4121F26EA0F35026990 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */; };
 		6494EE6529F2C0AAB60CBC42 /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82B289DA69BD5025D17B4 /* SyncView.swift */; };
 		649B98786D9C7FB457C7FF19 /* VoidSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE62D3E6261191D17405952 /* VoidSheet.swift */; };
-		6553D25445EE87CB459C4652 /* MadarTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */; };
 		6915093EC1BC9A75A3F70343 /* Toast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A7BF24EAFACE649636D4B69 /* Toast.swift */; };
 		6AA0762EDC259BA844B87E11 /* CashAndShiftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 169E08DA5AF85857B87F99A4 /* CashAndShiftsView.swift */; };
 		6B05893F1978CD59DCF06C7D /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD82B289DA69BD5025D17B4 /* SyncView.swift */; };
 		6D1A6C0B6E0C72088C5F84A7 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C6E66BFD4496F8B04F180AC /* Money.swift */; };
+		6DD395DBA70AE86AE78B0272 /* MadarTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A1244DCCC57EE57E56B934 /* MadarTextField.swift */; };
+		70A6A205F32727B3878C2A9C /* StationPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80304B0FBAC0C1D9BD3A1D0D /* StationPickerView.swift */; };
 		77E9823DD682EFB7A76DCF91 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */; };
 		7924261AAFD365A645259200 /* Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = C69DBAA7B29A7FDF8241A0D6 /* Tokens.swift */; };
 		7B0E14A6DEF5085C07BC731A /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1112C4D55E34623013A136B5 /* LoginView.swift */; };
@@ -60,9 +63,7 @@
 		82903BFE2A159A50EAB06D16 /* KitchenDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */; };
 		858852E6484187E9073DBBB0 /* MadarSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A961800CB4E1087339EE466 /* MadarSheet.swift */; };
 		863353F1C0538F15DE5D76DF /* AmountField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */; };
-		8993040D17F0F30AB691B911 /* MadarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* MadarButton.swift */; };
 		89FE8AB7518E42196F9E8AF6 /* IconCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B8D71C4ABB9C77FEB5D791D /* IconCatalog.swift */; };
-		90056101E664424A53B432D4 /* MadarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609F2450EB5901840D044B10 /* MadarButton.swift */; };
 		911BA6D1C522F65F45F05AB7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */; };
 		94CD9E84942A2F2F8264FBE2 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = 8C6605B4728E0ADB8518EBBD /* Sounds */; };
 		9BED347D34E21BB606FDE7B7 /* ReauthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E562E93C40F1D2174325680 /* ReauthView.swift */; };
@@ -80,15 +81,17 @@
 		B99B1844FCA5D506F078E512 /* RealtimeAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */; };
 		BA6CC4DCA324A7FE75E70E31 /* BrandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */; };
 		BC485D607C31E46BC95A52E0 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 067006020CB739A6553EECD9 /* AppModel.swift */; };
+		BCFB37894565FDCE6868EDA3 /* OrderSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CE8A57481C37F1FA1648CE /* OrderSearchView.swift */; };
 		C05382CB0C3A98AC46AB4A97 /* Skeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */; };
 		C2FF9B24DC12758D87A5B478 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */; };
 		C340E0E525DAC4B389DD5ACC /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */; };
-		C709B7853F0C5FD2A2EBB106 /* MadarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AC8420D25337AFADB833C3 /* MadarApp.swift */; };
+		C8DF2952980087A71E156ECE /* MadarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FCFB7AD2855842DA9D2968 /* MadarButton.swift */; };
 		C8FF91E53F40CFF2B86C418F /* AmountField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */; };
 		CF11A2BF8BF4A716C367CD4C /* MadarCoreFFI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FEA9E6CCE5F342CCA638C /* MadarCoreFFI.swift */; };
 		CF209FD9BBDC247E00FD5F88 /* MadarCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF309BBD8B8E2B65F262C4E7 /* MadarCore.xcframework */; };
 		D44AE419F0200F3DAEB678AF /* ReauthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E562E93C40F1D2174325680 /* ReauthView.swift */; };
 		D81F35500086B9EDB65CA212 /* IncomingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FF0E6F55971DD7E3028220 /* IncomingView.swift */; };
+		DB18E5574B016C2F45ADE120 /* MadarTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A1244DCCC57EE57E56B934 /* MadarTextField.swift */; };
 		DD8ED53021FFA067725CA056 /* Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69673262F97BDC545F95A72C /* Layout.swift */; };
 		DE656521EEE33521D3B1B351 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */; };
 		E28A3CDC3EC971143788C523 /* Chips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792643251885F57217F40A9B /* Chips.swift */; };
@@ -100,6 +103,7 @@
 		E795877884D40A228B2A57FB /* RealtimeAlertBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */; };
 		E7F698135860F0FE17D6207A /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9558F18E801A8ABB88C139D0 /* Typography.swift */; };
 		E9F703AB1073B9BB91F2358E /* DraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C58D216E7C2B0D37BD01891 /* DraftsView.swift */; };
+		EF4D8606155316F0971110F9 /* OrderSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CE8A57481C37F1FA1648CE /* OrderSearchView.swift */; };
 		F30526588BFBD22695BF37DF /* ShiftReportPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5267241C1AC9273C755769A /* ShiftReportPreview.swift */; };
 		F31CF888870D24B825422276 /* VoidSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE62D3E6261191D17405952 /* VoidSheet.swift */; };
 		F482408AFB4C2CC6CF1E716A /* PressableScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91B2CE2BA7314FFE3F8EEFB /* PressableScale.swift */; };
@@ -127,16 +131,15 @@
 		4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
 		4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenDisplayView.swift; sourceTree = "<group>"; };
 		4EE62D3E6261191D17405952 /* VoidSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoidSheet.swift; sourceTree = "<group>"; };
+		52FCFB7AD2855842DA9D2968 /* MadarButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarButton.swift; sourceTree = "<group>"; };
 		53FD40A576C447C717FCE473 /* OrderHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderHistoryView.swift; sourceTree = "<group>"; };
 		54FF0E6F55971DD7E3028220 /* IncomingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingView.swift; sourceTree = "<group>"; };
 		5D00E321ED60AE106FCD6C4F /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
-		609F2450EB5901840D044B10 /* MadarButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarButton.swift; sourceTree = "<group>"; };
 		686C827C426C041E668CA778 /* PinPad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinPad.swift; sourceTree = "<group>"; };
 		69673262F97BDC545F95A72C /* Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Layout.swift; sourceTree = "<group>"; };
 		6C6E66BFD4496F8B04F180AC /* Money.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Money.swift; sourceTree = "<group>"; };
-		72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarTextField.swift; sourceTree = "<group>"; };
-		75AC8420D25337AFADB833C3 /* MadarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarApp.swift; sourceTree = "<group>"; };
 		792643251885F57217F40A9B /* Chips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chips.swift; sourceTree = "<group>"; };
+		80304B0FBAC0C1D9BD3A1D0D /* StationPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationPickerView.swift; sourceTree = "<group>"; };
 		82FE46CC8890F953EC459FF3 /* TenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TenderView.swift; sourceTree = "<group>"; };
 		83A6454292C0709AACE8B45A /* BundleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleDetailView.swift; sourceTree = "<group>"; };
 		86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAlerts.swift; sourceTree = "<group>"; };
@@ -150,6 +153,7 @@
 		99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedAsyncImage.swift; sourceTree = "<group>"; };
 		9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuItemCard.swift; sourceTree = "<group>"; };
 		9E562E93C40F1D2174325680 /* ReauthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReauthView.swift; sourceTree = "<group>"; };
+		A2CE8A57481C37F1FA1648CE /* OrderSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderSearchView.swift; sourceTree = "<group>"; };
 		ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AF309BBD8B8E2B65F262C4E7 /* MadarCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = MadarCore.xcframework; path = "../rust-core/target/MadarCore.xcframework"; sourceTree = "<group>"; };
 		AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
@@ -160,7 +164,9 @@
 		BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAlertBanner.swift; sourceTree = "<group>"; };
 		C69DBAA7B29A7FDF8241A0D6 /* Tokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tokens.swift; sourceTree = "<group>"; };
 		CEF6074347CE26F389673AF9 /* MadarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarIcon.swift; sourceTree = "<group>"; };
+		D1B11C5B4D580A641104FDB4 /* MadarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarApp.swift; sourceTree = "<group>"; };
 		D417D3D77CE2F5BC3AE2C6FD /* AmountField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmountField.swift; sourceTree = "<group>"; };
+		D6A1244DCCC57EE57E56B934 /* MadarTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MadarTextField.swift; sourceTree = "<group>"; };
 		DC44A1146E760945E5C0544A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E1DBA34D4FA0D50D4C76A885 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Resources/Fonts; sourceTree = SOURCE_ROOT; };
 		E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandPanel.swift; sourceTree = "<group>"; };
@@ -224,9 +230,11 @@
 				E3D7486A3EEAF6350FBE8625 /* BrandPanel.swift */,
 				99636F603C41591A6217C1C3 /* CachedAsyncImage.swift */,
 				792643251885F57217F40A9B /* Chips.swift */,
+				52FCFB7AD2855842DA9D2968 /* MadarButton.swift */,
 				CEF6074347CE26F389673AF9 /* MadarIcon.swift */,
 				8795563D490E093CEE91C055 /* MadarMark.swift */,
 				8A961800CB4E1087339EE466 /* MadarSheet.swift */,
+				D6A1244DCCC57EE57E56B934 /* MadarTextField.swift */,
 				9DDC6F43399CDAE654D3835A /* MenuItemCard.swift */,
 				6C6E66BFD4496F8B04F180AC /* Money.swift */,
 				686C827C426C041E668CA778 /* PinPad.swift */,
@@ -234,8 +242,6 @@
 				E5B7FE6E78C8C9E66562A6AF /* ReceiptPaper.swift */,
 				AF69E31DDCD1F581B3CAFC2C /* SharedComponents.swift */,
 				3A33E0A28CA4476B7D7E6E8F /* Skeleton.swift */,
-				609F2450EB5901840D044B10 /* MadarButton.swift */,
-				72E1F6596C6A81FACBFB4AEC /* MadarTextField.swift */,
 				8A7BF24EAFACE649636D4B69 /* Toast.swift */,
 			);
 			path = Components;
@@ -275,8 +281,10 @@
 				4C27BD98A7B5CB96F62EE0DE /* KeychainTokenStore.swift */,
 				4CCC6D1754F4ABD178F614A8 /* KitchenDisplayView.swift */,
 				1112C4D55E34623013A136B5 /* LoginView.swift */,
+				D1B11C5B4D580A641104FDB4 /* MadarApp.swift */,
 				EFEF7EC990C77923E9CC282B /* OpenShiftView.swift */,
 				53FD40A576C447C717FCE473 /* OrderHistoryView.swift */,
+				A2CE8A57481C37F1FA1648CE /* OrderSearchView.swift */,
 				35FDEE697B035556197EC4B4 /* OrderView.swift */,
 				BF4C0070974CC0A28DE5ED4A /* RealtimeAlertBanner.swift */,
 				86E2CFA3298E48BEFFCE6EFF /* RealtimeAlerts.swift */,
@@ -284,7 +292,7 @@
 				ABE2F9511D3B9C816135CCD1 /* SettingsView.swift */,
 				4A03CF4F54630E53DA55E931 /* SettleTicketsView.swift */,
 				F5267241C1AC9273C755769A /* ShiftReportPreview.swift */,
-				75AC8420D25337AFADB833C3 /* MadarApp.swift */,
+				80304B0FBAC0C1D9BD3A1D0D /* StationPickerView.swift */,
 				0DD82B289DA69BD5025D17B4 /* SyncView.swift */,
 				82FE46CC8890F953EC459FF3 /* TenderView.swift */,
 				4EE62D3E6261191D17405952 /* VoidSheet.swift */,
@@ -463,14 +471,18 @@
 				09873816146F1EF42544076B /* KitchenDisplayView.swift in Sources */,
 				AD5F76A4B1C39FB3813211EB /* Layout.swift in Sources */,
 				F8546F39A54821E58055A5B4 /* LoginView.swift in Sources */,
+				619AC4CC5443A03294A4A9CF /* MadarApp.swift in Sources */,
+				50991E87CEFD1627A1DD9D5A /* MadarButton.swift in Sources */,
 				59DB993E64C20A1AAF1D2426 /* MadarCoreFFI.swift in Sources */,
 				802229CC624A23ABDC17D71E /* MadarIcon.swift in Sources */,
 				A91663ED44D70484BCF0E3D9 /* MadarMark.swift in Sources */,
 				4B9E14EC8E1C710D6CFE4883 /* MadarSheet.swift in Sources */,
+				6DD395DBA70AE86AE78B0272 /* MadarTextField.swift in Sources */,
 				F7BD30750401DEE0F016DEDB /* MenuItemCard.swift in Sources */,
 				B2D859ED67BFCBA58564908F /* Money.swift in Sources */,
 				5B9E72C3B5C44F3A5A167B47 /* OpenShiftView.swift in Sources */,
 				FC81430789B3B9F96498CF5B /* OrderHistoryView.swift in Sources */,
+				EF4D8606155316F0971110F9 /* OrderSearchView.swift in Sources */,
 				41A7616FECBA6A13A5D67BB7 /* OrderView.swift in Sources */,
 				AAEDEEB7E37A80AD19FB527A /* PinPad.swift in Sources */,
 				21EB774F46284F8D02C7B53C /* PressableScale.swift in Sources */,
@@ -483,9 +495,7 @@
 				C2FF9B24DC12758D87A5B478 /* SharedComponents.swift in Sources */,
 				F30526588BFBD22695BF37DF /* ShiftReportPreview.swift in Sources */,
 				5DCF9304631011EC7CA35F92 /* Skeleton.swift in Sources */,
-				2A0CAE7F0DCBC5A79133310D /* MadarApp.swift in Sources */,
-				90056101E664424A53B432D4 /* MadarButton.swift in Sources */,
-				6553D25445EE87CB459C4652 /* MadarTextField.swift in Sources */,
+				1C02FA03340C44D93EE8148A /* StationPickerView.swift in Sources */,
 				6494EE6529F2C0AAB60CBC42 /* SyncView.swift in Sources */,
 				A5DDD9E9B9A1CA2E27B0BBA6 /* TenderView.swift in Sources */,
 				6915093EC1BC9A75A3F70343 /* Toast.swift in Sources */,
@@ -518,14 +528,18 @@
 				82903BFE2A159A50EAB06D16 /* KitchenDisplayView.swift in Sources */,
 				DD8ED53021FFA067725CA056 /* Layout.swift in Sources */,
 				7B0E14A6DEF5085C07BC731A /* LoginView.swift in Sources */,
+				60880A4E0F2978BDD5E20A87 /* MadarApp.swift in Sources */,
+				C8DF2952980087A71E156ECE /* MadarButton.swift in Sources */,
 				CF11A2BF8BF4A716C367CD4C /* MadarCoreFFI.swift in Sources */,
 				4394F456530EDA726A724599 /* MadarIcon.swift in Sources */,
 				08F89ED6EB076D4896A826C5 /* MadarMark.swift in Sources */,
 				858852E6484187E9073DBBB0 /* MadarSheet.swift in Sources */,
+				DB18E5574B016C2F45ADE120 /* MadarTextField.swift in Sources */,
 				5B3978C7E29D218874B903CC /* MenuItemCard.swift in Sources */,
 				6D1A6C0B6E0C72088C5F84A7 /* Money.swift in Sources */,
 				FFB37E0C55832E1F0D696D16 /* OpenShiftView.swift in Sources */,
 				FE386C5C6B094A3C20FB408C /* OrderHistoryView.swift in Sources */,
+				BCFB37894565FDCE6868EDA3 /* OrderSearchView.swift in Sources */,
 				A09513491F3768F72F079FD0 /* OrderView.swift in Sources */,
 				3CEFD7590804DEEFF00BE17F /* PinPad.swift in Sources */,
 				F482408AFB4C2CC6CF1E716A /* PressableScale.swift in Sources */,
@@ -538,9 +552,7 @@
 				DE656521EEE33521D3B1B351 /* SharedComponents.swift in Sources */,
 				2C95DFE71E228CB531FE596F /* ShiftReportPreview.swift in Sources */,
 				C05382CB0C3A98AC46AB4A97 /* Skeleton.swift in Sources */,
-				C709B7853F0C5FD2A2EBB106 /* MadarApp.swift in Sources */,
-				8993040D17F0F30AB691B911 /* MadarButton.swift in Sources */,
-				03683CB4AC48F7EA8408C994 /* MadarTextField.swift in Sources */,
+				70A6A205F32727B3878C2A9C /* StationPickerView.swift in Sources */,
 				6B05893F1978CD59DCF06C7D /* SyncView.swift in Sources */,
 				A5E2BB0E5ACDA4433C82A667 /* TenderView.swift in Sources */,
 				42E8F665FB5A0EC487C1C8D7 /* Toast.swift in Sources */,

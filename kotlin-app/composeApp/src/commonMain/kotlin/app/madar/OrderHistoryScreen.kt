@@ -37,7 +37,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +54,7 @@ import app.madar.ui.ChipTone
 import app.madar.ui.Money
 import app.madar.ui.NoticeBanner
 import app.madar.ui.Radii
+import app.madar.ui.SheetSize
 import app.madar.ui.SkeletonList
 import app.madar.ui.Space
 import app.madar.ui.StatusChip
@@ -60,6 +63,7 @@ import app.madar.ui.MadarColors
 import app.madar.ui.LocalMadarFont
 import app.madar.ui.MadarTextField
 import app.madar.ui.backGlyph
+import app.madar.ui.pressScale
 import app.madar.ui.madarColors
 import app.madar.ui.t
 import app.madar.ui.MadarIcon
@@ -177,9 +181,15 @@ fun OrderHistoryScreen(model: AppModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.md),
                 ) {
-                    MadarIcon("chevron.backward", tint = c.textPrimary, size = 17.dp, modifier = Modifier.clickable { model.showHistory = false })
+                    val backInteraction = remember { MutableInteractionSource() }
+                    MadarIcon(
+                        "chevron.backward", tint = c.textPrimary, size = 17.dp,
+                        modifier = Modifier
+                            .pressScale(backInteraction)
+                            .clickable(interactionSource = backInteraction, indication = null) { model.showHistory = false },
+                    )
                     Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        Text(t("history.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 17.sp)
+                        Text(t("history.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         if (model.shift != null) {
                             Text(t("history.current_shift"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 11.sp)
                         }
@@ -378,8 +388,11 @@ private fun HeaderCell(
     val c = madarColors()
     val active = sortCol == col
     val fg = if (active) c.accent else c.textMuted
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        modifier.clickable { onSort(col) },
+        modifier
+            .pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null) { onSort(col) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (trailing) Arrangement.spacedBy(3.dp, Alignment.End) else Arrangement.spacedBy(3.dp, Alignment.Start),
     ) {
@@ -404,9 +417,12 @@ private fun TableRow(
     val voided = item.status == "voided"
     val loadingDetail = expanded && !item.queued && model.orderDetail?.id != item.id
     val rowBg = if (expanded) c.navyBg else if (zebra) c.surfaceAlt else Color.Transparent
+    val rowInteraction = remember { MutableInteractionSource() }
     Column(Modifier.fillMaxWidth().background(rowBg)) {
         Row(
-            Modifier.fillMaxWidth().clickable { onToggle() }
+            Modifier.fillMaxWidth()
+                .clickable(interactionSource = rowInteraction, indication = null) { onToggle() }
+                .alpha(if (voided) 0.55f else 1f)
                 .padding(horizontal = Space.md).heightIn(56.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.md),
@@ -434,7 +450,7 @@ private fun TableRow(
             )
             Box(Modifier.width(44.dp), contentAlignment = Alignment.Center) {
                 if (loadingDetail) CircularProgressIndicator(color = c.textMuted, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                else Text(if (expanded) "▲" else "▼", color = c.textMuted, fontSize = 13.sp)
+                else MadarIcon("chevron.down", tint = c.textMuted, size = 13.dp, modifier = Modifier.rotate(if (expanded) 180f else 0f))
             }
         }
         if (expanded) {
@@ -487,7 +503,12 @@ private fun OrderCard(
             .padding(horizontal = Space.lg, vertical = Space.md),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Row(Modifier.fillMaxWidth().clickable { onToggle() }, verticalAlignment = Alignment.Top) {
+        val toggleInteraction = remember { MutableInteractionSource() }
+        Row(
+            Modifier.fillMaxWidth().clickable(interactionSource = toggleInteraction, indication = null) { onToggle() }
+                .alpha(if (voided) 0.55f else 1f),
+            verticalAlignment = Alignment.Top,
+        ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (item.queued) MadarIcon("icloud.and.arrow.up", tint = c.warning, size = IconSize.sm)
@@ -514,7 +535,7 @@ private fun OrderCard(
                     textDecoration = if (voided) TextDecoration.LineThrough else null,
                 )
                 if (loadingDetail) CircularProgressIndicator(color = c.textMuted, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                else Text(if (expanded) "▲" else "▼", color = c.textMuted, fontSize = 12.sp)
+                else MadarIcon("chevron.down", tint = c.textMuted, size = 12.dp, modifier = Modifier.rotate(if (expanded) 180f else 0f))
             }
         }
         if (expanded) {
@@ -550,16 +571,38 @@ private fun OrderDetailPanel(
             DetailRow(t("order.subtotal"), Money.format(item.subtotalMinor, currency))
             DetailRow(t("order.tax"), Money.format(item.taxMinor, currency))
         }
+        // Grand-total block — tinted teal, money as the hero (mirrors the cart's
+        // CartFooter total). The lighter sub-rows above carry less weight.
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.md)).background(c.accentBg)
+                .padding(horizontal = Space.md, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(t("order.total"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Box(Modifier.weight(1f))
+            Text(Money.format(item.totalMinor, currency), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 18.sp)
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
             Text(item.paymentLabel, color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 12.sp)
             Box(Modifier.weight(1f))
-            if (canPrint) {
-                Row(Modifier.clickable { onPrint() }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { MadarIcon("printer", tint = c.accent, size = 12.dp); Text(t("receipt.print"), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
-            }
-            if (canVoid) {
-                Row(Modifier.clickable { onVoid() }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { MadarIcon("trash", tint = c.danger, size = 12.dp); Text(t("void.action"), color = c.danger, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
-            }
+            if (canPrint) DetailAction(t("receipt.print"), "printer", c.accent, onPrint)
+            if (canVoid) DetailAction(t("void.action"), "trash", c.danger, onVoid)
         }
+    }
+}
+
+/** A leading-icon text action in the expanded detail panel (Print / Void). Carries
+ *  the signature press-scale; mirrors Swift's `actionButton`. */
+@Composable
+private fun DetailAction(label: String, glyph: String, color: Color, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.pressScale(interaction).clickable(interactionSource = interaction, indication = null) { onClick() },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        MadarIcon(glyph, tint = color, size = 12.dp)
+        Text(label, color = color, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
     }
 }
 
@@ -585,7 +628,7 @@ private fun LineRow(line: OrderDetailLineView, currency: String) {
             if (mods.isNotEmpty()) Text(mods.joinToString(" · "), color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 11.sp, maxLines = 2)
         }
         Spacer(Modifier.width(Space.sm))
-        Text(Money.format(line.lineTotalMinor, currency), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Text(Money.format(line.lineTotalMinor, currency), color = c.accent, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
 
@@ -623,10 +666,12 @@ private fun ShowMoreFooter(filteredCount: Int, visibleCount: Int, onShowMore: ()
     val remaining = filteredCount - visibleCount
     if (remaining <= 0) return
     val count = minOf(K_ORDER_PAGE_SIZE, remaining)
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm)).background(c.surface)
+        Modifier.fillMaxWidth().pressScale(interaction, 0.98f).clip(RoundedCornerShape(Radii.sm)).background(c.surface)
             .border(1.dp, c.border, RoundedCornerShape(Radii.sm))
-            .clickable { onShowMore() }.padding(vertical = Space.md),
+            .clickable(interactionSource = interaction, indication = null) { onShowMore() }
+            .padding(vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
     ) {
@@ -642,10 +687,12 @@ private fun HistoryChip(glyph: String, label: String, active: Boolean, tone: Chi
     val c = madarColors()
     val fg = if (active) toneFg(tone, c) else c.textSecondary
     val bg = if (active) toneBg(tone, c) else c.surfaceAlt
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.clip(CircleShape).background(bg)
+        Modifier.pressScale(interaction, 0.96f).clip(CircleShape).background(bg)
             .border(1.dp, if (active) fg.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-            .clickable { onClick() }.padding(horizontal = 12.dp, vertical = 6.dp),
+            .clickable(interactionSource = interaction, indication = null) { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -680,24 +727,19 @@ private fun VoidOverlay(model: AppModel, order: OrderSummaryView, onDone: () -> 
         "other" to "void.reason_other",
     )
 
-    // System back dismisses the void sheet (not the whole history screen).
-    BackHandlerCompat(enabled = true) { onDone() }
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDone() },
-        )
+    // Shared bottom-sheet presenter (scrim + slide-in + drag-to-dismiss + grab
+    // handle + elevation) — mirrors Swift's `.madarSheet(item: $voidTarget)`.
+    app.madar.ui.MadarSheet(onDismiss = onDone, size = SheetSize.HUG, maxWidth = 520.dp) { dismiss ->
+        // System back dismisses the void sheet (not the whole history screen).
+        BackHandlerCompat(enabled = true) { dismiss() }
         Column(
-            Modifier.align(Alignment.BottomCenter).widthIn(max = 520.dp).fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = Radii.lg, topEnd = Radii.lg)).background(c.bg)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
-                .verticalScroll(rememberScrollState()).padding(Space.xl),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(Space.xl),
             verticalArrangement = Arrangement.spacedBy(Space.lg),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(t("void.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 22.sp)
                 Box(Modifier.weight(1f))
-                MadarIcon("xmark", tint = c.textMuted, size = IconSize.lg, modifier = Modifier.clickable { onDone() })
+                MadarIcon("xmark", tint = c.textMuted, size = IconSize.md, modifier = Modifier.clickable { dismiss() })
             }
             Row(
                 Modifier.fillMaxWidth().elevation(Elevation.CARD, RoundedCornerShape(Radii.sm)).clip(RoundedCornerShape(Radii.sm)).background(c.surface)
@@ -708,19 +750,20 @@ private fun VoidOverlay(model: AppModel, order: OrderSummaryView, onDone: () -> 
                 Box(Modifier.weight(1f))
                 Text(Money.format(order.totalMinor, currency), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
-            Text(t("void.reason"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Text(t("void.reason"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 0.6.sp)
             reasons.forEach { (key, label) -> ReasonRow(t(label), reason == key) { reason = key } }
-            MadarTextField(note, { note = it }, t("void.note"), enabled = !model.isBusy)
+            MadarTextField(note, { note = it }, t("void.note"), enabled = !model.isBusy, icon = "note.text")
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text(t("void.restock"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text(t("void.restock"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Switch(checked = restock, onCheckedChange = { restock = it })
             }
             model.error?.let { NoticeBanner(it, ChipTone.DANGER) }
             Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                MadarButton(t("void.cancel"), { onDone() }, modifier = Modifier.weight(1f), variant = BtnVariant.OUTLINE)
+                MadarButton(t("void.cancel"), { dismiss() }, modifier = Modifier.weight(1f), variant = BtnVariant.OUTLINE)
                 MadarButton(
                     t("void.confirm"),
-                    { scope.launch { if (model.voidOrder(order.id, reason, note, restock)) onDone() } },
+                    { scope.launch { if (model.voidOrder(order.id, reason, note, restock)) dismiss() } },
                     modifier = Modifier.weight(1f), variant = BtnVariant.DANGER, loading = model.isBusy, icon = "trash",
                 )
             }
@@ -731,11 +774,13 @@ private fun VoidOverlay(model: AppModel, order: OrderSummaryView, onDone: () -> 
 @Composable
 private fun ReasonRow(label: String, active: Boolean, onClick: () -> Unit) {
     val c = madarColors()
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radii.sm))
+        Modifier.fillMaxWidth().pressScale(interaction, 0.99f).clip(RoundedCornerShape(Radii.sm))
             .background(if (active) c.dangerBg else c.surface)
             .border(1.dp, if (active) c.danger.copy(alpha = 0.45f) else c.border, RoundedCornerShape(Radii.sm))
-            .clickable { onClick() }.padding(Space.md),
+            .clickable(interactionSource = interaction, indication = null) { onClick() }
+            .padding(Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {

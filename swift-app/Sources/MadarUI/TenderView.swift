@@ -1,15 +1,114 @@
-// Tender — the checkout sheet. Pick a payment method (or split a bill), take cash
-// with live change, add a tip/discount, then place the order through the core
-// (online or queued offline). On success the same sheet flips to a receipt
-// confirmation with a printable on-screen preview. All money + order assembly
-// live in the core; this view only collects the tender and renders.
+// Tender / checkout — the ONE shared payment drawer.
+//
+// `CheckoutDrawer` is the reusable core: it collects the tender (payment method
+// or split, cash with live change, tip) against a fixed `total` and reports the
+// assembled `CheckoutTerminalInput` to its owner via `onTerminal`. The MAIN
+// cashier checkout (`TenderView`, presented from `OrderView`) and the ticket
+// SETTLE flow (`SettleSheet`, presented from the Orders surface) both
+// drive the SAME `CheckoutDrawer` — no more mirrored settle UI. Each owner wires
+// the terminal action to the right core call (place order vs. settle ticket) and
+// supplies the fixed order-summary block above the form.
+//
+// All money + order assembly live in the core; this view only collects + renders.
 import SwiftUI
+
+/// The tender the teller collected in the drawer, handed back to the owner's
+/// terminal action. `splits` is non-empty only in split-payment mode; otherwise
+/// `paymentMethodId` + `amountTenderedMinor` describe a single-method payment.
+struct CheckoutTerminalInput {
+    let paymentMethodId: String
+    let amountTenderedMinor: Int64
+    let tipMinor: Int64
+    let tipPaymentMethodId: String?
+    let customerName: String?
+    let notes: String?
+    let splits: [CheckoutSplit]
+    /// Whether the selected primary method is cash (owners that don't take a
+    /// tendered amount for card can branch on this).
+    let isCash: Bool
+}
+
+// MARK: - TenderView (MAIN cashier checkout — presented from OrderView)
 
 struct TenderView: View {
     @ObservedObject var app: AppModel
     @Environment(\.theme) private var theme
     @Environment(\.localize) private var t
     let onClose: () -> Void
+
+    private var currency: String { app.session?.currencyCode ?? "" }
+    private var total: Int64 { app.cartTotals.totalMinor }
+
+    var body: some View {
+        ZStack {
+            theme.colors.bg.ignoresSafeArea()
+            if let receipt = app.receipt {
+                ReceiptConfirmation(app: app, receipt: receipt, currency: currency) { onClose() }
+            } else {
+                // The MAIN checkout: full breakdown summary + editable cart
+                // discount + a customer/notes capture; the terminal places the cart.
+                CheckoutDrawer(
+                    app: app,
+                    title: t("order.tender"),
+                    total: total,
+                    currency: currency,
+                    busy: app.isPlacingOrder,
+                    terminalLabel: t("order.place_order"),
+                    terminalIcon: "checkmark",
+                    errorMessage: app.errorMessage,
+                    summary: .totals(app.cartTotals),
+                    showCartDiscount: true,
+                    showCustomerCapture: true,
+                    onClose: onClose,
+                    onTerminal: { input in
+                        await app.placeOrder(
+                            paymentMethodId: input.paymentMethodId,
+                            amountTenderedMinor: input.amountTenderedMinor,
+                            tipMinor: input.tipMinor,
+                            tipPaymentMethodId: input.tipPaymentMethodId,
+                            customerName: input.customerName,
+                            notes: input.notes,
+                            splits: input.splits)
+                    })
+            }
+        }
+    }
+}
+
+// MARK: - CheckoutDrawer (the shared tender form)
+
+/// How the fixed order-summary block above the form is rendered. The MAIN
+/// checkout passes `.totals` for the full subtotal/discount/tax breakdown; the
+/// settle flow passes `.flat` (just the grand total — the ticket carries only a
+/// subtotal).
+enum CheckoutSummary {
+    case totals(CartTotals)
+    case flat
+}
+
+/// The reusable payment drawer. Driven purely by a `total` + a terminal callback,
+/// so any flow (cart checkout, ticket settle, …) reuses the exact same tender UI.
+struct CheckoutDrawer: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    let title: String
+    let total: Int64
+    let currency: String
+    let busy: Bool
+    let terminalLabel: String
+    let terminalIcon: String
+    var errorMessage: String? = nil
+    let summary: CheckoutSummary
+    /// The MAIN checkout edits the cart's discount inline (via `app.setDiscount`).
+    /// The settle flow does NOT (a ticket is settled at its frozen total).
+    var showCartDiscount: Bool = false
+    /// The MAIN checkout captures a walk-in customer name + order notes; settle
+    /// already knows its ticket's covering customer, so it hides this.
+    var showCustomerCapture: Bool = false
+    let onClose: () -> Void
+    let onTerminal: (CheckoutTerminalInput) async -> Void
 
     @State private var selectedMethod: String?
     @State private var tenderedMinor: Int64 = 0
@@ -22,12 +121,10 @@ struct TenderView: View {
     @State private var splitMode = false
     @State private var splitAmounts: [String: Int64] = [:] // methodId → allocated
 
-    private var currency: String { app.session?.currencyCode ?? "" }
     private var method: PaymentMethodView? { app.paymentMethods.first { $0.id == selectedMethod } }
     private var isCash: Bool { method?.isCash ?? false }
-    private var total: Int64 { app.cartTotals.totalMinor }
     /// A tip paid on a cash order comes out of the same drawer → due with the bill.
-    private var tipCash: Int64 { (tipMethodIsCash) ? tipMinor : 0 }
+    private var tipCash: Int64 { tipMethodIsCash ? tipMinor : 0 }
     private var tipMethodIsCash: Bool {
         guard tipMinor > 0 else { return false }
         let m = app.paymentMethods.first { $0.id == (tipMethod ?? selectedMethod) }
@@ -47,82 +144,34 @@ struct TenderView: View {
     private var splitPrimary: String? {
         splitAmounts.filter { $0.value > 0 }.max { $0.value < $1.value }?.key
     }
-    private func splitBinding(_ id: String) -> Binding<Int64> {
-        Binding(get: { splitAmounts[id] ?? 0 }, set: { splitAmounts[id] = $0 })
-    }
 
     private var canPlace: Bool {
-        if app.isPlacingOrder { return false }
+        if busy { return false }
         if splitMode { return splitAllocated == total && !splitLegs.isEmpty }
         return selectedMethod != nil && (!isCash || tenderedMinor >= dueCash)
     }
 
     var body: some View {
-        ZStack {
-            theme.colors.bg.ignoresSafeArea()
-            if let receipt = app.receipt {
-                ReceiptConfirmation(app: app, receipt: receipt, currency: currency) { onClose() }
-            } else {
-                tenderForm
-            }
-        }
-        .onAppear {
-            if selectedMethod == nil {
-                selectedMethod = (app.paymentMethods.first { $0.isCash } ?? app.paymentMethods.first)?.id
-            }
-        }
-    }
-
-    private func discountLabel(_ d: DiscountView) -> String {
-        d.dtype == "percentage" ? "\(d.name) \(d.value)%" : d.name
-    }
-
-    private func place() async {
-        let name = customerName.isEmpty ? nil : customerName
-        let note = notes.isEmpty ? nil : notes
-        if splitMode {
-            guard let primary = splitPrimary else { return }
-            await app.placeOrder(paymentMethodId: primary, amountTenderedMinor: 0, tipMinor: tipMinor,
-                                 tipPaymentMethodId: tipMethod, customerName: name, notes: note, splits: splitLegs)
-        } else {
-            guard let id = selectedMethod else { return }
-            await app.placeOrder(paymentMethodId: id, amountTenderedMinor: isCash ? tenderedMinor : 0,
-                                 tipMinor: tipMinor, tipPaymentMethodId: tipMethod, customerName: name, notes: note)
-        }
-    }
-
-    // MARK: - Form
-
-    private var tenderForm: some View {
         VStack(spacing: 0) {
-            // Header: title + live order total (Flutter shows the running total here).
-            HStack(spacing: Space.sm) {
-                Text(t("order.tender")).font(.ui(19, .heavy)).foregroundStyle(theme.colors.textPrimary)
-                Spacer()
-                Text(Money.format(total, currency))
-                    .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
-                    .contentTransition(.numericText())
-                Button { onClose() } label: {
-                    MadarIcon("xmark", size: 15)
-                        .foregroundStyle(theme.colors.textMuted)
-                        .frame(width: 32, height: 32)
-                        .background(theme.colors.surfaceAlt).clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, Space.xl).padding(.top, Space.sm).padding(.bottom, Space.md)
+            TenderHeader(title: title, total: total, currency: currency, onClose: onClose)
             Rectangle().fill(theme.colors.border).frame(height: 1)
 
             ScrollView {
                 VStack(spacing: Space.lg) {
                     summaryCard
-                    paymentSection
-                    if isCash && !splitMode { cashSection }
-                    tipCard
-                    discountSection
-                    customerSection
-                    if let error = app.errorMessage {
-                        NoticeBanner(icon: "exclamationmark.circle", text: error, tone: .danger)
+                    PaymentSection(app: app, currency: currency, splitMode: $splitMode,
+                                   selectedMethod: $selectedMethod, splitAmounts: $splitAmounts,
+                                   splitRemaining: splitRemaining)
+                    if isCash && !splitMode {
+                        CashSection(dueCash: dueCash, tenderedMinor: $tenderedMinor,
+                                    changeMinor: changeMinor, shortMinor: shortMinor, currency: currency)
+                    }
+                    TipCard(app: app, tipMinor: $tipMinor, tipMethod: $tipMethod,
+                            selectedMethod: selectedMethod, currency: currency)
+                    if showCartDiscount { DiscountSection(app: app) }
+                    if showCustomerCapture { CustomerSection(customerName: $customerName, notes: $notes) }
+                    if let errorMessage {
+                        NoticeBanner(icon: "exclamationmark.circle", text: errorMessage, tone: .danger)
                     }
                 }
                 .frame(maxWidth: 552)
@@ -134,29 +183,181 @@ struct TenderView: View {
 
             footer
         }
+        .onAppear {
+            if selectedMethod == nil {
+                selectedMethod = (app.paymentMethods.first { $0.isCash } ?? app.paymentMethods.first)?.id
+            }
+        }
     }
 
-    /// Order totals card (always visible at the top of the sheet).
-    private var summaryCard: some View {
-        VStack(spacing: Space.xs) {
-            row(t("order.subtotal"), Money.format(app.cartTotals.subtotalMinor, currency), tone: theme.colors.textSecondary)
-            if app.cartTotals.discountMinor > 0 {
-                row(t("order.discount"), "−\(Money.format(app.cartTotals.discountMinor, currency))", tone: theme.colors.success)
+    @ViewBuilder private var summaryCard: some View {
+        switch summary {
+        case .totals(let totals): SummaryCard(totals: totals, total: total, currency: currency)
+        case .flat: FlatTotalCard(total: total, currency: currency)
+        }
+    }
+
+    private func fire() async {
+        let name = customerName.isEmpty ? nil : customerName
+        let note = notes.isEmpty ? nil : notes
+        if splitMode {
+            guard let primary = splitPrimary else { return }
+            await onTerminal(CheckoutTerminalInput(
+                paymentMethodId: primary, amountTenderedMinor: 0, tipMinor: tipMinor,
+                tipPaymentMethodId: tipMethod, customerName: name, notes: note,
+                splits: splitLegs, isCash: app.paymentMethods.first { $0.id == primary }?.isCash ?? false))
+        } else {
+            guard let id = selectedMethod else { return }
+            await onTerminal(CheckoutTerminalInput(
+                paymentMethodId: id, amountTenderedMinor: isCash ? tenderedMinor : 0, tipMinor: tipMinor,
+                tipPaymentMethodId: tipMethod, customerName: name, notes: note, splits: [], isCash: isCash))
+        }
+    }
+
+    private var footer: some View {
+        VStack(spacing: Space.sm) {
+            MadarButton(label: terminalLabel, icon: terminalIcon, loading: busy) {
+                Task { await fire() }
             }
-            if app.cartTotals.taxMinor > 0 {
-                row(t("order.tax"), Money.format(app.cartTotals.taxMinor, currency), tone: theme.colors.textSecondary)
-            }
-            Rectangle().fill(theme.colors.border).frame(height: 1)
-                .padding(.vertical, Space.sm)
-            row(t("order.total"), Money.format(total, currency), emphasized: true)
+            .opacity(canPlace ? 1 : 0.5)
+            .allowsHitTesting(canPlace)
+            .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(Space.lg)
         .background(theme.colors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.border, lineWidth: 1))
+        .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
     }
+}
 
-    private var paymentSection: some View {
+// MARK: - Header
+
+/// Sticky sheet header — bold title + the live order total in hero teal + close.
+private struct TenderHeader: View {
+    @Environment(\.theme) private var theme
+    let title: String
+    let total: Int64
+    let currency: String
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: Space.sm) {
+            Text(title).font(.ui(19, .heavy)).foregroundStyle(theme.colors.textPrimary)
+            Spacer()
+            Text(Money.format(total, currency))
+                .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
+                .contentTransition(.numericText())
+            Button { onClose() } label: {
+                MadarIcon("xmark", size: 15)
+                    .foregroundStyle(theme.colors.textMuted)
+                    .frame(width: 32, height: 32)
+                    .background(theme.colors.surfaceAlt).clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Space.xl).padding(.top, Space.sm).padding(.bottom, Space.md)
+    }
+}
+
+// MARK: - Summary card
+
+/// Order totals card — subtotal/discount/tax in light muted rows, then the grand
+/// total in a tinted teal block (bold teal figure). Matches the Order screen's
+/// total block: the sub-rows stay light so the total carries the weight.
+private struct SummaryCard: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let totals: CartTotals
+    let total: Int64
+    let currency: String
+
+    var body: some View {
+        VStack(spacing: Space.xs) {
+            SummaryRow(label: t("order.subtotal"), value: Money.format(totals.subtotalMinor, currency))
+            if totals.discountMinor > 0 {
+                SummaryRow(label: t("order.discount"), value: "−\(Money.format(totals.discountMinor, currency))",
+                           tone: theme.colors.success)
+            }
+            if totals.taxMinor > 0 {
+                SummaryRow(label: t("order.tax"), value: Money.format(totals.taxMinor, currency))
+            }
+            // Grand-total block — tinted teal, the hero figure (matches CartFooter).
+            HStack {
+                Text(t("order.total")).font(.ui(14, .bold)).foregroundStyle(theme.colors.accent)
+                Spacer()
+                Text(Money.format(total, currency))
+                    .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, Space.md).padding(.vertical, Space.md)
+            .background(theme.colors.accentBg)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+            .padding(.top, Space.xs)
+        }
+        .padding(Space.lg)
+        .background(theme.colors.surface)
+        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        .elevation(.card)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+    }
+}
+
+private struct SummaryRow: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let value: String
+    var tone: Color? = nil
+
+    var body: some View {
+        HStack {
+            Text(label).font(.ui(13, .medium)).foregroundStyle(tone ?? theme.colors.textSecondary)
+            Spacer()
+            Text(value).font(.money(13, .semibold)).foregroundStyle(tone ?? theme.colors.textSecondary)
+                .contentTransition(.numericText())
+        }
+    }
+}
+
+/// A minimal amount-due card — just the grand-total block (no subtotal/tax rows).
+/// Used by flows that only carry a single figure (ticket settle) so the drawer's
+/// summary reads identically to the main checkout's hero total block.
+private struct FlatTotalCard: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let total: Int64
+    let currency: String
+
+    var body: some View {
+        HStack {
+            Text(t("order.total")).font(.ui(14, .bold)).foregroundStyle(theme.colors.accent)
+            Spacer()
+            Text(Money.format(total, currency))
+                .font(.money(20, .heavy)).foregroundStyle(theme.colors.accent)
+                .contentTransition(.numericText())
+        }
+        .padding(.horizontal, Space.md).padding(.vertical, Space.md)
+        .background(theme.colors.accentBg)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+        .padding(Space.lg)
+        .background(theme.colors.surface)
+        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        .elevation(.card)
+        .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+    }
+}
+
+// MARK: - Payment
+
+private struct PaymentSection: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let currency: String
+    @Binding var splitMode: Bool
+    @Binding var selectedMethod: String?
+    @Binding var splitAmounts: [String: Int64]
+    let splitRemaining: Int64
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             HStack {
                 sectionLabel(t("order.payment_method"))
@@ -177,26 +378,50 @@ struct TenderView: View {
                 }
             }
             if splitMode {
-                splitAllocator
+                SplitAllocator(app: app, currency: currency, splitAmounts: $splitAmounts, splitRemaining: splitRemaining)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: Space.sm)], spacing: Space.sm) {
-                    ForEach(app.paymentMethods, id: \.id) { m in
-                        PayChip(method: m, active: m.id == selectedMethod) { selectedMethod = m.id }
-                    }
-                }
+                MethodGrid(app: app, selectedMethod: $selectedMethod)
             }
         }
     }
+}
 
-    /// Per-method amount entry + a live remaining indicator (must reach 0).
-    private var splitAllocator: some View {
+/// Two-column grid of payment-method chips — the SHARED method selector used by
+/// both the checkout and the settle sheet (adaptive LazyVGrid).
+struct MethodGrid: View {
+    @ObservedObject var app: AppModel
+    @Binding var selectedMethod: String?
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: Space.sm)], spacing: Space.sm) {
+            ForEach(app.paymentMethods, id: \.id) { m in
+                PayChip(method: m, active: m.id == selectedMethod) { selectedMethod = m.id }
+            }
+        }
+    }
+}
+
+/// Per-method amount entry + a live remaining indicator (must reach 0).
+private struct SplitAllocator: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let currency: String
+    @Binding var splitAmounts: [String: Int64]
+    let splitRemaining: Int64
+
+    private func binding(_ id: String) -> Binding<Int64> {
+        Binding(get: { splitAmounts[id] ?? 0 }, set: { splitAmounts[id] = $0 })
+    }
+
+    var body: some View {
         VStack(spacing: Space.sm) {
             ForEach(app.paymentMethods, id: \.id) { m in
                 HStack(spacing: Space.sm) {
                     Circle().fill(Color(hex: m.color)).frame(width: 9, height: 9)
                     Text(m.name).font(.ui(13, .semibold)).foregroundStyle(theme.colors.textPrimary)
                         .frame(width: 86, alignment: .leading)
-                    AmountField(amountMinor: splitBinding(m.id), currencyCode: currency)
+                    AmountField(amountMinor: binding(m.id), currencyCode: currency)
                 }
             }
             HStack {
@@ -207,25 +432,24 @@ struct TenderView: View {
                     .foregroundStyle(splitRemaining == 0 ? theme.colors.success : theme.colors.danger)
             }
             .padding(.horizontal, Space.md).padding(.vertical, 10)
-            .background((splitRemaining == 0 ? theme.colors.successBg : theme.colors.warningBg))
+            .background(splitRemaining == 0 ? theme.colors.successBg : theme.colors.warningBg)
             .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
         }
     }
+}
 
-    private var cashSection: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            sectionLabel(t("order.cash_received"))
-            AmountField(amountMinor: $tenderedMinor, currencyCode: currency)
-            // Quick-tender chips.
-            FlowLayout(spacing: Space.sm) {
-                quickChip(t("order.exact"), amount: dueCash)
-                ForEach(quickPresets, id: \.self) { p in quickChip(Money.format(p, currency), amount: p) }
-            }
-            if tenderedMinor > 0 {
-                changeBanner
-            }
-        }
-    }
+// MARK: - Cash
+
+/// Cash tendered — a tinted teal "amount due" hero block, the cash field, round
+/// presets, and a live change banner.
+struct CashSection: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let dueCash: Int64
+    @Binding var tenderedMinor: Int64
+    let changeMinor: Int64
+    let shortMinor: Int64
+    let currency: String
 
     /// Round-number cash presets at or above the amount due.
     private var quickPresets: [Int64] {
@@ -233,9 +457,46 @@ struct TenderView: View {
         return units.filter { $0 >= dueCash }.prefix(3).map { $0 }
     }
 
-    private func quickChip(_ label: String, amount: Int64) -> some View {
-        let active = tenderedMinor == amount
-        return Button { Haptics.selection(); tenderedMinor = amount } label: {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            sectionLabel(t("order.cash_received"))
+            // Amount-due hero block — tinted teal, the figure the cash must reach
+            // (mirrors the grand-total block in weight + treatment).
+            HStack {
+                Text(t("order.total")).font(.ui(13, .bold)).foregroundStyle(theme.colors.accent)
+                Spacer()
+                Text(Money.format(dueCash, currency))
+                    .font(.money(18, .heavy)).foregroundStyle(theme.colors.accent)
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, Space.md).padding(.vertical, Space.md)
+            .background(theme.colors.accentBg)
+            .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
+            AmountField(amountMinor: $tenderedMinor, currencyCode: currency)
+            FlowLayout(spacing: Space.sm) {
+                QuickCash(label: t("order.exact"), amount: dueCash, tenderedMinor: $tenderedMinor)
+                ForEach(quickPresets, id: \.self) { p in
+                    QuickCash(label: Money.format(p, currency), amount: p, tenderedMinor: $tenderedMinor)
+                }
+            }
+            if tenderedMinor > 0 {
+                ChangeBanner(changeMinor: changeMinor, shortMinor: shortMinor, currency: currency)
+            }
+        }
+    }
+}
+
+/// A quick-tender amount chip (Exact / round-number presets) that fills cash.
+private struct QuickCash: View {
+    @Environment(\.theme) private var theme
+    let label: String
+    let amount: Int64
+    @Binding var tenderedMinor: Int64
+
+    private var active: Bool { tenderedMinor == amount }
+
+    var body: some View {
+        Button { Haptics.selection(); tenderedMinor = amount } label: {
             Text(label)
                 .font(.ui(12, .bold))
                 .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
@@ -246,9 +507,20 @@ struct TenderView: View {
         }
         .buttonStyle(.pressable(scale: 0.96))
     }
+}
 
-    @ViewBuilder private var changeBanner: some View {
-        let ok = changeMinor >= 0 && shortMinor == 0
+/// Green "Change due" / red "Short by" banner under the cash field — a leading
+/// tone icon + the hero change figure.
+private struct ChangeBanner: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    let changeMinor: Int64
+    let shortMinor: Int64
+    let currency: String
+
+    private var ok: Bool { changeMinor >= 0 && shortMinor == 0 }
+
+    var body: some View {
         HStack(spacing: Space.sm) {
             MadarIcon(ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill", size: IconSize.lg)
                 .foregroundStyle(ok ? theme.colors.success : theme.colors.danger)
@@ -257,13 +529,26 @@ struct TenderView: View {
             Spacer()
             Text(Money.format(ok ? changeMinor : shortMinor, currency))
                 .font(.money(15, .heavy)).foregroundStyle(ok ? theme.colors.success : theme.colors.danger)
+                .contentTransition(.numericText())
         }
         .padding(.horizontal, Space.md).padding(.vertical, 10)
         .background(ok ? theme.colors.successBg : theme.colors.dangerBg)
         .clipShape(RoundedRectangle(cornerRadius: Radii.sm, style: .continuous))
     }
+}
 
-    private var tipCard: some View {
+// MARK: - Tip
+
+private struct TipCard: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+    @Binding var tipMinor: Int64
+    @Binding var tipMethod: String?
+    let selectedMethod: String?
+    let currency: String
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             HStack(spacing: 6) {
                 MadarIcon("heart.circle", size: 13)
@@ -284,7 +569,7 @@ struct TenderView: View {
                             }
                             .foregroundStyle(active ? theme.colors.textOnAccent : theme.colors.textSecondary)
                             .padding(.horizontal, 11).padding(.vertical, 6)
-                            .background(active ? Color(hex: m.color) : theme.colors.surface)
+                            .background(active ? Color(hex: m.color) : theme.colors.surfaceAlt)
                             .clipShape(Capsule())
                             .overlay(Capsule().strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: 1))
                         }
@@ -295,12 +580,25 @@ struct TenderView: View {
             AmountField(amountMinor: $tipMinor, currencyCode: currency)
         }
         .padding(Space.lg)
-        .background(theme.colors.surfaceAlt)
+        .background(theme.colors.surface)
+        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.borderLight, lineWidth: 1))
+        .elevation(.card)
         .clipShape(RoundedRectangle(cornerRadius: Radii.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radii.md, style: .continuous).strokeBorder(theme.colors.border, lineWidth: 1))
+    }
+}
+
+// MARK: - Discount
+
+private struct DiscountSection: View {
+    @ObservedObject var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.localize) private var t
+
+    private func discountLabel(_ d: DiscountView) -> String {
+        d.dtype == "percentage" ? "\(d.name) \(d.value)%" : d.name
     }
 
-    @ViewBuilder private var discountSection: some View {
+    var body: some View {
         let activeDiscounts = app.discounts.filter { $0.isActive }
         if !activeDiscounts.isEmpty {
             VStack(alignment: .leading, spacing: Space.sm) {
@@ -312,47 +610,6 @@ struct TenderView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var customerSection: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            sectionLabel(t("order.customer"))
-            MadarTextField(placeholder: t("order.customer_hint"), text: $customerName, icon: "person", caps: .words)
-            MadarTextField(placeholder: t("order.notes_hint"), text: $notes, icon: "text.bubble", caps: .words)
-        }
-    }
-
-    private var footer: some View {
-        VStack(spacing: Space.sm) {
-            MadarButton(label: t("order.place_order"), icon: "checkmark", loading: app.isPlacingOrder) {
-                Task { await place() }
-            }
-            .opacity(canPlace ? 1 : 0.5)
-            .allowsHitTesting(canPlace)
-            .keyboardShortcut(.return, modifiers: .command)
-        }
-        .padding(Space.lg)
-        .background(theme.colors.surface)
-        .overlay(alignment: .top) { Rectangle().fill(theme.colors.border).frame(height: 1) }
-    }
-
-    // MARK: small builders
-    private func sectionLabel(_ s: String) -> some View {
-        Text(s).font(.ui(12, .bold)).foregroundStyle(theme.colors.textMuted)
-            .tracking(0.6).textCase(.uppercase)
-    }
-
-    private func row(_ label: String, _ value: String, emphasized: Bool = false, tone: Color? = nil) -> some View {
-        HStack {
-            Text(label)
-                .font(.ui(emphasized ? 14 : 13, emphasized ? .bold : .medium))
-                .foregroundStyle(emphasized ? theme.colors.textPrimary : (tone ?? theme.colors.textSecondary))
-            Spacer()
-            Text(value)
-                .font(.money(emphasized ? 17 : 13, emphasized ? .heavy : .semibold))
-                .foregroundStyle(emphasized ? theme.colors.textPrimary : (tone ?? theme.colors.textSecondary))
-                .contentTransition(.numericText())
         }
     }
 
@@ -370,6 +627,40 @@ struct TenderView: View {
                 .strokeBorder(active ? Color.clear : theme.colors.border, lineWidth: active ? 0 : 1))
         }
         .buttonStyle(.pressable(scale: 0.97))
+    }
+}
+
+// MARK: - Customer
+
+private struct CustomerSection: View {
+    @Environment(\.localize) private var t
+    @Binding var customerName: String
+    @Binding var notes: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            sectionLabel(t("order.customer"))
+            MadarTextField(placeholder: t("order.customer_hint"), text: $customerName, icon: "person", caps: .words)
+            MadarTextField(placeholder: t("order.notes_hint"), text: $notes, icon: "text.bubble", caps: .words)
+        }
+    }
+}
+
+// MARK: - Shared small builder
+
+/// Small uppercase muted section heading. Free function so every Tender subview
+/// renders an identical label without re-declaring it.
+@MainActor private func sectionLabel(_ s: String) -> some View {
+    SectionLabel(text: s)
+}
+
+private struct SectionLabel: View {
+    @Environment(\.theme) private var theme
+    let text: String
+
+    var body: some View {
+        Text(text).font(.ui(12, .bold)).foregroundStyle(theme.colors.textMuted)
+            .tracking(0.6).textCase(.uppercase)
     }
 }
 

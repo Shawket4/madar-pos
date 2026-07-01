@@ -233,6 +233,29 @@ impl Store {
         Ok(conn.query_row("SELECT seq FROM outbox WHERE id=?1", [&op.id], |r| r.get(0))?)
     }
 
+    /// Upsert a state-TOGGLING LAN-mirror backup (kitchen bump/unbump on one line),
+    /// keyed line-scoped so the LATEST tap wins. Unlike [`Self::enqueue`] (keep-first),
+    /// a repeated tap after an opposite one must OVERWRITE the queued backup — else
+    /// the mirror replays a STALE direction if the originating device dies before its
+    /// own primary op reaches the cloud. Only a still-re-sendable (pending/dead) row
+    /// is replaced + re-armed; an in-flight send is left to finish (bump/unbump is
+    /// idempotent server-side, so a momentary stale-in-flight is harmless).
+    pub fn upsert_mirror(&self, op: &NewOutboxOp) -> CoreResult<()> {
+        self.lock().execute(
+            "INSERT INTO outbox(id, op_type, idempotency_key, payload, event_at, enqueued_at,
+                                depends_on_seq, user_id, clock_offset_ms, shift_id)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+             ON CONFLICT(id) DO UPDATE SET
+                payload=excluded.payload, op_type=excluded.op_type,
+                idempotency_key=excluded.idempotency_key, event_at=excluded.event_at,
+                status='pending', attempts=0, next_attempt_at=0, last_error=NULL
+             WHERE outbox.status IN ('pending','dead')",
+            params![op.id, op.op_type, op.idempotency_key, op.payload, op.event_at, now_iso(),
+                    op.depends_on_seq, op.user_id, op.clock_offset_ms, op.shift_id],
+        )?;
+        Ok(())
+    }
+
     /// Items ready to send NOW for the drain — `pending` AND past their backoff
     /// gate (`next_attempt_at <= now_ms`), in FIFO order. Scoped to `user_id`
     /// when given (a different teller's queued ops must sync under THEIR token,
@@ -412,17 +435,21 @@ impl Store {
     }
 
     /// Re-point every non-acked (pending/inflight/dead) op tied to shift `old` onto
-    /// shift `new`: rewrites the `shift_id` column AND any occurrence of the id
-    /// inside the JSON payload (UUIDs are unique, so a plain string replace is
-    /// safe), plus the `open_shift` op's own `id`/`idempotency_key` so it replays
-    /// idempotently against the now-existing `new` shift instead of dead-lettering.
-    /// Returns rows touched.
+    /// shift `new`: rewrites the `shift_id` column AND any occurrence of the id inside
+    /// the JSON payload (UUIDs are unique, so a plain string replace is safe).
+    ///
+    /// The `open_shift` op replays idempotently against `new` because the backend
+    /// dedups the open on its in-PAYLOAD `request.id` (rewritten above), NOT on the
+    /// outbox row's `id`/`idempotency_key` columns (which are local bookkeeping and
+    /// never sent — `/sync/replay` posts the payload envelope). Those columns are
+    /// therefore left UNTOUCHED: rewriting them to `new` made every orphan open's row
+    /// `id` collide on `outbox.id UNIQUE` when two orphans were re-pointed onto the
+    /// same target, aborting the second remap and stranding its paid offline sales
+    /// permanently. Returns rows touched.
     pub fn remap_shift(&self, old: &str, new: &str) -> CoreResult<u32> {
         let n = self.lock().execute(
             "UPDATE outbox SET \
                 payload = replace(payload, ?1, ?2), \
-                id = replace(id, ?1, ?2), \
-                idempotency_key = replace(idempotency_key, ?1, ?2), \
                 shift_id = ?2 \
              WHERE shift_id = ?1 AND status IN ('pending','inflight','dead')",
             params![old, new])?;
@@ -675,7 +702,8 @@ mod tests {
         // …and never re-points onto itself.
         assert!(s.orphan_open_shift_ids(T, B).unwrap().is_empty());
 
-        // 2) Remap B → A: rewrites shift_id, the payload, and the open op's id key.
+        // 2) Remap B → A: rewrites shift_id + the payload (the open op's local row
+        // id is deliberately left as B — see remap_shift; idempotency rides the payload).
         assert_eq!(s.remap_shift(B, A).unwrap(), 3, "open + 2 orders re-pointed");
         for it in s.list_active().unwrap() {
             assert_eq!(it.shift_id.as_deref(), Some(A), "shift_id column re-pointed");
@@ -683,12 +711,58 @@ mod tests {
             assert!(it.payload.contains(A), "payload carries the real shift: {}", it.payload);
         }
         let open_now = s.list_active().unwrap().into_iter().find(|i| i.op_type == "open_shift").unwrap();
-        assert_eq!(open_now.id, A, "open op now keys on A → replays idempotently");
+        assert_eq!(open_now.id, B, "open op KEEPS its own row id (only the payload request.id → A)");
+        assert!(open_now.payload.contains(A) && !open_now.payload.contains(B), "open payload request.id → A");
 
         // 3) Requeue the dead ones so the recovered sales replay on the next drain.
         assert_eq!(s.requeue_dead_for_shift(A).unwrap(), 2);
         assert_eq!(s.dead_count().unwrap(), 0);
         assert_eq!(s.pending_count().unwrap(), 3);
+    }
+
+    #[test]
+    fn remap_shift_handles_two_orphans_onto_one_target_without_unique_collision() {
+        // Critical regression (audit #2): a device optimistically opened TWO shifts
+        // offline (e.g. an open, an app restart, a second open attempt) and rang sales
+        // on each. Both dead-letter on reconnect (the branch already has the teller's
+        // real shift T open). Recovery re-points BOTH onto T. Rewriting each open op's
+        // row id to T used to collide on outbox.id UNIQUE, aborting the second remap
+        // and stranding its paid offline sales forever.
+        let s = Store::open("").unwrap();
+        const A: &str = "00000000-0000-0000-0000-0000000000aa"; // orphan 1
+        const B: &str = "00000000-0000-0000-0000-0000000000bb"; // orphan 2
+        const T: &str = "00000000-0000-0000-0000-0000000000a1"; // the teller's REAL shift
+        const TELLER: &str = "00000000-0000-0000-0000-0000000000c1";
+
+        for shift in [A, B] {
+            let mut open = op_with(shift, "open_shift", Some(shift), None);
+            open.payload = format!("{{\"request\":{{\"id\":\"{shift}\"}}}}");
+            open.user_id = Some(TELLER.into());
+            let seq = s.enqueue(&open).unwrap();
+            let mut order = op_with(&format!("order-{shift}"), "create_order", Some(shift), Some(seq));
+            order.payload = format!("{{\"request\":{{\"shift_id\":\"{shift}\"}}}}");
+            order.user_id = Some(TELLER.into());
+            s.enqueue(&order).unwrap();
+            s.mark_dead(seq, "Conflict: a shift is already open for this branch").unwrap();
+        }
+
+        // BOTH remaps must succeed — the second no longer collides on outbox.id.
+        assert_eq!(s.remap_shift(A, T).unwrap(), 2, "orphan A: open + order re-pointed");
+        assert_eq!(s.remap_shift(B, T).unwrap(), 2, "orphan B: open + order re-pointed (NO UNIQUE collision)");
+
+        // Every op now targets T, and BOTH orphan opens survive with their own row ids.
+        let active = s.list_active().unwrap();
+        assert!(active.iter().all(|it| it.shift_id.as_deref() == Some(T)), "all re-pointed to T");
+        assert!(
+            active.iter().all(|it| it.payload.contains(T) && !it.payload.contains(A) && !it.payload.contains(B)),
+            "every payload carries T, none the orphan ids",
+        );
+        let opens: Vec<String> = active.iter().filter(|i| i.op_type == "open_shift").map(|i| i.id.clone()).collect();
+        assert_eq!(opens.len(), 2, "both orphan opens preserved");
+        assert!(opens.contains(&A.to_string()) && opens.contains(&B.to_string()), "each keeps its unique row id");
+
+        // None stranded: requeue brings both shifts' dead opens back to pending.
+        assert_eq!(s.requeue_dead_for_shift(T).unwrap(), 2, "both orphan opens requeued, nothing lost");
     }
 
     #[test]

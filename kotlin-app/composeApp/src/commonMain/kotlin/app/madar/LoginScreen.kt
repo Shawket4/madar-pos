@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -44,10 +43,8 @@ import app.madar.ui.Radii
 import app.madar.ui.Space
 import app.madar.ui.StatusChip
 import app.madar.ui.MadarButton
-import app.madar.ui.MadarLockup
 import app.madar.ui.MadarMark
 import app.madar.ui.MadarTextField
-import app.madar.ui.disclosureGlyph
 import app.madar.ui.pressScale
 import app.madar.ui.madarColors
 import app.madar.ui.t
@@ -78,7 +75,7 @@ fun LoginScreen(model: AppModel) {
         val wide = maxWidth >= Responsive.wide
         if (wide) {
             // Flutter splits the wide layout 55/45 (brand panel : form).
-            androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxSize()) {
                 BrandPanel(Modifier.weight(0.55f).fillMaxHeight())
                 Box(Modifier.weight(0.45f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                     FormColumn(model, showLogo = false)
@@ -93,9 +90,9 @@ fun LoginScreen(model: AppModel) {
 }
 
 @Composable
-private fun FormColumn(model: AppModel, showLogo: Boolean) {
+private fun FormColumn(model: AppModel, showLogo: Boolean, modifier: Modifier = Modifier) {
     Column(
-        Modifier.widthIn(max = 400.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+        modifier.widthIn(max = 400.dp).fillMaxWidth().verticalScroll(rememberScrollState())
             .padding(horizontal = Space.xxl, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -108,7 +105,7 @@ private fun FormColumn(model: AppModel, showLogo: Boolean) {
 }
 
 @Composable
-private fun TellerForm(model: AppModel, showLogo: Boolean) {
+private fun TellerForm(model: AppModel, showLogo: Boolean, modifier: Modifier = Modifier) {
     val c = madarColors()
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
@@ -140,21 +137,25 @@ private fun TellerForm(model: AppModel, showLogo: Boolean) {
     // stack): xs between title/subtitle, sm before the branch chip block, xxl
     // after the header block, xl around the PIN pad, sm between button and hint.
     Column(
-        Modifier.offset { IntOffset(offsetX.value.roundToInt(), 0) },
+        modifier.offset { IntOffset(offsetX.value.roundToInt(), 0) },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (showLogo) {
-            MadarMark(size = 60.dp)
+            MadarMark(size = 56.dp)
             Spacer(Modifier.height(Space.xxl))
         }
+        // The greeting is the hero — heavy, tightly tracked (mirrors the sibling
+        // OpenShift greeting). The subtitle sits beneath as a quiet eyebrow.
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            Text(t("login.welcome_back"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 24.sp)
-            Text(t("login.subtitle"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 14.sp)
+            Text(t("login.welcome_back"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = (-0.5).sp, textAlign = TextAlign.Center)
+            Text(t("login.subtitle"), color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Medium, fontSize = 14.sp, textAlign = TextAlign.Center)
         }
-        Spacer(Modifier.height(Space.sm))
+        Spacer(Modifier.height(Space.md))
+        // Identity moment — the bound branch as a tinted teal pill with a quiet
+        // reconfigure link beneath, echoing the order screen's tone-tile language.
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             val branchLabel = if (model.branchName.isNotBlank()) model.branchName else "${t("login.branch")} ${model.branchId.take(8)}"
-            StatusChip(branchLabel, ChipTone.INFO, icon = "building.2")
+            StatusChip(branchLabel, ChipTone.ACCENT, icon = "building.2")
             Text(
                 t("login.reconfigure"),
                 color = c.textMuted,
@@ -174,42 +175,42 @@ private fun TellerForm(model: AppModel, showLogo: Boolean) {
             NoticeBanner(it, ChipTone.DANGER, icon = "exclamationmark.circle")
         }
         Spacer(Modifier.height(Space.xl))
-        MadarButton(t("login.sign_in"), { submit() }, loading = model.isBusy, height = 52.dp)
+        MadarButton(t("login.sign_in"), { submit() }, loading = model.isBusy, height = 52.dp, icon = "arrow.right.circle")
         Spacer(Modifier.height(Space.sm))
         Text(t("login.pin_hint"), color = c.textMuted, fontFamily = LocalMadarFont.current, fontSize = 12.sp, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
-private fun DeviceSetupForm(model: AppModel, showLogo: Boolean) {
+private fun DeviceSetupForm(model: AppModel, showLogo: Boolean, modifier: Modifier = Modifier) {
     val c = madarColors()
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val picking = model.setupPhase == SetupPhase.PICK_BRANCH
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.lg)) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.lg)) {
         if (showLogo) MadarMark(size = 56.dp)
         Column(
             Modifier.padding(bottom = Space.sm),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            Text(if (picking) t("setup.choose_branch") else t("setup.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 22.sp)
+            Text(if (picking) t("setup.choose_branch") else t("setup.title"), color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.4).sp, textAlign = TextAlign.Center)
             Text(
                 if (picking) t("setup.choose_branch_desc") else t("setup.desc"),
-                color = c.textSecondary, fontFamily = LocalMadarFont.current, fontSize = 13.5.sp, textAlign = TextAlign.Center,
+                color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Medium, fontSize = 13.sp, textAlign = TextAlign.Center,
             )
         }
         if (picking) {
-            model.branches.forEach { b -> BranchRow(b) { model.bindBranch(b) } }
+            model.branches.forEach { b -> BranchRow(b, Modifier.fillMaxWidth()) { model.bindBranch(b) } }
         } else {
             MadarTextField(email, { email = it }, t("setup.email"), enabled = !model.isBusy, keyboard = KeyboardType.Email, icon = "envelope")
             MadarTextField(password, { password = it }, t("setup.password"), secure = true, enabled = !model.isBusy, icon = "lock")
         }
         model.error?.let { NoticeBanner(it, ChipTone.DANGER, icon = "exclamationmark.circle") }
         if (!picking) {
-            MadarButton(t("setup.continue"), { scope.launch { model.authenticateManager(email.trim(), password) } }, loading = model.isBusy)
+            MadarButton(t("setup.continue"), { scope.launch { model.authenticateManager(email.trim(), password) } }, loading = model.isBusy, icon = "arrow.right.circle")
         }
         if (picking || model.isBranchConfigured) {
             MadarButton(t("setup.cancel"), { model.cancelReconfigure() }, variant = BtnVariant.GHOST)
@@ -217,13 +218,16 @@ private fun DeviceSetupForm(model: AppModel, showLogo: Boolean) {
     }
 }
 
+/** A selectable branch in device-setup — a raised surface row with the signature
+ *  leading tone-tile (teal glyph on accentBg) + a trailing disclosure chevron,
+ *  matching the order screen's row language. The caller owns the row's size. */
 @Composable
-private fun BranchRow(branch: BranchView, onClick: () -> Unit) {
+private fun BranchRow(branch: BranchView, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val c = madarColors()
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth().pressScale(interaction)
+        modifier.pressScale(interaction)
             .elevation(Elevation.CARD, RoundedCornerShape(Radii.sm)).clip(RoundedCornerShape(Radii.sm))
             .background(c.surface).border(1.dp, c.borderLight, RoundedCornerShape(Radii.sm))
             .clickable(interactionSource = interaction, indication = null) {
@@ -233,9 +237,13 @@ private fun BranchRow(branch: BranchView, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        MadarIcon("building.2", tint = c.textMuted, size = IconSize.sm)
+        Box(
+            Modifier.size(36.dp).clip(RoundedCornerShape(Radii.sm)).background(c.accentBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            MadarIcon("building.2", tint = c.accent, size = IconSize.md)
+        }
         Text(branch.name, color = c.textPrimary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
         MadarIcon("chevron.right", tint = c.textMuted, size = IconSize.xs)
     }
 }
-

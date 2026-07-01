@@ -1072,6 +1072,24 @@ internal open class UniffiVTableCallbackInterfaceTokenStore(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1234,6 +1252,10 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_madar_core_fn_method_madarcore_list_drafts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_madar_core_fn_method_madarcore_list_floor_sections(`ptr`: Pointer,
+    ): Long
+    fun uniffi_madar_core_fn_method_madarcore_list_floor_tables(`ptr`: Pointer,
+    ): Long
     fun uniffi_madar_core_fn_method_madarcore_list_item_addons(`ptr`: Pointer,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_madar_core_fn_method_madarcore_list_menu_items(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1246,6 +1268,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_madar_core_fn_method_madarcore_list_payment_methods(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_madar_core_fn_method_madarcore_list_reservations(`ptr`: Pointer,
+    ): Long
     fun uniffi_madar_core_fn_method_madarcore_list_shift_orders(`ptr`: Pointer,
     ): Long
     fun uniffi_madar_core_fn_method_madarcore_list_shifts(`ptr`: Pointer,
@@ -1258,6 +1282,10 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_madar_core_fn_method_madarcore_logout(`ptr`: Pointer,`wipeOutbox`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_madar_core_fn_method_madarcore_move_ticket_to_table(`ptr`: Pointer,`ticketId`: RustBuffer.ByValue,`tableId`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_madar_core_fn_method_madarcore_notify_reservation(`ptr`: Pointer,`bookingId`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_madar_core_fn_method_madarcore_offline_report_for(`ptr`: Pointer,`shiftId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_madar_core_fn_method_madarcore_open_shift(`ptr`: Pointer,`openingCashMinor`: Long,`editReason`: RustBuffer.ByValue,
@@ -1276,9 +1304,13 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_madar_core_fn_method_madarcore_record_cash_movement(`ptr`: Pointer,`amountMinor`: Long,`note`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_madar_core_fn_method_madarcore_recover_orphaned_orders(`ptr`: Pointer,
+    ): Long
     fun uniffi_madar_core_fn_method_madarcore_refresh_catalog(`ptr`: Pointer,
     ): Long
     fun uniffi_madar_core_fn_method_madarcore_refresh_connectivity(`ptr`: Pointer,
+    ): Long
+    fun uniffi_madar_core_fn_method_madarcore_refresh_permissions_if_needed(`ptr`: Pointer,
     ): Long
     fun uniffi_madar_core_fn_method_madarcore_refresh_shift(`ptr`: Pointer,
     ): Long
@@ -1296,6 +1328,8 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_madar_core_fn_method_madarcore_search_orders(`ptr`: Pointer,`status`: RustBuffer.ByValue,`tellerName`: RustBuffer.ByValue,`paymentMethod`: RustBuffer.ByValue,`from`: RustBuffer.ByValue,`to`: RustBuffer.ByValue,`page`: Int,
     ): Long
+    fun uniffi_madar_core_fn_method_madarcore_seat_reservation(`ptr`: Pointer,`bookingId`: RustBuffer.ByValue,`tableIds`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_madar_core_fn_method_madarcore_send_to_printer(`ptr`: Pointer,`host`: RustBuffer.ByValue,`port`: Short,`bytes`: RustBuffer.ByValue,
     ): Long
     fun uniffi_madar_core_fn_method_madarcore_set_device_branch(`ptr`: Pointer,`branchId`: RustBuffer.ByValue,`branchName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1310,6 +1344,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_madar_core_fn_method_madarcore_set_device_till(`ptr`: Pointer,`tillId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_madar_core_fn_method_madarcore_set_floor_table_status(`ptr`: Pointer,`tableId`: RustBuffer.ByValue,`status`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_madar_core_fn_method_madarcore_set_locale(`ptr`: Pointer,`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_madar_core_fn_method_madarcore_set_token_store(`ptr`: Pointer,`store`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1618,6 +1654,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_list_drafts(
     ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_list_floor_sections(
+    ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_list_floor_tables(
+    ): Short
     fun uniffi_madar_core_checksum_method_madarcore_list_item_addons(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_list_menu_items(
@@ -1630,6 +1670,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_list_payment_methods(
     ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_list_reservations(
+    ): Short
     fun uniffi_madar_core_checksum_method_madarcore_list_shift_orders(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_list_shifts(
@@ -1641,6 +1683,10 @@ internal interface UniffiLib : Library {
     fun uniffi_madar_core_checksum_method_madarcore_login(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_logout(
+    ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_move_ticket_to_table(
+    ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_notify_reservation(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_offline_report_for(
     ): Short
@@ -1660,9 +1706,13 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_record_cash_movement(
     ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_recover_orphaned_orders(
+    ): Short
     fun uniffi_madar_core_checksum_method_madarcore_refresh_catalog(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_refresh_connectivity(
+    ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_refresh_permissions_if_needed(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_refresh_shift(
     ): Short
@@ -1680,6 +1730,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_search_orders(
     ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_seat_reservation(
+    ): Short
     fun uniffi_madar_core_checksum_method_madarcore_send_to_printer(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_set_device_branch(
@@ -1693,6 +1745,8 @@ internal interface UniffiLib : Library {
     fun uniffi_madar_core_checksum_method_madarcore_set_device_station(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_set_device_till(
+    ): Short
+    fun uniffi_madar_core_checksum_method_madarcore_set_floor_table_status(
     ): Short
     fun uniffi_madar_core_checksum_method_madarcore_set_locale(
     ): Short
@@ -1980,6 +2034,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_madar_core_checksum_method_madarcore_list_drafts() != 34387.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_list_floor_sections() != 22480.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_list_floor_tables() != 42678.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_madar_core_checksum_method_madarcore_list_item_addons() != 15824.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1998,6 +2058,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_madar_core_checksum_method_madarcore_list_payment_methods() != 57944.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_list_reservations() != 2984.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_madar_core_checksum_method_madarcore_list_shift_orders() != 44866.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2014,6 +2077,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_madar_core_checksum_method_madarcore_logout() != 6838.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_move_ticket_to_table() != 1278.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_notify_reservation() != 28846.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_madar_core_checksum_method_madarcore_offline_report_for() != 61904.toShort()) {
@@ -2043,10 +2112,16 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_madar_core_checksum_method_madarcore_record_cash_movement() != 22413.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_recover_orphaned_orders() != 4654.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_madar_core_checksum_method_madarcore_refresh_catalog() != 8744.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_madar_core_checksum_method_madarcore_refresh_connectivity() != 13482.toShort()) {
+    if (lib.uniffi_madar_core_checksum_method_madarcore_refresh_connectivity() != 62298.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_refresh_permissions_if_needed() != 40566.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_madar_core_checksum_method_madarcore_refresh_shift() != 45412.toShort()) {
@@ -2073,6 +2148,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_madar_core_checksum_method_madarcore_search_orders() != 31136.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_seat_reservation() != 61231.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_madar_core_checksum_method_madarcore_send_to_printer() != 57191.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2092,6 +2170,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_madar_core_checksum_method_madarcore_set_device_till() != 29329.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_madar_core_checksum_method_madarcore_set_floor_table_status() != 326.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_madar_core_checksum_method_madarcore_set_locale() != 22522.toShort()) {
@@ -3040,6 +3121,16 @@ public interface MadarCoreInterface {
     fun `listDrafts`(): List<DraftView>
     
     /**
+     * Floor sections for the signed-in branch (dashboard-authored geometry).
+     */
+    suspend fun `listFloorSections`(): List<FloorSectionView>
+    
+    /**
+     * Tables (geometry + live status) for the signed-in branch.
+     */
+    suspend fun `listFloorTables`(): List<FloorTableView>
+    
+    /**
      * Active addons offered for an item, with their CHARGED price resolved (swap
      * delta / full) — the customization sheet groups these by `addon_type`.
      */
@@ -3068,6 +3159,11 @@ public interface MadarCoreInterface {
     fun `listOutbox`(): List<OutboxItemView>
     
     fun `listPaymentMethods`(): List<PaymentMethodView>
+    
+    /**
+     * Active bookings (reservations + waitlist) for the signed-in branch.
+     */
+    suspend fun `listReservations`(): List<ReservationView>
     
     /**
      * The current shift's orders — the still-queued sales (from the outbox,
@@ -3111,6 +3207,17 @@ public interface MadarCoreInterface {
      * Preserves the outbox unless `wipe_outbox`.
      */
     fun `logout`(`wipeOutbox`: kotlin.Boolean)
+    
+    /**
+     * Move an open ticket to another table (the "switch table" action). Frees the
+     * old table, occupies the new one, and keeps the booking assignment in sync.
+     */
+    suspend fun `moveTicketToTable`(`ticketId`: kotlin.String, `tableId`: kotlin.String)
+    
+    /**
+     * Send the booking's nudge (reservation departure / waitlist ready).
+     */
+    suspend fun `notifyReservation`(`bookingId`: kotlin.String): ReservationView
     
     /**
      * Reconstruct a shift's Z-report from purely LOCAL state (opening cash + that
@@ -3177,6 +3284,15 @@ public interface MadarCoreInterface {
     suspend fun `recordCashMovement`(`amountMinor`: kotlin.Long, `note`: kotlin.String): CashMovementView
     
     /**
+     * FALLBACK recovery for the sync center: re-point every order STRANDED by a
+     * dead `open_shift` onto the CURRENT open shift and sync. The drain already
+     * heals this automatically each pass; this is the manual escape hatch (e.g. the
+     * teller had no shift open when the drain ran, then opens one and taps
+     * "recover N stranded sales"). Returns the number of outbox rows recovered.
+     */
+    suspend fun `recoverOrphanedOrders`(): kotlin.UInt
+    
+    /**
      * Pull the branch-effective catalog (items + categories + addons + bundles +
      * payment methods + discounts) and mirror the canonical JSON into the local
      * store. Online-only; the offline reads (`list_*`) then serve this mirror.
@@ -3185,14 +3301,22 @@ public interface MadarCoreInterface {
      */
     suspend fun `refreshCatalog`()
     
+    suspend fun `refreshConnectivity`(): kotlin.Boolean
+    
     /**
      * The connectivity heartbeat: ping the backend, update the live `online`
      * flag + clock skew, and drain the outbox on success. The host calls this on
      * foreground + on a timer so the offline/clock-skew banners and the sync
      * chip reflect reality without waiting for the next deliberate action.
      * Returns the new online state.
+     * If the live session is authenticated (holds a token) but its permissions
+     * never loaded — a blip during sign-in left `permissions_loaded == false`, so
+     * `has_permission` stays optimistically OPEN for the session lifetime (audit
+     * #26) — re-fetch them now and lock the gate to the real grants. A token-LESS
+     * offline-unlock can't fetch (no bearer); its security is enforced server-side
+     * at `/sync/replay` instead (audit #12).
      */
-    suspend fun `refreshConnectivity`(): kotlin.Boolean
+    suspend fun `refreshPermissionsIfNeeded`()
     
     /**
      * Reconcile the device's shift with the server (online). Caches the server's
@@ -3253,6 +3377,12 @@ public interface MadarCoreInterface {
     suspend fun `searchOrders`(`status`: kotlin.String?, `tellerName`: kotlin.String?, `paymentMethod`: kotlin.String?, `from`: kotlin.String?, `to`: kotlin.String?, `page`: kotlin.UInt): OrderSearchPage
     
     /**
+     * Seat a party onto one or more tables (multiple ⇒ merged tables). The
+     * backend opens a dine-in ticket on the primary table.
+     */
+    suspend fun `seatReservation`(`bookingId`: kotlin.String, `tableIds`: List<kotlin.String>): ReservationView
+    
+    /**
      * Best-effort raw-TCP send of pre-rendered ESC/POS bytes to a network
      * (JetDirect / port 9100) thermal printer. Opens a short-lived socket,
      * writes, flushes. Errors map to `Transient` so the host can offer a retry.
@@ -3294,6 +3424,11 @@ public interface MadarCoreInterface {
      * Bind the device's till (POS drawer). `None` = use the branch default till.
      */
     fun `setDeviceTill`(`tillId`: kotlin.String?)
+    
+    /**
+     * Set a table's live status (`free` | `held` | `seated` | `dirty`).
+     */
+    suspend fun `setFloorTableStatus`(`tableId`: kotlin.String, `status`: kotlin.String): FloorTableView
     
     /**
      * Change the active UI locale at runtime (e.g. "en" / "ar"). Strings,
@@ -4803,6 +4938,54 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
 
     
     /**
+     * Floor sections for the signed-in branch (dashboard-authored geometry).
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listFloorSections`() : List<FloorSectionView> {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_list_floor_sections(
+                thisPtr,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterSequenceTypeFloorSectionView.lift(it) },
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Tables (geometry + live status) for the signed-in branch.
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listFloorTables`() : List<FloorTableView> {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_list_floor_tables(
+                thisPtr,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterSequenceTypeFloorTableView.lift(it) },
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * Active addons offered for an item, with their CHARGED price resolved (swap
      * delta / full) — the customization sheet groups these by `addon_type`.
      */
@@ -4912,6 +5095,30 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
     )
     }
     
+
+    
+    /**
+     * Active bookings (reservations + waitlist) for the signed-in branch.
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listReservations`() : List<ReservationView> {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_list_reservations(
+                thisPtr,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterSequenceTypeReservationView.lift(it) },
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
 
     
     /**
@@ -5051,6 +5258,56 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
     }
     
     
+
+    
+    /**
+     * Move an open ticket to another table (the "switch table" action). Frees the
+     * old table, occupies the new one, and keeps the booking assignment in sync.
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `moveTicketToTable`(`ticketId`: kotlin.String, `tableId`: kotlin.String) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_move_ticket_to_table(
+                thisPtr,
+                FfiConverterString.lower(`ticketId`),FfiConverterString.lower(`tableId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Send the booking's nudge (reservation departure / waitlist ready).
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `notifyReservation`(`bookingId`: kotlin.String) : ReservationView {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_notify_reservation(
+                thisPtr,
+                FfiConverterString.lower(`bookingId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeReservationView.lift(it) },
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
 
     
     /**
@@ -5256,6 +5513,34 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
 
     
     /**
+     * FALLBACK recovery for the sync center: re-point every order STRANDED by a
+     * dead `open_shift` onto the CURRENT open shift and sync. The drain already
+     * heals this automatically each pass; this is the manual escape hatch (e.g. the
+     * teller had no shift open when the drain ran, then opens one and taps
+     * "recover N stranded sales"). Returns the number of outbox rows recovered.
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `recoverOrphanedOrders`() : kotlin.UInt {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_recover_orphaned_orders(
+                thisPtr,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_u32(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_u32(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_u32(future) },
+        // lift function
+        { FfiConverterUInt.lift(it) },
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * Pull the branch-effective catalog (items + categories + addons + bundles +
      * payment methods + discounts) and mirror the canonical JSON into the local
      * store. Online-only; the offline reads (`list_*`) then serve this mirror.
@@ -5284,13 +5569,6 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
     }
 
     
-    /**
-     * The connectivity heartbeat: ping the backend, update the live `online`
-     * flag + clock skew, and drain the outbox on success. The host calls this on
-     * foreground + on a timer so the offline/clock-skew banners and the sync
-     * chip reflect reality without waiting for the next deliberate action.
-     * Returns the new online state.
-     */
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `refreshConnectivity`() : kotlin.Boolean {
         return uniffiRustCallAsync(
@@ -5305,6 +5583,40 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
         { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_i8(future) },
         // lift function
         { FfiConverterBoolean.lift(it) },
+        // Error FFI converter
+        UniffiNullRustCallStatusErrorHandler,
+    )
+    }
+
+    
+    /**
+     * The connectivity heartbeat: ping the backend, update the live `online`
+     * flag + clock skew, and drain the outbox on success. The host calls this on
+     * foreground + on a timer so the offline/clock-skew banners and the sync
+     * chip reflect reality without waiting for the next deliberate action.
+     * Returns the new online state.
+     * If the live session is authenticated (holds a token) but its permissions
+     * never loaded — a blip during sign-in left `permissions_loaded == false`, so
+     * `has_permission` stays optimistically OPEN for the session lifetime (audit
+     * #26) — re-fetch them now and lock the gate to the real grants. A token-LESS
+     * offline-unlock can't fetch (no bearer); its security is enforced server-side
+     * at `/sync/replay` instead (audit #12).
+     */
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `refreshPermissionsIfNeeded`() {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_refresh_permissions_if_needed(
+                thisPtr,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
         // Error FFI converter
         UniffiNullRustCallStatusErrorHandler,
     )
@@ -5488,6 +5800,31 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
 
     
     /**
+     * Seat a party onto one or more tables (multiple ⇒ merged tables). The
+     * backend opens a dine-in ticket on the primary table.
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `seatReservation`(`bookingId`: kotlin.String, `tableIds`: List<kotlin.String>) : ReservationView {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_seat_reservation(
+                thisPtr,
+                FfiConverterString.lower(`bookingId`),FfiConverterSequenceString.lower(`tableIds`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeReservationView.lift(it) },
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * Best-effort raw-TCP send of pre-rendered ESC/POS bytes to a network
      * (JetDirect / port 9100) thermal printer. Opens a short-lived socket,
      * writes, flushes. Errors map to `Transient` so the host can offer a retry.
@@ -5607,6 +5944,30 @@ open class MadarCore: Disposable, AutoCloseable, MadarCoreInterface {
     }
     
     
+
+    
+    /**
+     * Set a table's live status (`free` | `held` | `seated` | `dirty`).
+     */
+    @Throws(CoreException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `setFloorTableStatus`(`tableId`: kotlin.String, `status`: kotlin.String) : FloorTableView {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_madar_core_fn_method_madarcore_set_floor_table_status(
+                thisPtr,
+                FfiConverterString.lower(`tableId`),FfiConverterString.lower(`status`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_madar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeFloorTableView.lift(it) },
+        // Error FFI converter
+        CoreException.ErrorHandler,
+    )
+    }
 
     
     /**
@@ -7221,6 +7582,11 @@ data class DeliveryOrderView (
     var `deliveryFeeMinor`: kotlin.Long, 
     var `totalMinor`: kotlin.Long, 
     var `itemCount`: kotlin.Long, 
+    /**
+     * The order's actual priced lines, projected from the frozen `cart.lines`
+     * snapshot into the SAME shape tickets use — so both render identically.
+     */
+    var `lines`: List<TicketLineView>, 
     var `createdAt`: kotlin.String, 
     /**
      * `true` once the order reached a terminal state (delivered/cancelled/rejected).
@@ -7251,6 +7617,7 @@ public object FfiConverterTypeDeliveryOrderView: FfiConverterRustBuffer<Delivery
             FfiConverterLong.read(buf),
             FfiConverterLong.read(buf),
             FfiConverterLong.read(buf),
+            FfiConverterSequenceTypeTicketLineView.read(buf),
             FfiConverterString.read(buf),
             FfiConverterBoolean.read(buf),
         )
@@ -7271,6 +7638,7 @@ public object FfiConverterTypeDeliveryOrderView: FfiConverterRustBuffer<Delivery
             FfiConverterLong.allocationSize(value.`deliveryFeeMinor`) +
             FfiConverterLong.allocationSize(value.`totalMinor`) +
             FfiConverterLong.allocationSize(value.`itemCount`) +
+            FfiConverterSequenceTypeTicketLineView.allocationSize(value.`lines`) +
             FfiConverterString.allocationSize(value.`createdAt`) +
             FfiConverterBoolean.allocationSize(value.`isTerminal`)
     )
@@ -7290,6 +7658,7 @@ public object FfiConverterTypeDeliveryOrderView: FfiConverterRustBuffer<Delivery
             FfiConverterLong.write(value.`deliveryFeeMinor`, buf)
             FfiConverterLong.write(value.`totalMinor`, buf)
             FfiConverterLong.write(value.`itemCount`, buf)
+            FfiConverterSequenceTypeTicketLineView.write(value.`lines`, buf)
             FfiConverterString.write(value.`createdAt`, buf)
             FfiConverterBoolean.write(value.`isTerminal`, buf)
     }
@@ -7550,6 +7919,130 @@ public object FfiConverterTypeDraftView: FfiConverterRustBuffer<DraftView> {
             FfiConverterLong.write(value.`itemCount`, buf)
             FfiConverterLong.write(value.`totalMinor`, buf)
             FfiConverterString.write(value.`createdAt`, buf)
+    }
+}
+
+
+
+/**
+ * A floor area (e.g. Patio, Indoor) with its canvas extent for to-scale render.
+ */
+data class FloorSectionView (
+    var `id`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `ordering`: kotlin.Int, 
+    var `canvasW`: kotlin.Int, 
+    var `canvasH`: kotlin.Int
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFloorSectionView: FfiConverterRustBuffer<FloorSectionView> {
+    override fun read(buf: ByteBuffer): FloorSectionView {
+        return FloorSectionView(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FloorSectionView) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterInt.allocationSize(value.`ordering`) +
+            FfiConverterInt.allocationSize(value.`canvasW`) +
+            FfiConverterInt.allocationSize(value.`canvasH`)
+    )
+
+    override fun write(value: FloorSectionView, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterInt.write(value.`ordering`, buf)
+            FfiConverterInt.write(value.`canvasW`, buf)
+            FfiConverterInt.write(value.`canvasH`, buf)
+    }
+}
+
+
+
+/**
+ * A table's geometry + live status, ready to draw on the floor canvas.
+ */
+data class FloorTableView (
+    var `id`: kotlin.String, 
+    var `sectionId`: kotlin.String?, 
+    var `label`: kotlin.String, 
+    var `seats`: kotlin.Int, 
+    /**
+     * `rect` | `circle`.
+     */
+    var `shape`: kotlin.String, 
+    /**
+     * `free` | `held` | `seated` | `dirty`.
+     */
+    var `status`: kotlin.String, 
+    var `posX`: kotlin.Double, 
+    var `posY`: kotlin.Double, 
+    var `width`: kotlin.Double, 
+    var `height`: kotlin.Double, 
+    var `rotation`: kotlin.Double
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFloorTableView: FfiConverterRustBuffer<FloorTableView> {
+    override fun read(buf: ByteBuffer): FloorTableView {
+        return FloorTableView(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FloorTableView) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterOptionalString.allocationSize(value.`sectionId`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterInt.allocationSize(value.`seats`) +
+            FfiConverterString.allocationSize(value.`shape`) +
+            FfiConverterString.allocationSize(value.`status`) +
+            FfiConverterDouble.allocationSize(value.`posX`) +
+            FfiConverterDouble.allocationSize(value.`posY`) +
+            FfiConverterDouble.allocationSize(value.`width`) +
+            FfiConverterDouble.allocationSize(value.`height`) +
+            FfiConverterDouble.allocationSize(value.`rotation`)
+    )
+
+    override fun write(value: FloorTableView, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterOptionalString.write(value.`sectionId`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterInt.write(value.`seats`, buf)
+            FfiConverterString.write(value.`shape`, buf)
+            FfiConverterString.write(value.`status`, buf)
+            FfiConverterDouble.write(value.`posX`, buf)
+            FfiConverterDouble.write(value.`posY`, buf)
+            FfiConverterDouble.write(value.`width`, buf)
+            FfiConverterDouble.write(value.`height`, buf)
+            FfiConverterDouble.write(value.`rotation`, buf)
     }
 }
 
@@ -9061,6 +9554,90 @@ public object FfiConverterTypeRecipeLineView: FfiConverterRustBuffer<RecipeLineV
 
 
 /**
+ * A booking — reservation (`reserved_for` set) or waitlist entry (none).
+ */
+data class ReservationView (
+    var `id`: kotlin.String, 
+    var `branchId`: kotlin.String, 
+    /**
+     * `reservation` | `walk_in`.
+     */
+    var `kind`: kotlin.String, 
+    var `customerName`: kotlin.String, 
+    var `customerPhone`: kotlin.String, 
+    var `partySize`: kotlin.Int, 
+    /**
+     * RFC-3339 instant, or `None` for a waitlist entry.
+     */
+    var `reservedFor`: kotlin.String?, 
+    var `status`: kotlin.String, 
+    /**
+     * Assigned table ids (multiple ⇒ merged tables).
+     */
+    var `tableIds`: List<kotlin.String>, 
+    var `customerLat`: kotlin.Double?, 
+    var `customerLng`: kotlin.Double?, 
+    var `notes`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeReservationView: FfiConverterRustBuffer<ReservationView> {
+    override fun read(buf: ByteBuffer): ReservationView {
+        return ReservationView(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ReservationView) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`branchId`) +
+            FfiConverterString.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`customerName`) +
+            FfiConverterString.allocationSize(value.`customerPhone`) +
+            FfiConverterInt.allocationSize(value.`partySize`) +
+            FfiConverterOptionalString.allocationSize(value.`reservedFor`) +
+            FfiConverterString.allocationSize(value.`status`) +
+            FfiConverterSequenceString.allocationSize(value.`tableIds`) +
+            FfiConverterOptionalDouble.allocationSize(value.`customerLat`) +
+            FfiConverterOptionalDouble.allocationSize(value.`customerLng`) +
+            FfiConverterOptionalString.allocationSize(value.`notes`)
+    )
+
+    override fun write(value: ReservationView, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`branchId`, buf)
+            FfiConverterString.write(value.`kind`, buf)
+            FfiConverterString.write(value.`customerName`, buf)
+            FfiConverterString.write(value.`customerPhone`, buf)
+            FfiConverterInt.write(value.`partySize`, buf)
+            FfiConverterOptionalString.write(value.`reservedFor`, buf)
+            FfiConverterString.write(value.`status`, buf)
+            FfiConverterSequenceString.write(value.`tableIds`, buf)
+            FfiConverterOptionalDouble.write(value.`customerLat`, buf)
+            FfiConverterOptionalDouble.write(value.`customerLng`, buf)
+            FfiConverterOptionalString.write(value.`notes`, buf)
+    }
+}
+
+
+
+/**
  * The cached session the host renders chrome from. Money/tax are pre-resolved.
  */
 data class SessionSnapshot (
@@ -9530,6 +10107,13 @@ public object FfiConverterTypeShiftView: FfiConverterRustBuffer<ShiftView> {
 data class SyncStatusView (
     var `pending`: kotlin.UInt, 
     var `failed`: kotlin.UInt, 
+    /**
+     * Orders STRANDED by a dead `open_shift` (waiting on a dependency that will
+     * never ack). The drain auto-heals these onto the current shift; this count is
+     * the fallback signal — when >0 with no open shift, the host can offer
+     * `recover_orphaned_orders()` ("open a shift to recover N stranded sales").
+     */
+    var `blocked`: kotlin.UInt, 
     var `online`: kotlin.Boolean, 
     /**
      * `true` when the outbox is parked on a 401 — the host prompts a re-login
@@ -9549,6 +10133,7 @@ public object FfiConverterTypeSyncStatusView: FfiConverterRustBuffer<SyncStatusV
         return SyncStatusView(
             FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
         )
@@ -9557,6 +10142,7 @@ public object FfiConverterTypeSyncStatusView: FfiConverterRustBuffer<SyncStatusV
     override fun allocationSize(value: SyncStatusView) = (
             FfiConverterUInt.allocationSize(value.`pending`) +
             FfiConverterUInt.allocationSize(value.`failed`) +
+            FfiConverterUInt.allocationSize(value.`blocked`) +
             FfiConverterBoolean.allocationSize(value.`online`) +
             FfiConverterBoolean.allocationSize(value.`authPaused`)
     )
@@ -9564,6 +10150,7 @@ public object FfiConverterTypeSyncStatusView: FfiConverterRustBuffer<SyncStatusV
     override fun write(value: SyncStatusView, buf: ByteBuffer) {
             FfiConverterUInt.write(value.`pending`, buf)
             FfiConverterUInt.write(value.`failed`, buf)
+            FfiConverterUInt.write(value.`blocked`, buf)
             FfiConverterBoolean.write(value.`online`, buf)
             FfiConverterBoolean.write(value.`authPaused`, buf)
     }
@@ -11487,6 +12074,62 @@ public object FfiConverterSequenceTypeDraftView: FfiConverterRustBuffer<List<Dra
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFloorSectionView: FfiConverterRustBuffer<List<FloorSectionView>> {
+    override fun read(buf: ByteBuffer): List<FloorSectionView> {
+        val len = buf.getInt()
+        return List<FloorSectionView>(len) {
+            FfiConverterTypeFloorSectionView.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FloorSectionView>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFloorSectionView.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FloorSectionView>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFloorSectionView.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFloorTableView: FfiConverterRustBuffer<List<FloorTableView>> {
+    override fun read(buf: ByteBuffer): List<FloorTableView> {
+        val len = buf.getInt()
+        return List<FloorTableView>(len) {
+            FfiConverterTypeFloorTableView.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FloorTableView>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFloorTableView.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FloorTableView>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFloorTableView.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeItemAddonView: FfiConverterRustBuffer<List<ItemAddonView>> {
     override fun read(buf: ByteBuffer): List<ItemAddonView> {
         val len = buf.getInt()
@@ -11925,6 +12568,34 @@ public object FfiConverterSequenceTypeRecipeLineView: FfiConverterRustBuffer<Lis
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeRecipeLineView.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeReservationView: FfiConverterRustBuffer<List<ReservationView>> {
+    override fun read(buf: ByteBuffer): List<ReservationView> {
+        val len = buf.getInt()
+        return List<ReservationView>(len) {
+            FfiConverterTypeReservationView.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ReservationView>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeReservationView.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ReservationView>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeReservationView.write(it, buf)
         }
     }
 }
