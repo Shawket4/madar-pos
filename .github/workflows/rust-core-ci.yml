@@ -112,9 +112,12 @@ jobs:
       # `cargo +nightly` forces the nightly toolchain (RUSTUP_TOOLCHAIN propagates
       # to cargo-fuzz's inner sanitizer build) — the repo's rust-toolchain.toml pins
       # a stable channel, which otherwise rejects the required `-Z` flags.
+      # `--target …-gnu` pins the host triple: cargo-fuzz otherwise defaults to the
+      # musl target, whose static libc (crt-static) is incompatible with ASan (and
+      # isn't installed on the runner). gnu ships with the nightly host toolchain.
       # Quick smoke on PRs; a longer budget on the nightly schedule.
       - name: Fuzz ${{ matrix.target }}
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'schedule' && 120 || 30 }}
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'schedule' && 120 || 30 }}
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v4
