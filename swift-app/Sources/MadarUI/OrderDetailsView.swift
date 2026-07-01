@@ -37,6 +37,10 @@ struct TicketDetailsView: View {
 
             // Context — covering customer + table/covers.
             OrderContextCard {
+                // Who took the table — the waiter who opened the ticket.
+                if let waiter = ticket.waiterName, !waiter.isEmpty {
+                    OrderContextRow(icon: "fork.knife", label: t("order.waiter"), value: waiter)
+                }
                 if let name = customerName {
                     OrderContextRow(icon: "person.fill", label: t("receipt.customer"), value: name)
                 }

@@ -100,6 +100,11 @@ private struct SettleTicketCard: View {
                         Spacer(minLength: 0)
                     }
                 }
+                // The waiter who opened the ticket — so the teller sees who took it.
+                if let waiter = ticket.waiterName, !waiter.isEmpty {
+                    Text("\(t("order.waiter")): \(waiter)")
+                        .font(.ui(11, .semibold)).foregroundStyle(theme.colors.textSecondary)
+                }
                 // Item-count meta so the card previews contents at a glance.
                 Text("\(lineCount) \(t("order.items"))")
                     .font(.ui(11, .semibold)).foregroundStyle(theme.colors.textMuted)

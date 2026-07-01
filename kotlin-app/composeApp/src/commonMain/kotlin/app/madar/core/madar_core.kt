@@ -10269,6 +10269,11 @@ data class TicketView (
      */
     var `status`: kotlin.String, 
     var `customerName`: kotlin.String?, 
+    /**
+     * The WAITER who opened this ticket (`open_tickets.opened_by` → user name),
+     * so the teller can see who took the table. `null` if the name is unknown.
+     */
+    var `waiterName`: kotlin.String?, 
     var `guestCount`: kotlin.Int?, 
     var `subtotalMinor`: kotlin.Long, 
     var `orderId`: kotlin.String?, 
@@ -10291,6 +10296,7 @@ public object FfiConverterTypeTicketView: FfiConverterRustBuffer<TicketView> {
             FfiConverterOptionalString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
             FfiConverterOptionalInt.read(buf),
             FfiConverterLong.read(buf),
             FfiConverterOptionalString.read(buf),
@@ -10306,6 +10312,7 @@ public object FfiConverterTypeTicketView: FfiConverterRustBuffer<TicketView> {
             FfiConverterOptionalString.allocationSize(value.`tableId`) +
             FfiConverterString.allocationSize(value.`status`) +
             FfiConverterOptionalString.allocationSize(value.`customerName`) +
+            FfiConverterOptionalString.allocationSize(value.`waiterName`) +
             FfiConverterOptionalInt.allocationSize(value.`guestCount`) +
             FfiConverterLong.allocationSize(value.`subtotalMinor`) +
             FfiConverterOptionalString.allocationSize(value.`orderId`) +
@@ -10320,6 +10327,7 @@ public object FfiConverterTypeTicketView: FfiConverterRustBuffer<TicketView> {
             FfiConverterOptionalString.write(value.`tableId`, buf)
             FfiConverterString.write(value.`status`, buf)
             FfiConverterOptionalString.write(value.`customerName`, buf)
+            FfiConverterOptionalString.write(value.`waiterName`, buf)
             FfiConverterOptionalInt.write(value.`guestCount`, buf)
             FfiConverterLong.write(value.`subtotalMinor`, buf)
             FfiConverterOptionalString.write(value.`orderId`, buf)

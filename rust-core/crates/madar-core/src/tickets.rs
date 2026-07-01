@@ -70,6 +70,9 @@ pub struct TicketView {
     /// open | ready | settled | voided | queued (the last = still in the outbox).
     pub status: String,
     pub customer_name: Option<String>,
+    /// The WAITER who opened this ticket (`open_tickets.opened_by` → user name),
+    /// so the teller can see who took the table. `null` if the name is unknown.
+    pub waiter_name: Option<String>,
     pub guest_count: Option<i32>,
     pub subtotal_minor: i64,
     pub order_id: Option<String>,
@@ -143,6 +146,7 @@ pub(crate) fn to_view(v: &models::OpenTicketView, queued_offline: bool) -> Ticke
         table_id: flat(&v.table_id).map(|u| u.to_string()),
         status: v.status.clone(),
         customer_name: flat(&v.customer_name),
+        waiter_name: flat(&v.opened_by_name).filter(|s| !s.is_empty()),
         guest_count: flat(&v.guest_count),
         subtotal_minor: v.subtotal as i64,
         order_id: flat(&v.order_id).map(|u| u.to_string()),
@@ -252,5 +256,6 @@ mod tests {
         assert_eq!(tv.subtotal_minor, 2000);
         assert_eq!(tv.status, "open");
         assert!(!tv.queued_offline);
+        assert_eq!(tv.waiter_name.as_deref(), Some("Sara"), "the ticket's opener is exposed as the waiter");
     }
 }

@@ -627,14 +627,14 @@ private fun stubDelivery(): List<DeliveryOrderView> = listOf(
 )
 
 private fun stubTickets(): List<TicketView> = listOf(
-    TicketView("t1", "T-12", "Table 4", "open", "Walk-in", 3, 28000L, null, "2026-06-29T11:20:00Z", false,
+    TicketView("t1", "T-12", "Table 4", "open", "Walk-in", "Mariam", 3, 28000L, null, "2026-06-29T11:20:00Z", false,
         listOf(
             TicketLineView("Classic beef burger", 2, null, listOf("No onion"), 17000L, false),
             TicketLineView("Iced latte", 1, "Large", emptyList(), 7500L, false),
         )),
-    TicketView("t2", "T-14", "Table 7", "ready", "Ahmed", 2, 41000L, null, "2026-06-29T11:05:00Z", false,
+    TicketView("t2", "T-14", "Table 7", "ready", "Ahmed", "Omar", 2, 41000L, null, "2026-06-29T11:05:00Z", false,
         listOf(TicketLineView("Margherita pizza", 2, null, emptyList(), 22000L, false))),
-    TicketView("t3", null, "Table 2", "queued", null, 4, 15000L, null, "2026-06-29T10:58:00Z", true, emptyList()),
+    TicketView("t3", null, "Table 2", "queued", null, "Youssef", 4, 15000L, null, "2026-06-29T10:58:00Z", true, emptyList()),
 )
 
 private fun stubKds(): List<KdsTicketView> = listOf(

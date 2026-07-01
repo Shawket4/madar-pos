@@ -71,6 +71,8 @@ fun ColumnScope.TicketDetailsSheet(ticket: TicketView, currency: String) {
 
         // Context chips — customer / table / covers, only when present.
         val ctx = buildList {
+            // Who took the table — the waiter who opened the ticket.
+            ticket.waiterName?.takeIf { it.isNotBlank() }?.let { add("fork.knife" to "${t("order.waiter")}: $it") }
             ticket.customerName?.takeIf { it.isNotBlank() }?.let { add("person.fill" to it) }
             ticket.tableId?.takeIf { it.isNotBlank() }?.let { add("square.grid.2x2" to "${t("order.table")} $it") }
             ticket.guestCount?.takeIf { it > 0 }?.let { add("person.2.fill" to "$it ${t("waiter.covers")}") }

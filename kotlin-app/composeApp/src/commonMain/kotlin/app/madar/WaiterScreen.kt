@@ -413,6 +413,10 @@ private fun SettleTicketCard(
                     ticket.customerName?.takeIf { it.isNotBlank() }?.let {
                         Text(it, style = Type.title(), color = c.textPrimary, maxLines = 1)
                     }
+                    // The waiter who opened the ticket — so the teller sees who took it.
+                    ticket.waiterName?.takeIf { it.isNotBlank() }?.let {
+                        Text("${t("order.waiter")}: $it", color = c.textSecondary, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.Medium, fontSize = 11.sp, maxLines = 1)
+                    }
                     Text("${ticket.lines.size} ${t("waiter.items")}", color = c.textMuted, fontFamily = LocalMadarFont.current, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                 }
             }

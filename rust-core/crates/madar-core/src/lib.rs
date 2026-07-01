@@ -1259,7 +1259,13 @@ fn cache_views<T: serde::Serialize>(store: &store::Store, key: &str, views: &[T]
 /// sees the ticket immediately, before it syncs. Status `"queued"`; the subtotal is
 /// a rough estimate from the priced items (addons excluded — the server recomputes
 /// authoritatively on sync); detailed lines arrive with the server view.
-fn queued_ticket_view(cmd: &tickets::FireTicketCommand, event_at: &str) -> tickets::TicketView {
+fn queued_ticket_view(
+    cmd: &tickets::FireTicketCommand,
+    event_at: &str,
+    // The waiter who fired it (the current session) — the server round-trip will
+    // confirm the same name once the queued fire syncs.
+    waiter_name: Option<String>,
+) -> tickets::TicketView {
     let subtotal_minor: i64 = cmd
         .request
         .items
@@ -1272,6 +1278,7 @@ fn queued_ticket_view(cmd: &tickets::FireTicketCommand, event_at: &str) -> ticke
         table_id: cmd.request.table_id.flatten().map(|u| u.to_string()),
         status: "queued".into(),
         customer_name: cmd.request.customer_name.clone().flatten(),
+        waiter_name,
         guest_count: cmd.request.guest_count.flatten(),
         subtotal_minor,
         order_id: None,
@@ -4064,13 +4071,18 @@ impl MadarCore {
             })
             .collect();
         // Overlay still-queued fires (a pending fire is never in the server list),
-        // unless that ticket was already settled/voided offline.
+        // unless that ticket was already settled/voided offline. The waiter is the
+        // current session (whoever is firing offline).
+        let waiter = self
+            .current_session()
+            .map(|s| s.display_name)
+            .filter(|s| !s.is_empty());
         for item in self.store.pending()?.iter().filter(|i| i.op_type == "open_ticket") {
             if let Ok(cmd) = serde_json::from_str::<tickets::FireTicketCommand>(&item.payload) {
                 if cleared.contains(&cmd.ticket_id) {
                     continue;
                 }
-                out.push(queued_ticket_view(&cmd, &item.event_at));
+                out.push(queued_ticket_view(&cmd, &item.event_at, waiter.clone()));
             }
         }
         Ok(out)
